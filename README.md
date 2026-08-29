@@ -13,3 +13,4 @@ Required Vercel environment variables:
 
 Google service account must have Editor access to spreadsheet:
 `1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10`
+
