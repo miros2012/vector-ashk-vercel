@@ -1,0 +1,10 @@
+{
+  "name": "vector-ashk-backend",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=20"},
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}
