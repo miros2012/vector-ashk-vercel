@@ -1,4 +1,5 @@
 {
+  "buildCommand": "node diagnostic-build.js",
   "functions": {
     "api/sync-payments.js": { "maxDuration": 60 }
   }
