@@ -1,6 +1,15 @@
-const BASE='https://app.dscontrol.ru';
+import { google } from 'googleapis';
+const BASE='https://app.dscontrol.ru',SID='1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
+function pk(){return String(process.env.GOOGLE_PRIVATE_KEY||'').replace(/\\n/g,'\n')}
+function arr(j){return Array.isArray(j)?j:(Array.isArray(j?.data)?j.data:[])}
+function dp(v){const m=String(v??'').match(/^(\d{4}-\d{2}-\d{2})/);return m?m[1]:null}
+function aug(d){return d>='2026-08-01'&&d<='2026-08-29'}
 const headers={api_key:process.env.ASHK_API_KEY,'X-Requested-With':'XMLHttpRequest','Content-Type':'application/json'};
-const r=await fetch(`${BASE}/api/WalletTokenList`,{headers});
-const j=await r.json();
-const data=Array.isArray(j)?j:(Array.isArray(j?.data)?j.data:[]);
-console.log('WALLET_TOKEN_MAP_OK',JSON.stringify(data.map(x=>({Id:x.Id??x.TokenId,Code:x.Code??x.ShortName??x.Name,Name:x.Name??x.Title??x.Description}))));
+async function ops(owner){const r=await fetch(`${BASE}/api/DriveWalletOperationList?OwnerId=${owner}`,{headers});const j=await r.json();if(!r.ok||j?.success===false)throw new Error(`ASHK ${r.status}`);return arr(j)}
+const auth=new google.auth.JWT({email:process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,key:pk(),scopes:['https://www.googleapis.com/auth/spreadsheets.readonly']});await auth.authorize();const sheets=google.sheets({version:'v4',auth});
+const rr=await sheets.spreadsheets.values.get({spreadsheetId:SID,range:"'АШК_Часы_Август'!A2:A3008"});const owners=[...new Set((rr.data.values||[]).map(r=>String(r?.[0]||'').trim()).filter(Boolean))];
+let errors=0;const noSessionAug=[],sessionAug=[],sessionOutside=[];
+for(let i=0;i<owners.length;i++){try{for(const op of await ops(owners[i])){const id=Number(op?.Id);if(!Number.isFinite(id))continue;const date=dp(op?.StartDate)||dp(op?.FinishDate)||dp(op?.PlanStart);const toks=(Array.isArray(op?.Tokens)?op.Tokens:[]).filter(t=>Number(t?.Amount)<0).map(t=>({id:String(t?.TokenId),q:-Number(t.Amount)}));if(!op?.DriveSessionId){if(aug(date))noSessionAug.push({id,date,owner:owners[i],comment:op?.Comment,toks});continue;}const row={id,date,owner:owners[i],session:String(op.DriveSessionId),hours:Number(op?.Hours||0),toks,master:op?.MasterName};if(aug(date))sessionAug.push(row);else sessionOutside.push(row);}}catch(e){errors++;}if((i+1)%150===0||i===owners.length-1)console.log('LEDGER_ID_PROGRESS',JSON.stringify({done:i+1,total:owners.length,errors,noSessionAug:noSessionAug.length,sessionAug:sessionAug.length,sessionOutside:sessionOutside.length}));await new Promise(r=>setTimeout(r,90));}
+const ids=noSessionAug.map(x=>x.id);const minId=Math.min(...ids),maxId=Math.max(...ids);const inferred=sessionOutside.filter(x=>x.id>=minId&&x.id<=maxId);const byToken={};let inferredHours=0,inferredTokenHours=0;for(const x of inferred){inferredHours+=x.hours;for(const t of x.toks){inferredTokenHours+=t.q;byToken[t.id]=(byToken[t.id]||0)+t.q;}}
+const knownAugIds=sessionAug.map(x=>x.id);const summary={owners:owners.length,errors,noSessionAug:noSessionAug.length,minId,maxId,noSessionMin:noSessionAug.sort((a,b)=>a.id-b.id).slice(0,5),noSessionMax:noSessionAug.sort((a,b)=>b.id-a.id).slice(0,5),sessionAug:sessionAug.length,sessionAugHours:sessionAug.reduce((s,x)=>s+x.hours,0),sessionAugIdMin:Math.min(...knownAugIds),sessionAugIdMax:Math.max(...knownAugIds),outsideSessions:sessionOutside.length,inferredOutsideSessions:inferred.length,inferredHours,inferredTokenHours,byToken,inferredSamples:inferred.slice(0,50)};
+console.log('LEDGER_ID_AUG_OK',JSON.stringify(summary));
