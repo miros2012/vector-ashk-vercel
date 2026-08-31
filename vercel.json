@@ -15,8 +15,12 @@
   },
   "crons": [
     {
+      "path": "/api/sync-hours?month=previous",
+      "schedule": "20 21 1-3 * *"
+    },
+    {
       "path": "/api/sync-hours",
-      "schedule": "30 18 * * *"
+      "schedule": "30 21 * * *"
     }
   ]
 }
