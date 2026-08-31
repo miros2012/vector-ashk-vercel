@@ -124,7 +124,7 @@ test('cron GET accepts only CRON_SECRET and syncs the current Tyumen month', asy
   const handler = createSyncHoursHandler({
     configuredKey: 'manual-secret',
     cronKey: 'cron-secret',
-    now: () => new Date('2026-08-31T20:30:00.000Z'),
+    now: () => new Date('2026-09-04T21:30:00.000Z'),
     fetchReport: async (month) => {
       fetchedMonth = month;
       return REPORT_ROWS.map((row) => ({ ...row, FactStart: '2026-09-02 10:00:00' }));
