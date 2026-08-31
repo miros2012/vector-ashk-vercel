@@ -75,11 +75,17 @@ test('buildHoursImportWorkbook deduplicates exact ASHK rows and produces auditab
   assert.match(result.rawValues[1][0], /2026-08-01T08:00:00/);
   assert.equal(JSON.stringify(result.reconciliationValues).includes('Иванов'), false);
   assert.equal(JSON.stringify(result.reconciliationValues).includes('Asia/Yekaterinburg'), true);
+  assert.equal(JSON.stringify(result.reconciliationValues).includes('Stable-key rows superseded'), true);
 });
 
 test('businessDateFromFactStart converts offset timestamps to Tyumen business date', () => {
   assert.equal(businessDateFromFactStart('2026-08-31T20:30:00Z'), '2026-09-01');
   assert.equal(businessDateFromFactStart('2026-08-31 23:30:00'), '2026-08-31');
+});
+
+test('businessDateFromFactStart rejects impossible offset-less local timestamps', () => {
+  assert.equal(businessDateFromFactStart('2026-08-99 25:61:61'), '');
+  assert.equal(businessDateFromFactStart('2026-02-30 10:00:00'), '');
 });
 
 test('buildHoursImportWorkbook rejects rows outside the requested Tyumen business month', () => {
