@@ -1,0 +1,1 @@
+Deploy trigger for keyless Tochka live balances via Vercel OIDC.
