@@ -143,9 +143,12 @@ test('cron GET accepts only CRON_SECRET and syncs the current Tyumen month', asy
   assert.equal(res.body.month, '2026-09');
 });
 
-test('single cron GET closes previous month first on Tyumen days 1-3 and leaves current month in staging', async () => {
+test('single cron GET archives previous month first on Tyumen days 1-3 and leaves current month in staging', async () => {
   const fetchedMonths = [];
   let writtenRaw;
+  let archivedMonth;
+  let archivedRaw;
+  let archivedReconciliation;
   const handler = createSyncHoursHandler({
     configuredKey: 'manual-secret',
     cronKey: 'cron-secret',
@@ -157,7 +160,10 @@ test('single cron GET closes previous month first on Tyumen days 1-3 and leaves 
     },
     writeRaw: async (values) => { writtenRaw = values; },
     readRaw: async () => writtenRaw,
-    writeReconciliation: async () => {}
+    writeReconciliation: async () => {},
+    writeArchiveRaw: async (month, values) => { archivedMonth = month; archivedRaw = values; },
+    readArchiveRaw: async (month) => { assert.equal(month, archivedMonth); return archivedRaw; },
+    writeArchiveReconciliation: async (month, values) => { assert.equal(month, archivedMonth); archivedReconciliation = values; }
   });
   const req = { method: 'GET', headers: { authorization: 'Bearer cron-secret' } };
   const res = responseRecorder();
@@ -166,9 +172,14 @@ test('single cron GET closes previous month first on Tyumen days 1-3 and leaves 
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(fetchedMonths, ['2026-08', '2026-09']);
+  assert.equal(archivedMonth, '2026-08');
+  assert.equal(archivedRaw[1][1], '2026-08');
+  assert.equal(archivedReconciliation.at(-1)[1], 'OK');
+  assert.equal(writtenRaw[1][1], '2026-09');
   assert.equal(res.body.month, '2026-09');
   assert.equal(res.body.monthClose?.month, '2026-08');
   assert.equal(res.body.monthClose?.ok, true);
+  assert.equal(res.body.monthClose?.archived, true);
 });
 
 test('cron GET rejects the manual sync key', async () => {
