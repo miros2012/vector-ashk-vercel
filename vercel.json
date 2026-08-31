@@ -1,4 +1,13 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "*": false,
+      "main": true,
+      "preview-*": true,
+      "release-*": true
+    }
+  },
   "functions": {
     "api/master-hours-diagnostic.js": { "maxDuration": 60 },
     "api/sync-payments.js": { "maxDuration": 60 }
