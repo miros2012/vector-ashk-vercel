@@ -7,7 +7,7 @@ const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const RAW_SHEET = 'АШК_Часы_Табель__vercel';
 const RECONCILIATION_SHEET = 'АШК_Сверка_часов__vercel';
-const BOOTSTRAP_SYNC_KEY_SHA256 = '000fef2554519b244be8f631a2ac4a10b7c87af5231df0f2179c339aa199f3e4';
+const BOOTSTRAP_SYNC_KEY_SHA256 = '31543669db2116795d00ad0b6de7cf46640726fafbd42cfc00dceeebc4581459';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -138,4 +138,3 @@ const handler = createSyncHoursHandler({
 });
 
 export default handler;
-
