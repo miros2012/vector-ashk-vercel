@@ -13,9 +13,10 @@ function responseRecorder() {
   };
 }
 
-function current() {
+function current(overrides = {}) {
   return {
     ruleId: 'DEC-CRIT-DUE',
+    ruleStatus: 'Активно',
     executionStatus: 'Не начато',
     verificationStatus: 'Не проверено',
     plannedEffect: 1179607.47,
@@ -23,7 +24,8 @@ function current() {
     startedAt: null,
     completedAt: null,
     result: '',
-    lastCheckedAt: null
+    lastCheckedAt: null,
+    ...overrides
   };
 }
 
@@ -93,4 +95,26 @@ test('unknown rule returns 404 without creating history', async () => {
 
   assert.equal(res.code, 404);
   assert.equal(events, 0);
+});
+
+test('inactive financial rule cannot be started', async () => {
+  let writes = 0;
+  const handler = createDecisionExecutionHandler({
+    configuredKey: 'secret',
+    getDecision: async () => current({ ruleStatus: 'Неактивно' }),
+    writeDecision: async () => { writes += 1; },
+    appendEvent: async () => {}
+  });
+  const req = {
+    method: 'POST',
+    headers: { 'x-vector-key': 'secret' },
+    body: { ruleId: 'DEC-CASH-GAP', action: 'start', actor: 'Собственник' }
+  };
+  const res = responseRecorder();
+
+  await handler(req, res);
+
+  assert.equal(res.code, 409);
+  assert.match(res.body.error, /inactive/);
+  assert.equal(writes, 0);
 });
