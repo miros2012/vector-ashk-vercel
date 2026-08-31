@@ -143,6 +143,35 @@ test('cron GET accepts only CRON_SECRET and syncs the current Tyumen month', asy
   assert.equal(res.body.month, '2026-09');
 });
 
+test('cron GET can recheck the previous Tyumen month for month close', async () => {
+  let fetchedMonth;
+  let writtenRaw;
+  const handler = createSyncHoursHandler({
+    configuredKey: 'manual-secret',
+    cronKey: 'cron-secret',
+    now: () => new Date('2026-09-01T21:20:00.000Z'),
+    fetchReport: async (month) => {
+      fetchedMonth = month;
+      return REPORT_ROWS;
+    },
+    writeRaw: async (values) => { writtenRaw = values; },
+    readRaw: async () => writtenRaw,
+    writeReconciliation: async () => {}
+  });
+  const req = {
+    method: 'GET',
+    headers: { authorization: 'Bearer cron-secret' },
+    query: { month: 'previous' }
+  };
+  const res = responseRecorder();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(fetchedMonth, '2026-08');
+  assert.equal(res.body.month, '2026-08');
+});
+
 test('cron GET rejects the manual sync key', async () => {
   let externalCalls = 0;
   const handler = createSyncHoursHandler({
