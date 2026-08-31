@@ -1,3 +1,4 @@
+// Preview diagnostic: exposes only configured/missing flags, never secret values.
 export default function handler(req, res) {
   const googleReady = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY);
   const oidcReady = Boolean(process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
