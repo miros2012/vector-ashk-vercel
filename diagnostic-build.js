@@ -1,21 +1,18 @@
-import { google } from 'googleapis';
-const BASE='https://app.dscontrol.ru',SID='1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
-const TARGET=['3380781','3433610','3434851','3437856','3442795','3823974','3840311'];
-function pk(){return String(process.env.GOOGLE_PRIVATE_KEY||'').replace(/\\n/g,'\n')}
+const BASE='https://app.dscontrol.ru';
+const OWNERS=['3380781','3433610','3643144'];
+const headers={api_key:process.env.ASHK_API_KEY,'X-Requested-With':'XMLHttpRequest','Content-Type':'application/json'};
 function arr(j){return Array.isArray(j)?j:(Array.isArray(j?.data)?j.data:[])}
 function dp(v){const s=String(v??'').trim();let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return `${m[1]}-${m[2]}-${m[3]}`;m=s.match(/^(\d{2})\.(\d{2})\.(\d{4})/);return m?`${m[3]}-${m[2]}-${m[1]}`:null}
-function toks(op){return (Array.isArray(op?.Tokens)?op.Tokens:[]).filter(t=>Number(t?.Amount)<0).map(t=>({id:String(t?.TokenId),q:-Number(t.Amount)}))}
-const headers={api_key:process.env.ASHK_API_KEY,'X-Requested-With':'XMLHttpRequest','Content-Type':'application/json'};
-async function get(path){const r=await fetch(`${BASE}${path}`,{headers});const j=await r.json();if(!r.ok||j?.success===false)throw new Error(`${path} ${r.status} ${JSON.stringify(j).slice(0,160)}`);return arr(j)}
-const groups=await get('/api/StudyGroupList?ShowArchived=true');
-const found=new Map();let groupErrors=0;
-for(let i=0;i<groups.length;i+=4){await Promise.all(groups.slice(i,i+4).map(async g=>{try{const ss=await get(`/api/StudentExternalList?StudyGroupId=${g.Id}`);for(const s of ss){const id=String(s?.Id||'');if(TARGET.includes(id))found.set(id,{student:s,group:g});}}catch(e){groupErrors++;}}));if(found.size===TARGET.length)break;await new Promise(r=>setTimeout(r,1100));}
-const concise=TARGET.map(id=>{const x=found.get(id)||{},s=x.student||{},g=x.group||{};return {owner:id,contract:s.ContractName,contractDate:s.ContractDate,state:s.State,entryDate:s.EntryDate,groupId:g.Id,group:g.Name,groupState:g.State,groupStart:g.StartDate,groupEnd:g.EndDate,program:g.ProgramName};});
-console.log('TARGET_CONTRACT_META_CONCISE',JSON.stringify({found:found.size,groupErrors,uniqueGroups:[...new Set(concise.map(x=>x.groupId).filter(Boolean))],rows:concise}));
-let totalHours=0,totalOps=0;const byToken={};
-for(const owner of TARGET){const a=await get(`/api/DriveWalletOperationList?OwnerId=${owner}`);const aug=a.filter(op=>op?.DriveSessionId&&(()=>{const d=dp(op?.StartDate)||dp(op?.FinishDate)||dp(op?.PlanStart)||dp(op?.PlanEnd);return d>='2026-08-01'&&d<'2026-08-30'})());for(const op of aug){totalOps++;totalHours+=Number(op?.Hours||0);for(const t of toks(op))byToken[t.id]=(byToken[t.id]||0)+t.q;}console.log('TARGET_AUG_OWNER_CONCISE',JSON.stringify({owner,count:aug.length,hours:aug.reduce((z,o)=>z+Number(o?.Hours||0),0),sessions:aug.map(op=>({DriveSessionId:op.DriveSessionId,StartDate:op.StartDate,Hours:op.Hours,Tokens:op.Tokens,MasterName:op.MasterName,SessionTypeId:op.SessionTypeId}))}));await new Promise(r=>setTimeout(r,250));}
-console.log('TARGET_AUG_SUMMARY',JSON.stringify({owners:TARGET.length,totalOps,totalHours,byToken}));
-const auth=new google.auth.JWT({email:process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,key:pk(),scopes:['https://www.googleapis.com/auth/spreadsheets.readonly']});await auth.authorize();const sheets=google.sheets({version:'v4',auth});
-const rr=await sheets.spreadsheets.values.batchGet({spreadsheetId:SID,ranges:["'АШК_Часы_Август'!A2:A3008","'АШК_Часы_Август'!V2:W8"]});const old=new Set((rr.data.valueRanges?.[0]?.values||[]).map(r=>String(r?.[0]||'').trim()).filter(Boolean));const metrics=rr.data.valueRanges?.[1]?.values||[];
-console.log('TARGET_OLD_UNIVERSE_MEMBERSHIP',JSON.stringify(TARGET.map(owner=>({owner,inOld:old.has(owner)}))));
-console.log('OLD_IMPORT_METRICS',JSON.stringify(Object.fromEntries(metrics.filter(r=>r?.[0]).map(r=>[String(r[0]),r[1]]))));
+function sig(ops){const rows=ops.map(o=>[String(o?.DriveSessionId||''),String(o?.Id||''),String(o?.StartDate||''),String(o?.FinishDate||''),String(o?.PlanStart||''),String(o?.Hours||''),JSON.stringify(o?.Tokens||[])].join('|')).sort();let h=2166136261;for(const s of rows){for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}}return (h>>>0).toString(16)}
+async function get(owner,qs){const url=`${BASE}/api/DriveWalletOperationList?OwnerId=${owner}${qs?'&'+qs:''}`;const r=await fetch(url,{headers});const text=await r.text();let j;try{j=JSON.parse(text)}catch{throw new Error(`nonjson ${r.status}`)}if(!r.ok||j?.success===false)throw new Error(`${r.status} ${JSON.stringify(j).slice(0,180)}`);return arr(j)}
+const variants={
+ baseline:'',
+ dateFromTo:'DateFrom=2026-08-01&DateTo=2026-08-29',
+ startFinish:'StartDate=2026-08-01&FinishDate=2026-08-29',
+ fromTo:'From=2026-08-01&To=2026-08-29',
+ beginEnd:'BeginDate=2026-08-01&EndDate=2026-08-29',
+ includeCompleted:'IncludeCompleted=true&All=true&Extended=true'
+};
+const out=[];
+for(const owner of OWNERS){let base=null;for(const [name,qs] of Object.entries(variants)){try{const ops=await get(owner,qs);const sessions=ops.filter(o=>o?.DriveSessionId);const aug=sessions.filter(o=>{const d=dp(o?.StartDate)||dp(o?.FinishDate)||dp(o?.PlanStart)||dp(o?.PlanEnd);return d>='2026-08-01'&&d<='2026-08-29'});const old=sessions.filter(o=>{const d=dp(o?.StartDate)||dp(o?.FinishDate)||dp(o?.PlanStart)||dp(o?.PlanEnd);return d&&d<'2026-08-01'});const rec={owner,name,totalOps:ops.length,sessionOps:sessions.length,augOps:aug.length,augHours:aug.reduce((s,o)=>s+Number(o?.Hours||0),0),oldOps:old.length,oldHours:old.reduce((s,o)=>s+Number(o?.Hours||0),0),keys:[...new Set(ops.flatMap(o=>Object.keys(o||{})))].sort(),signature:sig(ops)};if(name==='baseline')base=rec;rec.sameAsBaseline=base?rec.signature===base.signature:null;out.push(rec);console.log('DWO_PARAM_VARIANT',JSON.stringify(rec));}catch(e){out.push({owner,name,error:String(e?.message||e)});console.log('DWO_PARAM_ERROR',JSON.stringify({owner,name,error:String(e?.message||e)}));}await new Promise(r=>setTimeout(r,1100));}}
+console.log('DWO_PARAM_PROBE_OK',JSON.stringify(out));
