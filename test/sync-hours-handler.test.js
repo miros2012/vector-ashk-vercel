@@ -93,6 +93,7 @@ test('sync-hours writes staging, verifies read-back, and omits personal data fro
   assert.equal(JSON.stringify(res.body).includes('Иванов'), false);
   assert.equal(writtenReconciliation.at(-1)[0], 'verification');
   assert.equal(writtenReconciliation.at(-1)[1], 'OK');
+  assert.equal(JSON.stringify(writtenReconciliation).includes('Asia/Yekaterinburg'), true);
 });
 
 test('sync-hours returns 502 when Google read-back does not match ASHK', async () => {
@@ -115,4 +116,48 @@ test('sync-hours returns 502 when Google read-back does not match ASHK', async (
   assert.equal(res.body.error, 'Staging verification failed');
   assert.deepEqual(res.body.comparison, { ok: false, rowDiff: -1, hoursDiff: -3 });
   assert.equal(writtenReconciliation.at(-1)[1], 'ERROR');
+});
+
+test('cron GET accepts only CRON_SECRET and syncs the current Tyumen month', async () => {
+  let fetchedMonth;
+  let writtenRaw;
+  const handler = createSyncHoursHandler({
+    configuredKey: 'manual-secret',
+    cronKey: 'cron-secret',
+    now: () => new Date('2026-08-31T20:30:00.000Z'),
+    fetchReport: async (month) => {
+      fetchedMonth = month;
+      return REPORT_ROWS.map((row) => ({ ...row, FactStart: '2026-09-02 10:00:00' }));
+    },
+    writeRaw: async (values) => { writtenRaw = values; },
+    readRaw: async () => writtenRaw,
+    writeReconciliation: async () => {}
+  });
+  const req = { method: 'GET', headers: { authorization: 'Bearer cron-secret' } };
+  const res = responseRecorder();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(fetchedMonth, '2026-09');
+  assert.equal(res.body.month, '2026-09');
+});
+
+test('cron GET rejects the manual sync key', async () => {
+  let externalCalls = 0;
+  const handler = createSyncHoursHandler({
+    configuredKey: 'manual-secret',
+    cronKey: 'cron-secret',
+    fetchReport: async () => { externalCalls += 1; return REPORT_ROWS; },
+    writeRaw: async () => { externalCalls += 1; },
+    readRaw: async () => { externalCalls += 1; return []; },
+    writeReconciliation: async () => { externalCalls += 1; }
+  });
+  const req = { method: 'GET', headers: { authorization: 'Bearer manual-secret' } };
+  const res = responseRecorder();
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(externalCalls, 0);
 });
