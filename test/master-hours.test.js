@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   buildMasterReportUrl,
   extractReportRows,
+  filterRowsByFactPeriod,
   summarizeMasterHours
 } from '../lib/master-hours.js';
 
@@ -29,6 +30,20 @@ test('extractReportRows rejects an ASHK application error', () => {
   assert.throws(
     () => extractReportRows({ success: false, data: { Message: 'denied' } }),
     /denied/
+  );
+});
+
+test('filterRowsByFactPeriod excludes rows outside the requested local FactStart dates', () => {
+  const rows = [
+    { FactStart: '2026-07-31 20:00:00', Hours: 3 },
+    { FactStart: '2026-08-01 07:00:00', Hours: 3 },
+    { FactStart: '2026-08-29 22:00:00', Hours: 3 },
+    { FactStart: '2026-08-30 08:00:00', Hours: 3 }
+  ];
+
+  assert.deepEqual(
+    filterRowsByFactPeriod(rows, '2026-08-01T00:00:00', '2026-08-29T23:59:59'),
+    [rows[1], rows[2]]
   );
 });
 
@@ -79,4 +94,3 @@ test('summarizeMasterHours returns privacy-safe totals and type breakdowns', () 
   assert.equal(JSON.stringify(result).includes('Hidden'), false);
   assert.equal(JSON.stringify(result).includes('ContractName'), false);
 });
-
