@@ -1,6 +1,7 @@
 import {
   buildMasterReportUrl,
   extractReportRows,
+  filterRowsByFactPeriod,
   summarizeMasterHours
 } from '../lib/master-hours.js';
 
@@ -37,11 +38,14 @@ async function getReport(buildMode) {
   } catch {
     throw new Error('ASHK MasterWorkReportDetails returned invalid JSON');
   }
-  const rows = extractReportRows(payload);
+  const rawRows = extractReportRows(payload);
+  const rows = filterRowsByFactPeriod(rawRows, START_DATE, END_DATE);
   return {
     totalCount: Number.isFinite(Number(payload.total_count)) ? Number(payload.total_count) : null,
     position: Number.isFinite(Number(payload.pos)) ? Number(payload.pos) : null,
     totals: payload.totals ?? null,
+    rawRows: rawRows.length,
+    excludedOutsideFactPeriod: rawRows.length - rows.length,
     ...summarizeMasterHours(rows)
   };
 }
@@ -63,7 +67,7 @@ export default async function handler(req, res) {
       ok: true,
       mode: 'read_only_master_hours_report',
       source: 'GET /api/MasterWorkReportDetails',
-      period: { startDate: START_DATE, endDate: END_DATE, localTime: true },
+      period: { startDate: START_DATE, endDate: END_DATE, localTime: true, postFilter: 'FactStart local calendar date' },
       reports: { byOccupationType, byTrainingHourType }
     });
   } catch (error) {
