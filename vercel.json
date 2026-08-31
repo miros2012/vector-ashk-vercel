@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm test && mkdir -p public",
+  "buildCommand": "npm test && mkdir -p public && printf 'ok\\n' > public/index.txt",
   "outputDirectory": "public",
   "git": {
     "deploymentEnabled": {
