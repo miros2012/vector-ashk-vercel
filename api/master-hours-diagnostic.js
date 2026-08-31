@@ -6,7 +6,7 @@ import {
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const START_DATE = '2026-08-01T00:00:00';
-const END_DATE = '2026-08-31T23:59:59';
+const END_DATE = '2026-08-29T23:59:59';
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
@@ -74,4 +74,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
