@@ -120,6 +120,7 @@ async function writeValues(sheetName, range, values, minimumRows, minimumColumns
 
 const handler = createSyncHoursHandler({
   configuredKey: process.env.VECTOR_SYNC_KEY || process.env.TOCHKA_BRIDGE_KEY || '',
+  cronKey: process.env.CRON_SECRET || '',
   bootstrapHash: BOOTSTRAP_SYNC_KEY_SHA256,
   rawSheet: RAW_SHEET,
   reconciliationSheet: RECONCILIATION_SHEET,
