@@ -45,7 +45,8 @@ async function fetchLiveBalances() {
 async function readMirrorStatus(sheets) {
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${BALANCES_SHEET}'!A6:F10`
+    range: `'${BALANCES_SHEET}'!A6:F10`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
   });
   const rows = r.data.values || [];
   const timestamps = rows
