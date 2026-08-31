@@ -10,7 +10,9 @@ The backend, not Google Sheets, owns business-date interpretation. All timestamp
 
 ## Idempotency and refresh policy
 
-Rows are deduplicated by a stable business key built from immutable identifying fields and the normalized business timestamp. Re-running the same period produces the same ledger without duplicate rows. For the active month, automated refreshes re-fetch the month to date; during month close, the final three calendar days are always re-fetched before the month is considered closed so late ASHK corrections replace earlier values rather than append duplicates.
+Rows are deduplicated by a stable business key built from instructor, normalized business timestamp, contract, and session type. If ASHK returns multiple versions of the same stable key in one response, the later version wins so a corrected hours value replaces the earlier value. Re-running the same period produces the same logical ledger without appended duplicates.
+
+The production deployment schedules a daily Vercel Cron call to `/api/sync-hours` at `18:30 UTC` (`23:30` Tyumen). Cron uses `CRON_SECRET` and GET; manual/diagnostic synchronization remains POST-only with `VECTOR_SYNC_KEY` or `TOCHKA_BRIDGE_KEY`. Each daily run replaces the current Tyumen month in staging, so the final three days of a month are naturally re-fetched again on the month-closing run without partial-merge complexity.
 
 ## Reconciliation
 
@@ -18,7 +20,7 @@ The reconciliation sheet records source-row count, duplicate count, normalized-r
 
 ## Error handling
 
-The sync must fail closed when ASHK returns invalid JSON, a row cannot be assigned to the requested business month, Google credentials are missing, or the read-back metrics differ from source metrics. A failed verification must not be represented as `OK`.
+The sync must fail closed when ASHK returns invalid JSON, a row cannot be assigned to the requested business month, Google credentials are missing, cron authentication is missing/incorrect, or the read-back metrics differ from source metrics. A failed verification must not be represented as `OK`.
 
 ## Scope
 
@@ -26,4 +28,4 @@ This change covers only ASHK instructor-hour ingestion and reconciliation. It do
 
 ## Testing
 
-Pure unit tests cover timezone normalization, month-boundary behavior, stable keys, duplicate removal, reconciliation status, and the August control fixture. Handler tests cover authorization, fetch/write/read-back ordering, and verification failures.
+Pure unit tests cover timezone normalization, month-boundary behavior, stable keys, duplicate/correction handling, reconciliation status, and the August control fixture. Handler tests cover manual authorization, cron-only authorization, current Tyumen month selection, fetch/write/read-back ordering, and verification failures.
