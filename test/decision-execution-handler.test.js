@@ -118,3 +118,64 @@ test('inactive financial rule cannot be started', async () => {
   assert.match(res.body.error, /inactive/);
   assert.equal(writes, 0);
 });
+
+test('duplicate requestId is idempotent and does not write or append again', async () => {
+  let writes = 0;
+  let events = 0;
+  const handler = createDecisionExecutionHandler({
+    configuredKey: 'secret',
+    getDecision: async () => current({ executionStatus: 'В работе' }),
+    hasEvent: async (requestId) => requestId === 'cmd-123',
+    writeDecision: async () => { writes += 1; },
+    appendEvent: async () => { events += 1; }
+  });
+  const req = {
+    method: 'POST',
+    headers: { 'x-vector-key': 'secret' },
+    body: {
+      ruleId: 'DEC-CRIT-DUE',
+      action: 'start',
+      actor: 'Ответственный за финансы',
+      requestId: 'cmd-123'
+    }
+  };
+  const res = responseRecorder();
+
+  await handler(req, res);
+
+  assert.equal(res.code, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.idempotent, true);
+  assert.equal(writes, 0);
+  assert.equal(events, 0);
+});
+
+test('stale expectedExecutionStatus is rejected with conflict', async () => {
+  let writes = 0;
+  let events = 0;
+  const handler = createDecisionExecutionHandler({
+    configuredKey: 'secret',
+    getDecision: async () => current({ executionStatus: 'В работе' }),
+    writeDecision: async () => { writes += 1; },
+    appendEvent: async () => { events += 1; }
+  });
+  const req = {
+    method: 'POST',
+    headers: { 'x-vector-key': 'secret' },
+    body: {
+      ruleId: 'DEC-CRIT-DUE',
+      action: 'complete',
+      actor: 'Ответственный за финансы',
+      expectedExecutionStatus: 'Не начато'
+    }
+  };
+  const res = responseRecorder();
+
+  await handler(req, res);
+
+  assert.equal(res.code, 409);
+  assert.equal(res.body.ok, false);
+  assert.match(res.body.error, /stale/);
+  assert.equal(writes, 0);
+  assert.equal(events, 0);
+});
