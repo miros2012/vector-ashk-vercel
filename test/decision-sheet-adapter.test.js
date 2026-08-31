@@ -42,6 +42,7 @@ test('adapter commits decision state and history event in one Sheets batchUpdate
     startedAt: '2026-08-31T15:56:00.000Z'
   });
   await adapter.appendEvent({
+    eventId: 'cmd-123',
     ruleId: 'DEC-CRIT-DUE',
     type: 'Взято в работу',
     at: '2026-08-31T15:56:00.000Z',
@@ -64,7 +65,29 @@ test('adapter commits decision state and history event in one Sheets batchUpdate
     "'Решения'!R2:V2",
     "'История решений'!A5:K5"
   ]);
-  assert.equal(request.requestBody.data[3].values[0][0], 'EVT-NEW');
+  assert.equal(request.requestBody.data[3].values[0][0], 'cmd-123');
+});
+
+test('adapter exposes existing history event ids for idempotency checks', async () => {
+  const sheets = {
+    spreadsheets: {
+      values: {
+        batchGet: async () => ({
+          data: {
+            valueRanges: [
+              { values: [activeDecisionRow()] },
+              { values: [['cmd-123'], ['EVT-2']] }
+            ]
+          }
+        }),
+        batchUpdate: async () => ({ data: {} })
+      }
+    }
+  };
+  const adapter = createDecisionSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+  await adapter.getDecision('DEC-CRIT-DUE');
+  assert.equal(await adapter.hasEvent('cmd-123'), true);
+  assert.equal(await adapter.hasEvent('missing'), false);
 });
 
 test('adapter returns null for unknown rule without writing', async () => {
