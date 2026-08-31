@@ -1,5 +1,6 @@
 {
   "functions": {
+    "api/master-hours-diagnostic.js": { "maxDuration": 60 },
     "api/sync-payments.js": { "maxDuration": 60 }
   }
 }
