@@ -35,6 +35,23 @@ test('catalog engine evaluates enabled rules and preserves disabled rules as ina
   assert.equal(result[2].dueDate, '2026-09-03');
 });
 
+test('catalog engine derives an SLA deadline when evaluator has no intrinsic due date', () => {
+  const result = evaluateDecisionCatalog([
+    { ruleId: 'R-SLA', evaluatorKey: 'estimated_obligation_adjustments', enabled: true, version: 1, slaDays: 1 }
+  ], snapshot, now);
+
+  assert.equal(result[0].active, true);
+  assert.equal(result[0].dueDate, '2026-09-01');
+});
+
+test('catalog engine keeps intrinsic evaluator due date instead of replacing it with SLA', () => {
+  const result = evaluateDecisionCatalog([
+    { ruleId: 'R-DUE', evaluatorKey: 'critical_payment_due_3d', enabled: true, version: 1, slaDays: 0 }
+  ], snapshot, now);
+
+  assert.equal(result[0].dueDate, '2026-09-03');
+});
+
 test('catalog engine rejects duplicate rule ids', () => {
   assert.throws(
     () => evaluateDecisionCatalog([
