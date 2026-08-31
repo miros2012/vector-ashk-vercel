@@ -1,6 +1,6 @@
 {
   "name": "vector-ashk-backend",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
   },
   "engines": {"node": ">=20"},
   "dependencies": {
+    "@vercel/oidc": "^3.8.5",
     "googleapis": "^144.0.0"
   }
 }
