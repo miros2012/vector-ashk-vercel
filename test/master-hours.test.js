@@ -71,6 +71,11 @@ test('summarizeMasterHours returns privacy-safe totals and type breakdowns', () 
     planParallelHours: 2,
     firstFactStart: '2026-08-01T10:00:00',
     lastFactStart: '2026-08-31T18:00:00',
+    byFactDate: {
+      '2026-08-01': { rows: 1, hours: 4, parallelHours: 0 },
+      '2026-08-03': { rows: 1, hours: 2, parallelHours: 0.5 },
+      '2026-08-31': { rows: 1, hours: 1, parallelHours: 1 }
+    },
     bySessionType: {
       'ДОП': { rows: 1, hours: 1, planHours: 1, parallelHours: 1 },
       'Осн': { rows: 2, hours: 6, planHours: 7, parallelHours: 0.5 }
@@ -79,4 +84,3 @@ test('summarizeMasterHours returns privacy-safe totals and type breakdowns', () 
   assert.equal(JSON.stringify(result).includes('Hidden'), false);
   assert.equal(JSON.stringify(result).includes('ContractName'), false);
 });
-
