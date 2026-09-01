@@ -153,3 +153,17 @@ test('sheet adapter fails closed when any receivables total is negative', async 
     await assert.rejects(adapter.run(), /receivables summary total is invalid/);
   }
 });
+
+test('sheet adapter fails closed when receivables contract count is fractional', async () => {
+  const sheets = {
+    spreadsheets: {
+      values: {
+        batchGet: async () => ({
+          data: { valueRanges: minimalValueRanges([['ИТОГО', '', 173.5, 3193954, 5971811, 2777857]]) }
+        })
+      }
+    }
+  };
+  const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+  await assert.rejects(adapter.run(), /receivables summary total is invalid/);
+});
