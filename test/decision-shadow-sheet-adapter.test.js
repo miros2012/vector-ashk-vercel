@@ -21,7 +21,7 @@ function decisionRow(ruleId, dueDate, status, amount, linked) {
   return row;
 }
 
-test('sheet adapter builds a live financial snapshot and returns 4/4 shadow agreement using one read batch', async () => {
+test('sheet adapter includes aggregate receivables in the live snapshot without changing existing decisions', async () => {
   const requests = [];
   const sheets = {
     spreadsheets: {
@@ -42,6 +42,7 @@ test('sheet adapter builds a live financial snapshot and returns 4/4 shadow agre
                   [46270, 'Админ', '', '', '', 500000, 'Критический', 'Оценка', '', '', '', '', '', 'ADMIN-2026-08'],
                   [46270, 'Налоги', '', '', '', 0, 'Высокий', 'Требует расчёта', '', '', '', '', '', 'TAX-RESERVE']
                 ] },
+                { values: [['ИТОГО', '', 173, 3193954, 5971811, 2777857]] },
                 { values: catalogRows() },
                 { values: [
                   decisionRow('DEC-CASH-GAP', '', 'Неактивно', 0, ''),
@@ -71,9 +72,16 @@ test('sheet adapter builds a live financial snapshot and returns 4/4 shadow agre
     "'Прогноз 30 дней'!D1:H2",
     "'Корректировки обязательств'!B2:F500",
     "'Обязательства'!A2:N500",
+    "'АШК_Дебиторка_Свод__vercel'!A2:F2",
     "'Каталог правил'!A2:N200",
     "'Решения'!A2:Q200"
   ]);
+  assert.deepEqual(result.snapshot.receivables, {
+    contracts: 173,
+    debt: 3193954,
+    sales: 5971811,
+    paid: 2777857
+  });
   assert.equal(result.comparison.matches, 4);
   assert.equal(result.comparison.total, 4);
   assert.deepEqual(result.comparison.mismatches, []);
