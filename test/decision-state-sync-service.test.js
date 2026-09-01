@@ -99,3 +99,59 @@ test('commit fails closed when post-write shadow verification drifts', async () 
 
   await assert.rejects(() => sync({ dryRun: false }), /post-write shadow verification failed/);
 });
+
+test('verification drift restores original formulas in a rollback batch', async () => {
+  let shadowRuns = 0;
+  const reads = [];
+  const batches = [];
+  const events = [];
+  const sync = createDecisionStateSynchronizer({
+    spreadsheetId: 'sheet-1',
+    runShadow: async () => {
+      shadowRuns += 1;
+      if (shadowRuns === 1) return { comparison: matchingComparison() };
+      return { comparison: { total: 2, matches: 1, mismatches: [{ ruleId: 'DEC-EST-ADJ' }], results: [] } };
+    },
+    sheets: {
+      spreadsheets: {
+        values: {
+          batchGet: async (request) => {
+            events.push('backup');
+            reads.push(request);
+            return {
+              data: {
+                valueRanges: request.ranges.map((range, index) => ({
+                  range,
+                  values: [[`=ORIGINAL_${index}`]]
+                }))
+              }
+            };
+          },
+          batchUpdate: async (request) => {
+            events.push(request.requestBody.valueInputOption === 'RAW' ? 'write' : 'rollback');
+            batches.push(request);
+            return { data: {} };
+          }
+        }
+      }
+    },
+    writesEnabled: true
+  });
+
+  await assert.rejects(() => sync({ dryRun: false }), /post-write shadow verification failed/);
+
+  assert.equal(reads.length, 1);
+  assert.deepEqual(reads[0].ranges, [
+    "'Решения'!H3", "'Решения'!J3", "'Решения'!M3", "'Решения'!P3",
+    "'Решения'!H2", "'Решения'!J2", "'Решения'!M2", "'Решения'!P2"
+  ]);
+  assert.equal(reads[0].valueRenderOption, 'FORMULA');
+  assert.deepEqual(events, ['backup', 'write', 'rollback']);
+  assert.equal(batches.length, 2);
+  assert.equal(batches[0].requestBody.valueInputOption, 'RAW');
+  assert.equal(batches[1].requestBody.valueInputOption, 'USER_ENTERED');
+  assert.deepEqual(batches[1].requestBody.data[0], {
+    range: "'Решения'!H3",
+    values: [['=ORIGINAL_0']]
+  });
+});
