@@ -180,3 +180,65 @@ test('verification drift restores original formulas in a rollback batch', async 
     values: [['=ORIGINAL_0']]
   });
 });
+
+test('primary write failure still attempts formula rollback before returning failure', async () => {
+  const events = [];
+  let writeCalls = 0;
+  const sync = createDecisionStateSynchronizer({
+    spreadsheetId: 'sheet-1',
+    runShadow: async () => ({ comparison: matchingComparison() }),
+    sheets: {
+      spreadsheets: {
+        values: {
+          batchGet: async (request) => {
+            events.push('backup');
+            return formulaBackup(request);
+          },
+          batchUpdate: async (request) => {
+            writeCalls += 1;
+            if (writeCalls === 1) {
+              events.push('write-failed');
+              throw new Error('transport uncertainty');
+            }
+            events.push('rollback');
+            assert.equal(request.requestBody.valueInputOption, 'USER_ENTERED');
+            return { data: {} };
+          }
+        }
+      }
+    },
+    writesEnabled: true
+  });
+
+  await assert.rejects(() => sync({ dryRun: false }), /decision state write failed; rollback restored/);
+  assert.deepEqual(events, ['backup', 'write-failed', 'rollback']);
+});
+
+test('rollback failure is surfaced explicitly and can never look like a successful sync', async () => {
+  let shadowRuns = 0;
+  let batchCalls = 0;
+  const sync = createDecisionStateSynchronizer({
+    spreadsheetId: 'sheet-1',
+    runShadow: async () => {
+      shadowRuns += 1;
+      if (shadowRuns === 1) return { comparison: matchingComparison() };
+      return { comparison: { total: 2, matches: 1, mismatches: [{ ruleId: 'DEC-EST-ADJ' }], results: [] } };
+    },
+    sheets: {
+      spreadsheets: {
+        values: {
+          batchGet: async (request) => formulaBackup(request),
+          batchUpdate: async () => {
+            batchCalls += 1;
+            if (batchCalls === 2) throw new Error('rollback transport failure');
+            return { data: {} };
+          }
+        }
+      }
+    },
+    writesEnabled: true
+  });
+
+  await assert.rejects(() => sync({ dryRun: false }), /post-write shadow verification failed and rollback failed/);
+  assert.equal(batchCalls, 2);
+});
