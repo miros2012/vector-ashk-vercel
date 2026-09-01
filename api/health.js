@@ -1,30 +1,4 @@
-import syncHours from './sync-hours.js';
-
-// Controlled preview v4: plain health GET performs one-shot HOURS live verification.
-function isControlledHoursPreview() {
-  return process.env.VERCEL_ENV === 'preview' &&
-    String(process.env.VERCEL_GIT_COMMIT_REF || '').startsWith('preview-nightly-finance-orchestrator-v4');
-}
-
-export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store');
-
-  if (isControlledHoursPreview()) {
-    const secret = String(process.env.CRON_SECRET || '').trim();
-    if (!secret) {
-      return res.status(503).json({ ok: false, error: 'preview cron secret missing' });
-    }
-
-    req.method = 'GET';
-    req.body = {};
-    req.query = {};
-    req.headers = {
-      ...(req.headers || {}),
-      authorization: `Bearer ${secret}`
-    };
-    return syncHours(req, res);
-  }
-
+export default function handler(req, res) {
   const googleReady = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY);
   const oidcReady = Boolean(process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL);
   res.status(200).json({
