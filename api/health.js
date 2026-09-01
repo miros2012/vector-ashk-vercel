@@ -1,5 +1,6 @@
 import syncHours from './sync-hours.js';
 
+// Controlled preview v4: one-shot HOURS live verification only.
 function isControlledHoursPreview() {
   return process.env.VERCEL_ENV === 'preview' &&
     String(process.env.VERCEL_GIT_COMMIT_REF || '').startsWith('preview-nightly-finance-orchestrator-v4');
