@@ -20,27 +20,43 @@ async function request(path) {
   return json;
 }
 
-const startDate = '2026-08-01T00:00:00';
-const endDate = '2026-08-30T23:59:59';
-const saleJson = await request(`/api/SaleExternalList?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`);
-const sales = Array.isArray(saleJson?.data) ? saleJson.data : [];
-const studentIds = [...new Set(sales.map(x => Number(x?.StudentId)).filter(Number.isFinite))].slice(0, 3);
-if (!studentIds.length) throw new Error('No StudentId in SaleExternalList');
-
-const required = ['Id','OwnerName','TrainingRoomName','SalesSum','Debt','OverDebt','DebitSum','ContractDate','ContractName','State'];
-const samples = [];
-for (const studentId of studentIds) {
-  const json = await request(`/api/StudentExternalGet?param=${encodeURIComponent(studentId)}`);
-  const item = json?.data && typeof json.data === 'object' && !Array.isArray(json.data) ? json.data : json;
-  const keys = Object.keys(item || {}).sort();
-  const present = Object.fromEntries(required.map(key => [key, Object.prototype.hasOwnProperty.call(item || {}, key)]));
-  const numericTypes = Object.fromEntries(['SalesSum','Debt','OverDebt','DebitSum'].map(key => [key, typeof item?.[key]]));
-  samples.push({ keys, present, numericTypes });
-  await new Promise(resolve => setTimeout(resolve, 250));
+function asArray(json) {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.data)) return json.data;
+  return [];
 }
 
-console.log('ASHK_STUDENT_RECEIVABLES_SCHEMA_OK', JSON.stringify({
-  sampleCount: samples.length,
-  required,
-  samples
+const groupJson = await request('/api/StudyGroupList');
+const groups = asArray(groupJson);
+if (!groups.length) throw new Error('StudyGroupList returned no active groups');
+
+let selected = null;
+let students = [];
+for (const group of groups.slice(0, 12)) {
+  const id = Number(group?.Id);
+  if (!Number.isFinite(id)) continue;
+  const listJson = await request(`/api/StudentExternalList?StudyGroupId=${encodeURIComponent(id)}`);
+  const rows = asArray(listJson);
+  if (rows.length) {
+    selected = group;
+    students = rows;
+    break;
+  }
+}
+if (!students.length) throw new Error('No contracts found in sampled active groups');
+
+const first = students[0] || {};
+const itemKeys = Object.keys(first).sort();
+const receivableKeys = itemKeys.filter(k => /(debt|debit|sales|paid|owner|trainingroom|contract|state|mainproduct)/i.test(k));
+console.log('ASHK_STUDENT_LIST_SCHEMA_OK', JSON.stringify({
+  activeGroupCount: groups.length,
+  sampledGroupContractCount: students.length,
+  groupState: selected?.State ?? null,
+  itemKeys,
+  receivableKeys,
+  hasDebt: Object.prototype.hasOwnProperty.call(first, 'Debt'),
+  hasOverDebt: Object.prototype.hasOwnProperty.call(first, 'OverDebt'),
+  hasSalesSum: Object.prototype.hasOwnProperty.call(first, 'SalesSum'),
+  hasOwnerName: Object.prototype.hasOwnProperty.call(first, 'OwnerName'),
+  hasTrainingRoomName: Object.prototype.hasOwnProperty.call(first, 'TrainingRoomName')
 }));
