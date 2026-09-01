@@ -88,12 +88,25 @@ test('businessDateFromFactStart rejects impossible offset-less local timestamps'
   assert.equal(businessDateFromFactStart('2026-02-30 10:00:00'), '');
 });
 
-test('buildHoursImportWorkbook rejects rows outside the requested Tyumen business month', () => {
+test('buildHoursImportWorkbook ignores ASHK boundary spillover outside the requested business month and audits it', () => {
+  const result = buildHoursImportWorkbook([
+    API_ROWS[0],
+    { ...API_ROWS[0], ContractName: 'B-103', FactStart: '2026-09-01 06:00:00', Hours: 3 }
+  ], { month: '2026-08', loadedAt: '2026-09-01T12:00:00.000Z' });
+
+  assert.equal(result.sourceRows, 2);
+  assert.equal(result.outOfMonthRows, 1);
+  assert.equal(result.metrics.rows, 1);
+  assert.equal(result.metrics.hours, 3);
+  assert.equal(JSON.stringify(result.reconciliationValues).includes('Out-of-month source rows ignored'), true);
+});
+
+test('buildHoursImportWorkbook still rejects malformed ASHK timestamps', () => {
   assert.throws(
     () => buildHoursImportWorkbook([
-      { ...API_ROWS[0], FactStart: '2026-08-31T20:30:00Z' }
+      { ...API_ROWS[0], FactStart: '2026-08-99 25:61:61' }
     ], { month: '2026-08', loadedAt: '2026-08-31T10:00:00.000Z' }),
-    /outside requested month/
+    /invalid FactStart/
   );
 });
 
