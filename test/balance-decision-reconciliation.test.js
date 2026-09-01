@@ -16,7 +16,7 @@ test('live balance refresh wires the shared Decision Engine reconciliation stack
 test('decision reconciliation runs only after a successful live mirror, not on cached return path', () => {
   const cacheReturn = source.indexOf("source: 'cached_live'");
   const mirror = source.indexOf('await mirrorToGoogleSheet(normalized, sheets)');
-  const reconcile = source.indexOf("trigger: 'balances'");
+  const reconcile = source.indexOf('decisionReconciliation = await reconcileDecisionState(sheets)');
 
   assert.ok(cacheReturn >= 0, 'cached balance path must remain present');
   assert.ok(mirror > cacheReturn, 'live mirror must happen after cached early-return block');
