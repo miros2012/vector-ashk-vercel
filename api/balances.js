@@ -6,6 +6,9 @@ import { createDecisionStateSynchronizer } from '../lib/decision-state-sync-serv
 import { createDecisionReconciler } from '../lib/decision-reconciliation.js';
 import { createDecisionReconciliationAudit } from '../lib/decision-reconciliation-audit.js';
 import { createDecisionReconciliationAuditAppender } from '../lib/decision-reconciliation-audit-sheet.js';
+import { createDecisionEventApi } from '../lib/decision-event-api.js';
+import { createOwnerActionRequestSheetAdapter } from '../lib/owner-action-request-sheet-adapter.js';
+import { createOwnerActionRequestProcessor, invokeDecisionHandler } from '../lib/owner-action-request-service.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const BALANCES_SHEET = 'Точка_Остатки';
@@ -127,6 +130,25 @@ async function reconcileDecisionState(sheets) {
   return reconcile({ trigger: 'balances' });
 }
 
+async function processOwnerActionControl(sheets) {
+  const configuredKey = process.env.VECTOR_SYNC_KEY || process.env.TOCHKA_BRIDGE_KEY || '';
+  if (!configuredKey) return { processed:false, ok:false, status:503 };
+  const control = createOwnerActionRequestSheetAdapter({ sheets, spreadsheetId:SPREADSHEET_ID });
+  const decisionHandler = createDecisionEventApi({
+    sheets,
+    spreadsheetId: SPREADSHEET_ID,
+    configuredKey
+  });
+  const processRequest = createOwnerActionRequestProcessor({
+    readPending: control.readPending,
+    markSent: control.markSent,
+    executeCommand: command => invokeDecisionHandler(decisionHandler, configuredKey, command),
+    markSuccess: control.markSuccess,
+    markError: control.markError
+  });
+  return processRequest();
+}
+
 function failedReconciliationStatus() {
   return {
     ok: false,
@@ -174,13 +196,23 @@ export default async function handler(req, res) {
       decisionReconciliation = failedReconciliationStatus();
     }
 
+    let ownerActionRequest = { processed:false, ok:true };
+    try {
+      ownerActionRequest = await processOwnerActionControl(sheets);
+    } catch (error) {
+      console.error('balances-owner-action-request:', error);
+      ownerActionRequest = { processed:false, ok:false, status:500 };
+    }
+
     console.log(JSON.stringify({
       event: 'tochka-balances-refresh',
       liveCount: normalized.summary.liveCount,
       mirroredAt: mirror.mirroredAt,
       trigger: req.method === 'POST' ? String(req.headers?.['x-vector-refresh'] || 'post') : 'get',
       decisionReconciliationOk: decisionReconciliation.ok,
-      decisionReconciliationMode: decisionReconciliation.mode
+      decisionReconciliationMode: decisionReconciliation.mode,
+      ownerActionProcessed: Boolean(ownerActionRequest.processed),
+      ownerActionOk: Boolean(ownerActionRequest.ok)
     }));
 
     return res.status(200).json({
@@ -189,7 +221,12 @@ export default async function handler(req, res) {
       refreshed: true,
       liveCount: normalized.summary.liveCount,
       lastUpdated: mirror.mirroredAt,
-      decisionReconciliation
+      decisionReconciliation,
+      ownerActionRequest: {
+        processed: Boolean(ownerActionRequest.processed),
+        ok: Boolean(ownerActionRequest.ok),
+        status: ownerActionRequest.status ?? null
+      }
     });
   } catch (e) {
     console.error('balances:', e);
