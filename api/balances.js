@@ -1,6 +1,9 @@
 import { google } from 'googleapis';
 import { getVercelOidcToken } from '@vercel/oidc';
 import { normalizeBalances } from '../lib/tochka-balances.js';
+import { createDecisionShadowSheetAdapter } from '../lib/decision-shadow-sheet-adapter.js';
+import { createDecisionStateSynchronizer } from '../lib/decision-state-sync-service.js';
+import { createDecisionReconciler } from '../lib/decision-reconciliation.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const BALANCES_SHEET = 'Точка_Остатки';
@@ -96,6 +99,36 @@ async function mirrorToGoogleSheet(normalized, sheets) {
   return { mirroredAt: now };
 }
 
+async function reconcileDecisionState(sheets) {
+  const shadow = createDecisionShadowSheetAdapter({
+    sheets,
+    spreadsheetId: SPREADSHEET_ID
+  });
+  const synchronize = createDecisionStateSynchronizer({
+    sheets,
+    spreadsheetId: SPREADSHEET_ID,
+    runShadow: () => shadow.run(),
+    writesEnabled: process.env.DECISION_STATE_WRITES_ENABLED === 'true'
+  });
+  const reconcile = createDecisionReconciler({
+    synchronize,
+    writesEnabled: process.env.DECISION_STATE_WRITES_ENABLED === 'true'
+  });
+  return reconcile({ trigger: 'balances' });
+}
+
+function failedReconciliationStatus() {
+  return {
+    ok: false,
+    mode: 'error',
+    verified: false,
+    total: 0,
+    matches: 0,
+    writeCount: 0,
+    trigger: 'balances'
+  };
+}
+
 export default async function handler(req, res) {
   if (!['GET', 'POST'].includes(req.method)) {
     return res.status(405).json({ ok: false, error: 'Use GET or POST' });
@@ -123,11 +156,21 @@ export default async function handler(req, res) {
     const normalized = normalizeBalances(raw);
     const mirror = await mirrorToGoogleSheet(normalized, sheets);
 
+    let decisionReconciliation;
+    try {
+      decisionReconciliation = await reconcileDecisionState(sheets);
+    } catch (error) {
+      console.error('balances-decision-reconciliation:', error);
+      decisionReconciliation = failedReconciliationStatus();
+    }
+
     console.log(JSON.stringify({
       event: 'tochka-balances-refresh',
       liveCount: normalized.summary.liveCount,
       mirroredAt: mirror.mirroredAt,
-      trigger: req.method === 'POST' ? String(req.headers?.['x-vector-refresh'] || 'post') : 'get'
+      trigger: req.method === 'POST' ? String(req.headers?.['x-vector-refresh'] || 'post') : 'get',
+      decisionReconciliationOk: decisionReconciliation.ok,
+      decisionReconciliationMode: decisionReconciliation.mode
     }));
 
     return res.status(200).json({
@@ -135,7 +178,8 @@ export default async function handler(req, res) {
       source: 'tochka_live',
       refreshed: true,
       liveCount: normalized.summary.liveCount,
-      lastUpdated: mirror.mirroredAt
+      lastUpdated: mirror.mirroredAt,
+      decisionReconciliation
     });
   } catch (e) {
     console.error('balances:', e);
