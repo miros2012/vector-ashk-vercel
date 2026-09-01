@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node diagnostic-receivables.js",
   "git": {
     "deploymentEnabled": {
       "*": false,
