@@ -4,9 +4,7 @@
     "deploymentEnabled": {
       "*": false,
       "**/*": false,
-      "main": true,
-      "preview-*": true,
-      "release-*": true
+      "main": true
     }
   },
   "functions": {
