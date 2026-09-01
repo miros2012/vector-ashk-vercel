@@ -3,8 +3,11 @@ import { createDecisionShadowSheetAdapter } from '../lib/decision-shadow-sheet-a
 import { createDecisionStateSynchronizer } from '../lib/decision-state-sync-service.js';
 import { createDecisionReconciler } from '../lib/decision-reconciliation.js';
 import { createDecisionDailyReconciliationHandler } from '../lib/decision-daily-reconciliation-handler.js';
+import { createDecisionReconciliationAudit } from '../lib/decision-reconciliation-audit.js';
+import { createDecisionReconciliationAuditAppender } from '../lib/decision-reconciliation-audit-sheet.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
+const DECISION_AUDIT_SHEET = 'Rule Engine Audit';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -38,7 +41,13 @@ function getReconcile() {
         runShadow: () => shadow.run(),
         writesEnabled
       });
-      return createDecisionReconciler({ synchronize, writesEnabled });
+      const appendRow = createDecisionReconciliationAuditAppender({
+        sheets,
+        spreadsheetId: SPREADSHEET_ID,
+        sheetName: DECISION_AUDIT_SHEET
+      });
+      const audit = createDecisionReconciliationAudit({ appendRow });
+      return createDecisionReconciler({ synchronize, writesEnabled, audit });
     });
   }
   return reconcilePromise;
