@@ -22,6 +22,17 @@ function matchingComparison() {
   };
 }
 
+function formulaBackup(request) {
+  return {
+    data: {
+      valueRanges: request.ranges.map((range, index) => ({
+        range,
+        values: [[`=ORIGINAL_${index}`]]
+      }))
+    }
+  };
+}
+
 test('dry-run returns planned writes without modifying Sheets', async () => {
   let writes = 0;
   const sync = createDecisionStateSynchronizer({
@@ -54,7 +65,8 @@ test('commit is blocked unless server-side writes flag is enabled', async () => 
   assert.equal(writes, 0);
 });
 
-test('enabled commit uses one atomic batch and verifies a second shadow read', async () => {
+test('enabled commit backs up formulas, uses one atomic write batch, and verifies a second shadow read', async () => {
+  const batchGets = [];
   const batchUpdates = [];
   let shadowRuns = 0;
   const sync = createDecisionStateSynchronizer({
@@ -66,6 +78,10 @@ test('enabled commit uses one atomic batch and verifies a second shadow read', a
     sheets: {
       spreadsheets: {
         values: {
+          batchGet: async (request) => {
+            batchGets.push(request);
+            return formulaBackup(request);
+          },
           batchUpdate: async (request) => { batchUpdates.push(request); return { data: {} }; }
         }
       }
@@ -75,6 +91,8 @@ test('enabled commit uses one atomic batch and verifies a second shadow read', a
 
   const result = await sync({ dryRun: false });
 
+  assert.equal(batchGets.length, 1);
+  assert.equal(batchGets[0].valueRenderOption, 'FORMULA');
   assert.equal(batchUpdates.length, 1);
   assert.equal(batchUpdates[0].spreadsheetId, 'sheet-1');
   assert.equal(batchUpdates[0].requestBody.valueInputOption, 'RAW');
@@ -86,6 +104,7 @@ test('enabled commit uses one atomic batch and verifies a second shadow read', a
 
 test('commit fails closed when post-write shadow verification drifts', async () => {
   let shadowRuns = 0;
+  const batchUpdates = [];
   const sync = createDecisionStateSynchronizer({
     spreadsheetId: 'sheet-1',
     runShadow: async () => {
@@ -93,11 +112,24 @@ test('commit fails closed when post-write shadow verification drifts', async () 
       if (shadowRuns === 1) return { comparison: matchingComparison() };
       return { comparison: { total: 2, matches: 1, mismatches: [{ ruleId: 'DEC-EST-ADJ' }], results: [] } };
     },
-    sheets: { spreadsheets: { values: { batchUpdate: async () => ({ data: {} }) } } },
+    sheets: {
+      spreadsheets: {
+        values: {
+          batchGet: async (request) => formulaBackup(request),
+          batchUpdate: async (request) => {
+            batchUpdates.push(request);
+            return { data: {} };
+          }
+        }
+      }
+    },
     writesEnabled: true
   });
 
   await assert.rejects(() => sync({ dryRun: false }), /post-write shadow verification failed/);
+  assert.equal(batchUpdates.length, 2);
+  assert.equal(batchUpdates[0].requestBody.valueInputOption, 'RAW');
+  assert.equal(batchUpdates[1].requestBody.valueInputOption, 'USER_ENTERED');
 });
 
 test('verification drift restores original formulas in a rollback batch', async () => {
@@ -118,14 +150,7 @@ test('verification drift restores original formulas in a rollback batch', async 
           batchGet: async (request) => {
             events.push('backup');
             reads.push(request);
-            return {
-              data: {
-                valueRanges: request.ranges.map((range, index) => ({
-                  range,
-                  values: [[`=ORIGINAL_${index}`]]
-                }))
-              }
-            };
+            return formulaBackup(request);
           },
           batchUpdate: async (request) => {
             events.push(request.requestBody.valueInputOption === 'RAW' ? 'write' : 'rollback');
