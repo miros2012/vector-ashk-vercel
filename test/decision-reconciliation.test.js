@@ -65,6 +65,33 @@ test('reconciler requests guarded commit when backend writes are enabled', async
   });
 });
 
+test('reconciler records aggregate audit after a successful run', async () => {
+  const audited = [];
+  const reconcile = createDecisionReconciler({
+    writesEnabled: false,
+    synchronize: async () => ({ ok: true, dryRun: true, total: 4, matchesBefore: 4, writeCount: 16, verified: false }),
+    audit: { record: async (value) => audited.push(value) }
+  });
+
+  const result = await reconcile({ trigger: 'balances' });
+
+  assert.equal(audited.length, 1);
+  assert.deepEqual(audited[0], result);
+});
+
+test('audit recording failure never fails reconciliation', async () => {
+  const reconcile = createDecisionReconciler({
+    writesEnabled: false,
+    synchronize: async () => ({ ok: true, dryRun: true, total: 4, matchesBefore: 4, writeCount: 16, verified: false }),
+    audit: { record: async () => { throw new Error('audit unavailable'); } },
+    logger: { error: () => {} }
+  });
+
+  const result = await reconcile({ trigger: 'balances' });
+  assert.equal(result.ok, true);
+  assert.equal(result.matches, 4);
+});
+
 test('reconciler logs internal failure but throws only a generic public error', async () => {
   const logged = [];
   const reconcile = createDecisionReconciler({
