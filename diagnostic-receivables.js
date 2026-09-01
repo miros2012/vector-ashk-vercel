@@ -9,18 +9,28 @@ const headers = {
 };
 
 async function request(path) {
-  const r = await fetch(`${BASE}${path}`, { headers });
-  const text = await r.text();
-  let json = null;
-  try { json = JSON.parse(text); } catch {}
-  return { r, json, text };
+  try {
+    const r = await fetch(`${BASE}${path}`, { headers, signal: AbortSignal.timeout(4000) });
+    const text = await r.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch {}
+    return { r, json, text, timedOut: false };
+  } catch (error) {
+    return {
+      r: { status: 599, ok: false },
+      json: null,
+      text: String(error?.name || error?.message || error),
+      timedOut: error?.name === 'TimeoutError'
+    };
+  }
 }
 
 function messageOf(json, text) {
   return String(json?.data?.Message ?? json?.Message ?? text ?? '').replace(/\s+/g, ' ').slice(0, 180);
 }
 
-function classify(status, message) {
+function classify(status, message, timedOut) {
+  if (timedOut) return 'timeout';
   const m = String(message || '').toLowerCase();
   if (/invalid command name|unknown api call|unknown command/.test(m)) return 'unknown';
   if (status === 404) return 'unknown';
@@ -66,13 +76,14 @@ for (const name of names) {
   ];
   let best = null;
   for (const path of variants) {
-    const { r, json, text } = await request(path);
+    const { r, json, text, timedOut } = await request(path);
     const message = messageOf(json, text);
-    const classification = classify(r.status, message);
+    const classification = classify(r.status, message, timedOut);
     const row = { name, path: path.replace(String(sampleStudentId), ':studentId'), status: r.status, classification, message };
-    if (!best || (best.classification === 'unknown' && classification === 'recognized') || (best.status >= 400 && r.status < 400)) best = row;
+    if (!best || (best.classification === 'unknown' && classification !== 'unknown') || (best.status >= 400 && r.status < 400)) best = row;
     if (r.status < 400 && json?.success !== false) break;
-    await new Promise(resolve => setTimeout(resolve, 200));
+    if (timedOut) break;
+    await new Promise(resolve => setTimeout(resolve, 120));
   }
   results.push(best);
 }
@@ -80,5 +91,6 @@ for (const name of names) {
 console.log('ASHK_STUDENT_LINK_DISCOVERY_OK', JSON.stringify({
   candidates: results.length,
   recognized: results.filter(x => x?.classification === 'recognized'),
+  timeouts: results.filter(x => x?.classification === 'timeout').map(x => x.name),
   unknownCount: results.filter(x => x?.classification === 'unknown').length
 }));
