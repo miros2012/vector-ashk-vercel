@@ -27,3 +27,12 @@ test('nightly orchestrator has enough duration for sequential HOURS and decision
   const duration = Number(config.functions?.['api/nightly-finance-orchestrator.js']?.maxDuration || 0);
   assert.ok(duration >= 120, `nightly orchestrator maxDuration must be at least 120s, got ${duration}s`);
 });
+
+test('Hobby Vercel auto-deploys only main to avoid preview build-rate exhaustion', () => {
+  const enabled = config.git?.deploymentEnabled || {};
+  assert.equal(enabled.main, true, 'main must remain deployable');
+  assert.equal(enabled['*'], false, 'all unnamed branches must stay disabled');
+  assert.equal(enabled['**/*'], false, 'nested branches must stay disabled');
+  assert.equal(enabled['preview-*'], undefined, 'preview branches must not auto-deploy');
+  assert.equal(enabled['release-*'], undefined, 'release branches must not auto-deploy');
+});
