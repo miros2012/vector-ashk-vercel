@@ -21,7 +21,7 @@ export default async function handler(req, res) {
       });
     }
 
-    if (previewGate === 'execute') {
+    if (previewGate === 'verify') {
       if (!secret) {
         return res.status(503).json({ ok: false, error: 'preview cron secret missing' });
       }
