@@ -12,7 +12,7 @@ function responseRecorder() {
   };
 }
 
-test('receivables sync writes positive-debt detail and matching manager/branch summary', async () => {
+test('receivables sync writes positive-debt detail, verifies readback, and returns matching summary', async () => {
   const writes = { detail: null, summary: null };
   const fetchCurrent = async () => ({
     groups: [
@@ -33,7 +33,9 @@ test('receivables sync writes positive-debt detail and matching manager/branch s
   const handler = createReceivablesSyncHandler({
     fetchCurrent,
     writeDetail: async values => { writes.detail = values; },
-    writeSummary: async values => { writes.summary = values; }
+    writeSummary: async values => { writes.summary = values; },
+    readDetail: async () => writes.detail,
+    readSummary: async () => writes.summary
   });
 
   const res = responseRecorder();
@@ -41,6 +43,7 @@ test('receivables sync writes positive-debt detail and matching manager/branch s
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body.ok, true);
+  assert.equal(res.body.verified, true);
   assert.deepEqual(res.body.total, { contracts: 2, debt: 50000, salesSum: 180000, debitSum: 130000 });
   assert.equal(JSON.stringify(res.body).includes('Менеджер А'), false);
   assert.equal(writes.detail.length, 3);
@@ -52,12 +55,44 @@ test('receivables sync writes positive-debt detail and matching manager/branch s
   assert.equal(writes.summary.some(row => row[0] === 'ФИЛИАЛ' && row[1] === 'Гондатти' && row[3] === 20000), true);
 });
 
+test('receivables sync fails closed when detail or summary readback does not match source totals', async () => {
+  const expectedDetail = [
+    ['StudentId','GroupId','Филиал','Менеджер','Договор','Дата договора','Статус','Продажи','Оплачено','Долг','Долг основной услуги','Основная услуга','Последняя оплата'],
+    [101,10,'Герцена','Менеджер А','','','',100000,70000,30000,0,'','']
+  ];
+  const expectedSummary = [
+    ['Тип','Объект','Договоров','Долг','Продажи','Оплачено'],
+    ['ИТОГО','',1,30000,100000,70000]
+  ];
+
+  const handler = createReceivablesSyncHandler({
+    fetchCurrent: async () => ({
+      groups: [{ Id: 10, TrainingRoomName: 'Герцена' }],
+      contractsByGroup: new Map([[10, [
+        { Id: 101, OwnerName: 'Менеджер А', Debt: 30000, SalesSum: 100000, DebitSum: 70000 }
+      ]]])
+    }),
+    writeDetail: async () => {},
+    writeSummary: async () => {},
+    readDetail: async () => expectedDetail,
+    readSummary: async () => expectedSummary.map((row, index) => index === 1 ? ['ИТОГО','',1,29999,100000,70000] : row)
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET' }, res);
+
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(res.body, { ok: false, error: 'Receivables staging verification failed' });
+});
+
 test('receivables sync rejects non-GET without external calls', async () => {
   let calls = 0;
   const handler = createReceivablesSyncHandler({
     fetchCurrent: async () => { calls += 1; return { groups: [], contractsByGroup: new Map() }; },
     writeDetail: async () => {},
-    writeSummary: async () => {}
+    writeSummary: async () => {},
+    readDetail: async () => [],
+    readSummary: async () => []
   });
 
   const res = responseRecorder();
@@ -71,7 +106,9 @@ test('receivables sync returns generic 500 without leaking ASHK details', async 
   const handler = createReceivablesSyncHandler({
     fetchCurrent: async () => { throw new Error('private student or ASHK detail'); },
     writeDetail: async () => {},
-    writeSummary: async () => {}
+    writeSummary: async () => {},
+    readDetail: async () => [],
+    readSummary: async () => []
   });
 
   const res = responseRecorder();
