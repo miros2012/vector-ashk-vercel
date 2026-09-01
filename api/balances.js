@@ -4,9 +4,12 @@ import { normalizeBalances } from '../lib/tochka-balances.js';
 import { createDecisionShadowSheetAdapter } from '../lib/decision-shadow-sheet-adapter.js';
 import { createDecisionStateSynchronizer } from '../lib/decision-state-sync-service.js';
 import { createDecisionReconciler } from '../lib/decision-reconciliation.js';
+import { createDecisionReconciliationAudit } from '../lib/decision-reconciliation-audit.js';
+import { createDecisionReconciliationAuditAppender } from '../lib/decision-reconciliation-audit-sheet.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const BALANCES_SHEET = 'Точка_Остатки';
+const DECISION_AUDIT_SHEET = 'Rule Engine Audit';
 const DEFAULT_BRIDGE_URL = 'https://tochka-realtime-bridge.onrender.com';
 const FRESH_MS = 30000;
 
@@ -110,9 +113,16 @@ async function reconcileDecisionState(sheets) {
     runShadow: () => shadow.run(),
     writesEnabled: process.env.DECISION_STATE_WRITES_ENABLED === 'true'
   });
+  const appendRow = createDecisionReconciliationAuditAppender({
+    sheets,
+    spreadsheetId: SPREADSHEET_ID,
+    sheetName: DECISION_AUDIT_SHEET
+  });
+  const audit = createDecisionReconciliationAudit({ appendRow });
   const reconcile = createDecisionReconciler({
     synchronize,
-    writesEnabled: process.env.DECISION_STATE_WRITES_ENABLED === 'true'
+    writesEnabled: process.env.DECISION_STATE_WRITES_ENABLED === 'true',
+    audit
   });
   return reconcile({ trigger: 'balances' });
 }
