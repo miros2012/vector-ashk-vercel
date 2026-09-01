@@ -151,4 +151,38 @@ const handler = createSyncHoursHandler({
   writeArchiveReconciliation: (month, values) => writeValues(archiveReconciliationSheet(month), 'A:F', values, 500, 6)
 });
 
-export default handler;
+function isControlledPreview() {
+  return process.env.VERCEL_ENV === 'preview' &&
+    String(process.env.VERCEL_GIT_COMMIT_REF || '') === 'preview-nightly-finance-orchestrator-v4';
+}
+
+export default async function route(req, res) {
+  const previewGate = String(req.query?.previewGate || '');
+  if (!previewGate || !isControlledPreview()) return handler(req, res);
+
+  const secret = String(process.env.CRON_SECRET || '').trim();
+  if (previewGate === 'check') {
+    return res.status(200).json({
+      ok: true,
+      previewHoursGate: true,
+      cronSecretConfigured: Boolean(secret),
+      writesPerformed: false
+    });
+  }
+
+  if (previewGate !== 'verify') {
+    return res.status(400).json({ ok: false, error: 'invalid preview gate mode' });
+  }
+  if (!secret) {
+    return res.status(503).json({ ok: false, error: 'preview cron secret missing' });
+  }
+
+  req.method = 'GET';
+  req.body = {};
+  req.query = {};
+  req.headers = {
+    ...(req.headers || {}),
+    authorization: `Bearer ${secret}`
+  };
+  return handler(req, res);
+}
