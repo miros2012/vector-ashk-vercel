@@ -1,62 +1,26 @@
-const BASE = 'https://app.dscontrol.ru';
-const apiKey = process.env.ASHK_API_KEY;
-if (!apiKey) throw new Error('ASHK_API_KEY missing');
+import { createAshkReceivablesSource } from './lib/ashk-receivables-source.js';
+import { buildReceivableRows, buildReceivableSummary } from './lib/ashk-receivables.js';
 
-const headers = {
-  api_key: apiKey,
-  'X-Requested-With': 'XMLHttpRequest',
-  'Content-Type': 'application/json'
-};
+const source = createAshkReceivablesSource({
+  baseUrl: 'https://app.dscontrol.ru',
+  apiKey: process.env.ASHK_API_KEY || '',
+  concurrency: 6,
+  timeoutMs: 8000
+});
 
-async function request(path) {
-  const r = await fetch(`${BASE}${path}`, { headers, signal: AbortSignal.timeout(8000) });
-  const text = await r.text();
-  let json;
-  try { json = JSON.parse(text); } catch { throw new Error(`ASHK non-JSON HTTP ${r.status}`); }
-  if (!r.ok || json?.success === false) {
-    const message = json?.data?.Message ?? json?.Message ?? text;
-    throw new Error(String(message).replace(/\s+/g, ' ').slice(0, 220));
-  }
-  return json;
-}
+const { groups, contractsByGroup } = await source.fetchCurrent();
+const rows = buildReceivableRows(groups, contractsByGroup);
+const summary = buildReceivableSummary(rows);
+const nonEmptyGroups = [...contractsByGroup.values()].filter(items => Array.isArray(items) && items.length > 0).length;
 
-function asArray(json) {
-  if (Array.isArray(json)) return json;
-  if (Array.isArray(json?.data)) return json.data;
-  return [];
-}
-
-const groupJson = await request('/api/StudyGroupList');
-const groups = asArray(groupJson);
-if (!groups.length) throw new Error('StudyGroupList returned no active groups');
-
-let selected = null;
-let students = [];
-for (const group of groups.slice(0, 12)) {
-  const id = Number(group?.Id);
-  if (!Number.isFinite(id)) continue;
-  const listJson = await request(`/api/StudentExternalList?StudyGroupId=${encodeURIComponent(id)}`);
-  const rows = asArray(listJson);
-  if (rows.length) {
-    selected = group;
-    students = rows;
-    break;
-  }
-}
-if (!students.length) throw new Error('No contracts found in sampled active groups');
-
-const first = students[0] || {};
-const itemKeys = Object.keys(first).sort();
-const receivableKeys = itemKeys.filter(k => /(debt|debit|sales|paid|owner|trainingroom|contract|state|mainproduct)/i.test(k));
-console.log('ASHK_STUDENT_LIST_SCHEMA_OK', JSON.stringify({
-  activeGroupCount: groups.length,
-  sampledGroupContractCount: students.length,
-  groupState: selected?.State ?? null,
-  itemKeys,
-  receivableKeys,
-  hasDebt: Object.prototype.hasOwnProperty.call(first, 'Debt'),
-  hasOverDebt: Object.prototype.hasOwnProperty.call(first, 'OverDebt'),
-  hasSalesSum: Object.prototype.hasOwnProperty.call(first, 'SalesSum'),
-  hasOwnerName: Object.prototype.hasOwnProperty.call(first, 'OwnerName'),
-  hasTrainingRoomName: Object.prototype.hasOwnProperty.call(first, 'TrainingRoomName')
+console.log('ASHK_RECEIVABLES_LIVE_AGGREGATE_OK', JSON.stringify({
+  groups: groups.length,
+  queriedGroups: contractsByGroup.size,
+  nonEmptyGroups,
+  debtorContracts: summary.total.contracts,
+  debtTotal: summary.total.debt,
+  salesSumOfDebtors: summary.total.salesSum,
+  debitSumOfDebtors: summary.total.debitSum,
+  managerCount: summary.byManager.length,
+  branchCount: summary.byBranch.length
 }));
