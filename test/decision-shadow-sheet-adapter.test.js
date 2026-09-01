@@ -21,6 +21,17 @@ function decisionRow(ruleId, dueDate, status, amount, linked) {
   return row;
 }
 
+function minimalValueRanges(receivablesValues) {
+  return [
+    { values: [[46266, 46271, 0]] },
+    { values: [] },
+    { values: [] },
+    { values: receivablesValues },
+    { values: [catalogRows()[0]] },
+    { values: [decisionRow('DEC-CASH-GAP', '', 'Неактивно', 0, '')] }
+  ];
+}
+
 test('sheet adapter includes aggregate receivables in the live snapshot without changing existing decisions', async () => {
   const requests = [];
   const sheets = {
@@ -96,18 +107,7 @@ test('sheet adapter fails closed when the receivables total row is missing', asy
   const sheets = {
     spreadsheets: {
       values: {
-        batchGet: async () => ({
-          data: {
-            valueRanges: [
-              { values: [[46266, 46271, 0]] },
-              { values: [] },
-              { values: [] },
-              { values: [] },
-              { values: [catalogRows()[0]] },
-              { values: [decisionRow('DEC-CASH-GAP', '', 'Неактивно', 0, '')] }
-            ]
-          }
-        })
+        batchGet: async () => ({ data: { valueRanges: minimalValueRanges([]) } })
       }
     }
   };
@@ -115,4 +115,20 @@ test('sheet adapter fails closed when the receivables total row is missing', asy
   const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
 
   await assert.rejects(adapter.run(), /receivables summary total is missing/);
+});
+
+test('sheet adapter fails closed when a receivables total is not numeric', async () => {
+  const sheets = {
+    spreadsheets: {
+      values: {
+        batchGet: async () => ({
+          data: { valueRanges: minimalValueRanges([['ИТОГО', '', 173, '#VALUE!', 5971811, 2777857]]) }
+        })
+      }
+    }
+  };
+
+  const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+
+  await assert.rejects(adapter.run(), /receivables summary total is invalid/);
 });
