@@ -9,6 +9,14 @@ const RAW_SHEET = 'АШК_Часы_Табель__vercel';
 const RECONCILIATION_SHEET = 'АШК_Сверка_часов__vercel';
 const BOOTSTRAP_SYNC_KEY_SHA256 = '';
 
+function archiveRawSheet(month) {
+  return `${RAW_SHEET}__${month}`;
+}
+
+function archiveReconciliationSheet(month) {
+  return `${RECONCILIATION_SHEET}__${month}`;
+}
+
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 }
@@ -118,23 +126,29 @@ async function writeValues(sheetName, range, values, minimumRows, minimumColumns
   });
 }
 
+async function readValues(sheetName, range) {
+  const sheets = await getSheets();
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${sheetName}'!${range}`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  });
+  return result.data.values || [];
+}
+
 const handler = createSyncHoursHandler({
   configuredKey: process.env.VECTOR_SYNC_KEY || process.env.TOCHKA_BRIDGE_KEY || '',
+  cronKey: process.env.CRON_SECRET || '',
   bootstrapHash: BOOTSTRAP_SYNC_KEY_SHA256,
   rawSheet: RAW_SHEET,
   reconciliationSheet: RECONCILIATION_SHEET,
   fetchReport,
   writeRaw: (values) => writeValues(RAW_SHEET, 'A:O', values, 5000, 15),
-  readRaw: async () => {
-    const sheets = await getSheets();
-    const result = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${RAW_SHEET}'!A:O`,
-      valueRenderOption: 'UNFORMATTED_VALUE'
-    });
-    return result.data.values || [];
-  },
-  writeReconciliation: (values) => writeValues(RECONCILIATION_SHEET, 'A:F', values, 500, 6)
+  readRaw: () => readValues(RAW_SHEET, 'A:O'),
+  writeReconciliation: (values) => writeValues(RECONCILIATION_SHEET, 'A:F', values, 500, 6),
+  writeArchiveRaw: (month, values) => writeValues(archiveRawSheet(month), 'A:O', values, 5000, 15),
+  readArchiveRaw: (month) => readValues(archiveRawSheet(month), 'A:O'),
+  writeArchiveReconciliation: (month, values) => writeValues(archiveReconciliationSheet(month), 'A:F', values, 500, 6)
 });
 
 export default handler;

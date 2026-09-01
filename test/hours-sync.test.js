@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 
 import {
   buildHoursImportWorkbook,
+  businessDateFromFactStart,
   compareHoursMetrics,
   isAuthorizedSyncKey,
   masterReportPeriodForMonth,
@@ -71,17 +72,56 @@ test('buildHoursImportWorkbook deduplicates exact ASHK rows and produces auditab
   assert.equal(result.rawValues[1][2], '2026-08-01');
   assert.equal(result.rawValues[2][2], '2026-08-02');
   assert.equal(result.rawValues[1][8], 3);
-  assert.match(result.rawValues[1][0], /2026-08-01 08:00:00/);
+  assert.match(result.rawValues[1][0], /2026-08-01T08:00:00/);
   assert.equal(JSON.stringify(result.reconciliationValues).includes('Иванов'), false);
+  assert.equal(JSON.stringify(result.reconciliationValues).includes('Asia/Yekaterinburg'), true);
+  assert.equal(JSON.stringify(result.reconciliationValues).includes('Stable-key rows superseded'), true);
 });
 
-test('buildHoursImportWorkbook rejects rows outside the requested month', () => {
+test('businessDateFromFactStart converts offset timestamps to Tyumen business date', () => {
+  assert.equal(businessDateFromFactStart('2026-08-31T20:30:00Z'), '2026-09-01');
+  assert.equal(businessDateFromFactStart('2026-08-31 23:30:00'), '2026-08-31');
+});
+
+test('businessDateFromFactStart rejects impossible offset-less local timestamps', () => {
+  assert.equal(businessDateFromFactStart('2026-08-99 25:61:61'), '');
+  assert.equal(businessDateFromFactStart('2026-02-30 10:00:00'), '');
+});
+
+test('buildHoursImportWorkbook ignores ASHK boundary spillover outside the requested business month and audits it', () => {
+  const result = buildHoursImportWorkbook([
+    API_ROWS[0],
+    { ...API_ROWS[0], ContractName: 'B-103', FactStart: '2026-09-01 06:00:00', Hours: 3 }
+  ], { month: '2026-08', loadedAt: '2026-09-01T12:00:00.000Z' });
+
+  assert.equal(result.sourceRows, 2);
+  assert.equal(result.outOfMonthRows, 1);
+  assert.equal(result.metrics.rows, 1);
+  assert.equal(result.metrics.hours, 3);
+  assert.equal(JSON.stringify(result.reconciliationValues).includes('Out-of-month source rows ignored'), true);
+});
+
+test('buildHoursImportWorkbook still rejects malformed ASHK timestamps', () => {
   assert.throws(
     () => buildHoursImportWorkbook([
-      { ...API_ROWS[0], FactStart: '2026-07-31 23:59:59' }
+      { ...API_ROWS[0], FactStart: '2026-08-99 25:61:61' }
     ], { month: '2026-08', loadedAt: '2026-08-31T10:00:00.000Z' }),
-    /outside requested month/
+    /invalid FactStart/
   );
+});
+
+test('later ASHK correction replaces earlier row with the same stable business key', () => {
+  const result = buildHoursImportWorkbook([
+    API_ROWS[0],
+    { ...API_ROWS[0], Hours: 4, ParallelHours: 4 }
+  ], {
+    month: '2026-08',
+    loadedAt: '2026-08-31T10:00:00.000Z'
+  });
+
+  assert.equal(result.metrics.rows, 1);
+  assert.equal(result.metrics.hours, 4);
+  assert.equal(result.duplicateRows, 1);
 });
 
 test('masterReportPeriodForMonth returns the full calendar month and rejects invalid months', () => {

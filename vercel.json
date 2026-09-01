@@ -12,12 +12,13 @@
   "functions": {
     "api/master-hours-diagnostic.js": { "maxDuration": 60 },
     "api/sync-hours.js": { "maxDuration": 60 },
-    "api/sync-payments.js": { "maxDuration": 60 }
+    "api/sync-payments.js": { "maxDuration": 60 },
+    "api/nightly-finance-orchestrator.js": { "maxDuration": 180 }
   },
   "crons": [
     {
-      "path": "/api/decision-reconcile-daily",
-      "schedule": "15 0 * * *"
+      "path": "/api/nightly-finance-orchestrator",
+      "schedule": "30 21 * * *"
     }
   ]
 }
