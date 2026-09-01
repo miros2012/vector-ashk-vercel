@@ -22,3 +22,8 @@ test('nightly finance cron schedule is daily at 02:30 Tyumen', () => {
   assert.equal(fields.length, 5, 'cron must use a five-field schedule');
   assert.deepEqual(fields, ['30', '21', '*', '*', '*']);
 });
+
+test('nightly orchestrator has enough duration for sequential HOURS and decisions stages', () => {
+  const duration = Number(config.functions?.['api/nightly-finance-orchestrator.js']?.maxDuration || 0);
+  assert.ok(duration >= 120, `nightly orchestrator maxDuration must be at least 120s, got ${duration}s`);
+});
