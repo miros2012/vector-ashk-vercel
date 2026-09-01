@@ -80,4 +80,6 @@ test('sheet adapter builds a live financial snapshot and returns 4/4 shadow agre
   assert.equal(result.snapshot.asOfDate, '2026-08-31');
   assert.equal(result.snapshot.obligations.criticalPayments[0].dueDate, '2026-09-03');
   assert.equal(result.catalog.length, 4);
+  assert.deepEqual(result.currentDecisions.map((row) => row._row), [2, 3, 4, 5]);
+  assert.deepEqual(result.comparison.results.map((row) => row.current?._row), [2, 3, 4, 5]);
 });
