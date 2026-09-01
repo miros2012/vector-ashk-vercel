@@ -2,34 +2,83 @@ const BASE = 'https://app.dscontrol.ru';
 const apiKey = process.env.ASHK_API_KEY;
 if (!apiKey) throw new Error('ASHK_API_KEY missing');
 
+const headers = {
+  api_key: apiKey,
+  'X-Requested-With': 'XMLHttpRequest',
+  'Content-Type': 'application/json'
+};
+
+async function request(path) {
+  const r = await fetch(`${BASE}${path}`, { headers });
+  const text = await r.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch {}
+  return { r, json, text };
+}
+
+function messageOf(json, text) {
+  return String(json?.data?.Message ?? json?.Message ?? text ?? '').replace(/\s+/g, ' ').slice(0, 180);
+}
+
+function classify(status, message) {
+  const m = String(message || '').toLowerCase();
+  if (/invalid command name|unknown api call|unknown command/.test(m)) return 'unknown';
+  if (status === 404) return 'unknown';
+  return 'recognized';
+}
+
 const startDate = '2026-08-01T00:00:00';
 const endDate = '2026-08-30T23:59:59';
-const url = `${BASE}/api/SaleExternalList?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`;
-const r = await fetch(url, {
-  headers: {
-    api_key: apiKey,
-    'X-Requested-With': 'XMLHttpRequest',
-    'Content-Type': 'application/json'
+const sale = await request(`/api/SaleExternalList?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`);
+if (!sale.r.ok || sale.json?.success === false) throw new Error(`SaleExternalList: ${messageOf(sale.json, sale.text)}`);
+const sales = Array.isArray(sale.json?.data) ? sale.json.data : [];
+const sampleStudentId = sales.find(x => Number.isFinite(Number(x?.StudentId)))?.StudentId;
+if (!sampleStudentId) throw new Error('No StudentId found in SaleExternalList sample');
+
+const names = [
+  'StudentExternalList',
+  'StudentExternal',
+  'StudentList',
+  'StudentInfo',
+  'StudentGet',
+  'ContractExternalList',
+  'ContractExternal',
+  'ContractList',
+  'StudentContractExternalList',
+  'StudentContractList',
+  'EducationContractExternalList',
+  'EmployeeExternalList',
+  'EmployeeList',
+  'OfficeExternalList',
+  'OfficeList',
+  'BranchExternalList',
+  'BranchList',
+  'UserExternalList',
+  'UserList'
+];
+
+const results = [];
+for (const name of names) {
+  const variants = [
+    `/api/${name}`,
+    `/api/${name}?StudentId=${encodeURIComponent(sampleStudentId)}`,
+    `/api/${name}?Id=${encodeURIComponent(sampleStudentId)}`
+  ];
+  let best = null;
+  for (const path of variants) {
+    const { r, json, text } = await request(path);
+    const message = messageOf(json, text);
+    const classification = classify(r.status, message);
+    const row = { name, path: path.replace(String(sampleStudentId), ':studentId'), status: r.status, classification, message };
+    if (!best || (best.classification === 'unknown' && classification === 'recognized') || (best.status >= 400 && r.status < 400)) best = row;
+    if (r.status < 400 && json?.success !== false) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
   }
-});
-const text = await r.text();
-let json;
-try { json = JSON.parse(text); } catch { throw new Error(`ASHK non-JSON HTTP ${r.status}`); }
-const data = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
-const first = data[0] && typeof data[0] === 'object' ? data[0] : {};
-const itemKeys = Object.keys(first).sort();
-const keyTypes = Object.fromEntries(itemKeys.map(k => [k, first[k] === null ? 'null' : Array.isArray(first[k]) ? 'array' : typeof first[k]]));
-const debtLikeKeys = itemKeys.filter(k => /(debt|debit|balance|remain|rest|paid|pay|sum|amount|price|employee|manager|user|office|branch|student|contract|sale)/i.test(k));
-console.log('ASHK_SALE_EXTERNAL_SCHEMA_OK', JSON.stringify({
-  status: r.status,
-  success: json?.success !== false,
-  rowCount: data.length,
-  topLevelKeys: json && typeof json === 'object' && !Array.isArray(json) ? Object.keys(json).sort() : [],
-  itemKeys,
-  keyTypes,
-  debtLikeKeys
-}));
-if (!r.ok || json?.success === false) {
-  const message = json?.data?.Message ?? json?.Message ?? 'ASHK request failed';
-  throw new Error(String(message).slice(0, 220));
+  results.push(best);
 }
+
+console.log('ASHK_STUDENT_LINK_DISCOVERY_OK', JSON.stringify({
+  candidates: results.length,
+  recognized: results.filter(x => x?.classification === 'recognized'),
+  unknownCount: results.filter(x => x?.classification === 'unknown').length
+}));
