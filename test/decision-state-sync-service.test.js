@@ -65,6 +65,34 @@ test('commit is blocked unless server-side writes flag is enabled', async () => 
   assert.equal(writes, 0);
 });
 
+test('commit is blocked before backup or write when pre-write shadow has drift', async () => {
+  let backupReads = 0;
+  let writes = 0;
+  const drift = {
+    total: 2,
+    matches: 1,
+    mismatches: [{ ruleId: 'DEC-EST-ADJ' }],
+    results: matchingComparison().results
+  };
+  const sync = createDecisionStateSynchronizer({
+    spreadsheetId: 'sheet-1',
+    runShadow: async () => ({ comparison: drift }),
+    sheets: {
+      spreadsheets: {
+        values: {
+          batchGet: async () => { backupReads += 1; return { data: { valueRanges: [] } }; },
+          batchUpdate: async () => { writes += 1; }
+        }
+      }
+    },
+    writesEnabled: true
+  });
+
+  await assert.rejects(() => sync({ dryRun: false }), /pre-write shadow verification failed/);
+  assert.equal(backupReads, 0);
+  assert.equal(writes, 0);
+});
+
 test('enabled commit backs up formulas, uses one atomic write batch, and verifies a second shadow read', async () => {
   const batchGets = [];
   const batchUpdates = [];
