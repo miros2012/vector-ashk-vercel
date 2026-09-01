@@ -1,6 +1,6 @@
 import syncHours from './sync-hours.js';
 
-// Controlled preview v4: one-shot HOURS live verification only.
+// Controlled preview v4: plain health GET performs one-shot HOURS live verification.
 function isControlledHoursPreview() {
   return process.env.VERCEL_ENV === 'preview' &&
     String(process.env.VERCEL_GIT_COMMIT_REF || '').startsWith('preview-nightly-finance-orchestrator-v4');
@@ -9,26 +9,20 @@ function isControlledHoursPreview() {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
-  const previewGate = String(req.query?.previewHoursGate || '');
-  if (previewGate && isControlledHoursPreview()) {
+  if (isControlledHoursPreview()) {
     const secret = String(process.env.CRON_SECRET || '').trim();
-
-    if (previewGate === 'verify') {
-      if (!secret) {
-        return res.status(503).json({ ok: false, error: 'preview cron secret missing' });
-      }
-
-      req.method = 'GET';
-      req.body = {};
-      req.query = {};
-      req.headers = {
-        ...(req.headers || {}),
-        authorization: `Bearer ${secret}`
-      };
-      return syncHours(req, res);
+    if (!secret) {
+      return res.status(503).json({ ok: false, error: 'preview cron secret missing' });
     }
 
-    return res.status(400).json({ ok: false, error: 'invalid preview gate mode' });
+    req.method = 'GET';
+    req.body = {};
+    req.query = {};
+    req.headers = {
+      ...(req.headers || {}),
+      authorization: `Bearer ${secret}`
+    };
+    return syncHours(req, res);
   }
 
   const googleReady = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY);
