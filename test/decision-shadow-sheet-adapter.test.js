@@ -91,3 +91,28 @@ test('sheet adapter includes aggregate receivables in the live snapshot without 
   assert.deepEqual(result.currentDecisions.map((row) => row._row), [2, 3, 4, 5]);
   assert.deepEqual(result.comparison.results.map((row) => row.current?._row), [2, 3, 4, 5]);
 });
+
+test('sheet adapter fails closed when the receivables total row is missing', async () => {
+  const sheets = {
+    spreadsheets: {
+      values: {
+        batchGet: async () => ({
+          data: {
+            valueRanges: [
+              { values: [[46266, 46271, 0]] },
+              { values: [] },
+              { values: [] },
+              { values: [] },
+              { values: [catalogRows()[0]] },
+              { values: [decisionRow('DEC-CASH-GAP', '', 'Неактивно', 0, '')] }
+            ]
+          }
+        })
+      }
+    }
+  };
+
+  const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+
+  await assert.rejects(adapter.run(), /receivables summary total is missing/);
+});
