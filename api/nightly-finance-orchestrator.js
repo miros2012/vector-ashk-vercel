@@ -85,6 +85,16 @@ async function writeValues(sheetName, range, values, columns) {
   });
 }
 
+async function readValues(sheetName, range) {
+  const sheets = await getSheets();
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${sheetName}'!${range}`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  });
+  return result.data.values || [];
+}
+
 const receivablesSource = createAshkReceivablesSource({
   baseUrl: 'https://app.dscontrol.ru',
   apiKey: process.env.ASHK_API_KEY || '',
@@ -95,7 +105,9 @@ const receivablesSource = createAshkReceivablesSource({
 const syncReceivables = createReceivablesSyncHandler({
   fetchCurrent: receivablesSource.fetchCurrent,
   writeDetail: values => writeValues(RECEIVABLES_DETAIL_SHEET, 'A:M', values, 13),
-  writeSummary: values => writeValues(RECEIVABLES_SUMMARY_SHEET, 'A:F', values, 6)
+  writeSummary: values => writeValues(RECEIVABLES_SUMMARY_SHEET, 'A:F', values, 6),
+  readDetail: () => readValues(RECEIVABLES_DETAIL_SHEET, 'A:M'),
+  readSummary: () => readValues(RECEIVABLES_SUMMARY_SHEET, 'A:F')
 });
 
 const handler = createNightlyFinanceOrchestrator({
