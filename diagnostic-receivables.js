@@ -3,7 +3,7 @@ const apiKey = process.env.ASHK_API_KEY;
 if (!apiKey) throw new Error('ASHK_API_KEY missing');
 
 const startDate = '2026-08-01T00:00:00';
-const endDate = '2026-09-01T23:59:59';
+const endDate = '2026-08-30T23:59:59';
 const url = `${BASE}/api/SaleExternalList?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`;
 const r = await fetch(url, {
   headers: {
