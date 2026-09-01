@@ -21,7 +21,18 @@ function decisionRow(ruleId, dueDate, status, amount, linked) {
   return row;
 }
 
-test('sheet adapter builds a live financial snapshot and returns 4/4 shadow agreement using one read batch', async () => {
+function minimalValueRanges(receivablesValues) {
+  return [
+    { values: [[46266, 46271, 0]] },
+    { values: [] },
+    { values: [] },
+    { values: receivablesValues },
+    { values: [catalogRows()[0]] },
+    { values: [decisionRow('DEC-CASH-GAP', '', 'Неактивно', 0, '')] }
+  ];
+}
+
+test('sheet adapter includes aggregate receivables in the live snapshot without changing existing decisions', async () => {
   const requests = [];
   const sheets = {
     spreadsheets: {
@@ -42,6 +53,7 @@ test('sheet adapter builds a live financial snapshot and returns 4/4 shadow agre
                   [46270, 'Админ', '', '', '', 500000, 'Критический', 'Оценка', '', '', '', '', '', 'ADMIN-2026-08'],
                   [46270, 'Налоги', '', '', '', 0, 'Высокий', 'Требует расчёта', '', '', '', '', '', 'TAX-RESERVE']
                 ] },
+                { values: [['ИТОГО', '', 173, 3193954, 5971811, 2777857]] },
                 { values: catalogRows() },
                 { values: [
                   decisionRow('DEC-CASH-GAP', '', 'Неактивно', 0, ''),
@@ -71,9 +83,16 @@ test('sheet adapter builds a live financial snapshot and returns 4/4 shadow agre
     "'Прогноз 30 дней'!D1:H2",
     "'Корректировки обязательств'!B2:F500",
     "'Обязательства'!A2:N500",
+    "'АШК_Дебиторка_Свод__vercel'!A2:F2",
     "'Каталог правил'!A2:N200",
     "'Решения'!A2:Q200"
   ]);
+  assert.deepEqual(result.snapshot.receivables, {
+    contracts: 173,
+    debt: 3193954,
+    sales: 5971811,
+    paid: 2777857
+  });
   assert.equal(result.comparison.matches, 4);
   assert.equal(result.comparison.total, 4);
   assert.deepEqual(result.comparison.mismatches, []);
@@ -82,4 +101,69 @@ test('sheet adapter builds a live financial snapshot and returns 4/4 shadow agre
   assert.equal(result.catalog.length, 4);
   assert.deepEqual(result.currentDecisions.map((row) => row._row), [2, 3, 4, 5]);
   assert.deepEqual(result.comparison.results.map((row) => row.current?._row), [2, 3, 4, 5]);
+});
+
+test('sheet adapter fails closed when the receivables total row is missing', async () => {
+  const sheets = {
+    spreadsheets: {
+      values: {
+        batchGet: async () => ({ data: { valueRanges: minimalValueRanges([]) } })
+      }
+    }
+  };
+
+  const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+
+  await assert.rejects(adapter.run(), /receivables summary total is missing/);
+});
+
+test('sheet adapter fails closed when a receivables total is not numeric', async () => {
+  const sheets = {
+    spreadsheets: {
+      values: {
+        batchGet: async () => ({
+          data: { valueRanges: minimalValueRanges([['ИТОГО', '', 173, '#VALUE!', 5971811, 2777857]]) }
+        })
+      }
+    }
+  };
+
+  const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+
+  await assert.rejects(adapter.run(), /receivables summary total is invalid/);
+});
+
+test('sheet adapter fails closed when any receivables total is negative', async () => {
+  const invalidRows = [
+    ['ИТОГО', '', -1, 3193954, 5971811, 2777857],
+    ['ИТОГО', '', 173, -1, 5971811, 2777857],
+    ['ИТОГО', '', 173, 3193954, -1, 2777857],
+    ['ИТОГО', '', 173, 3193954, 5971811, -1]
+  ];
+
+  for (const row of invalidRows) {
+    const sheets = {
+      spreadsheets: {
+        values: {
+          batchGet: async () => ({ data: { valueRanges: minimalValueRanges([row]) } })
+        }
+      }
+    };
+    const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+    await assert.rejects(adapter.run(), /receivables summary total is invalid/);
+  }
+});
+
+test('sheet adapter fails closed when receivables contract count is fractional', async () => {
+  const sheets = {
+    spreadsheets: {
+      values: {
+        batchGet: async () => ({
+          data: { valueRanges: minimalValueRanges([['ИТОГО', '', 173.5, 3193954, 5971811, 2777857]]) }
+        })
+      }
+    }
+  };
+  const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+  await assert.rejects(adapter.run(), /receivables summary total is invalid/);
 });
