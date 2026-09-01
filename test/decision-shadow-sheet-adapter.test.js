@@ -132,3 +132,24 @@ test('sheet adapter fails closed when a receivables total is not numeric', async
 
   await assert.rejects(adapter.run(), /receivables summary total is invalid/);
 });
+
+test('sheet adapter fails closed when any receivables total is negative', async () => {
+  const invalidRows = [
+    ['ИТОГО', '', -1, 3193954, 5971811, 2777857],
+    ['ИТОГО', '', 173, -1, 5971811, 2777857],
+    ['ИТОГО', '', 173, 3193954, -1, 2777857],
+    ['ИТОГО', '', 173, 3193954, 5971811, -1]
+  ];
+
+  for (const row of invalidRows) {
+    const sheets = {
+      spreadsheets: {
+        values: {
+          batchGet: async () => ({ data: { valueRanges: minimalValueRanges([row]) } })
+        }
+      }
+    };
+    const adapter = createDecisionShadowSheetAdapter({ sheets, spreadsheetId: 'sheet-1' });
+    await assert.rejects(adapter.run(), /receivables summary total is invalid/);
+  }
+});
