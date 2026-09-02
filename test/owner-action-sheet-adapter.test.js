@@ -17,6 +17,9 @@ test('reads bounded decision range with unformatted values and returns normalize
                 ],
                 [
                   'DEC-2','Другая задача','Отклонение','Причина','Решение','Задача','Финансы',46269,'Высокий','Активно','В работе','Открыто',857000,'','Источник','OBJ-2',2,'2026-09-01T10:00:00Z','','','Не проверено',''
+                ],
+                [
+                  'DEC-SYNTH-SMOKE','Synthetic','Synthetic','Synthetic','Synthetic','Synthetic','Test',46267,'Критический','Активно','Не начато','Открыто',999999,0,'__synthetic__','TEST',0,'','','','Не проверено',''
                 ]
               ]
             }

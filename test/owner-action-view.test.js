@@ -69,3 +69,13 @@ test('returns null top when no active decisions exist', () => {
   const view = buildOwnerActionView([decision({ ruleStatus: 'Неактивно' })]);
   assert.deepEqual(view, { top: null, activeCount: 0 });
 });
+
+test('synthetic decisions never enter the owner action queue', () => {
+  const view = buildOwnerActionView([
+    decision({ ruleId: 'DEC-REAL', rank: 10 }),
+    decision({ ruleId: 'DEC-SYNTH-SMOKE', rank: 0, synthetic: true })
+  ]);
+
+  assert.equal(view.activeCount, 1);
+  assert.equal(view.top.ruleId, 'DEC-REAL');
+});

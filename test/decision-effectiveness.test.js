@@ -68,3 +68,20 @@ test('does not invent time-to-start when first event is already start', () => {
   });
   assert.equal(metrics.averageTimeToStartHours, null);
 });
+
+test('synthetic decisions and their history never affect owner ROI metrics', () => {
+  const metrics = calculateDecisionEffectiveness({
+    decisions: [
+      ...decisions,
+      { ruleId:'SYNTH', synthetic:true, executionStatus:'Готово', verificationStatus:'Подтверждено', plannedEffect:1000, actualEffect:1000 }
+    ],
+    history: [
+      ...history,
+      { eventId:'SYNTH-1', ruleId:'SYNTH', type:'Проверено', at:'2026-09-01T18:00:00Z', actualEffect:1000 }
+    ]
+  });
+
+  assert.equal(metrics.recommendationCount, 3);
+  assert.equal(metrics.totalConfirmedEffect, 80);
+  assert.equal(metrics.historyEventCount, 10);
+});
