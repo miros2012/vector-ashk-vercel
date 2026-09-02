@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { calculateVerifiedGross, MASTER_PAYROLL_RATE_MODEL } from '../lib/master-payroll-gross.js';
 import { normalizePayrollEvidence } from '../lib/master-payroll-evidence.js';
+import { reconcileMasterPayroll } from '../lib/master-payroll-reconciliation.js';
 
 const fixtureUrl = new URL('./fixtures/master-payroll-august-2026.json', import.meta.url);
 
@@ -89,4 +90,37 @@ test('verified controls preserve the two event-count anomalies that invalidate h
   assert.deepEqual([exams.events, exams.hours], [188, 189]);
   assert.equal(extraB.events * 1500, 781500);
   assert.equal(exams.events * 200, 37600);
+});
+
+test('evidence-linked August masters reconcile by real EmployeeId with no silent unmatched payments', async () => {
+  const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'));
+  const evidence = normalizePayrollEvidence(fixture.confirmedEvidence, fixture.aliases);
+  const grossTotal = fixture.verifiedMasterControls.reduce((sum, master) => sum + master.gross, 0);
+  const result = reconcileMasterPayroll({
+    gross: {
+      archiveVerification: 'OK',
+      eventBasedRulesOk: true,
+      blockers: [],
+      masters: fixture.verifiedMasterControls,
+      totals: { gross: grossTotal }
+    },
+    evidence: {
+      ...evidence,
+      existingPayoutsReconciled: false,
+      vehicleAllocationsExcluded: false
+    },
+    requiredBlockedTypes: []
+  });
+
+  assert.equal(grossTotal, fixture.expected.evidenceLinkedGross);
+  assert.equal(result.totals.confirmedDeductions, fixture.expected.confirmedEvidenceTotal);
+  assert.equal(result.totals.outstandingNet, fixture.expected.evidenceLinkedOutstanding);
+  assert.deepEqual(result.unmatchedEvidenceMasterKeys, []);
+  assert.equal(result.gates.EVIDENCE_RECONCILED, true);
+
+  const atalykov = result.masters.find((master) => master.masterKey === '2859064');
+  const tolstoukhov = result.masters.find((master) => master.masterKey === '2064915');
+  assert.equal(atalykov.outstandingNet, -14299);
+  assert.equal(atalykov.status, 'REVIEW_REQUIRED');
+  assert.equal(tolstoukhov.outstandingNet, 130186);
 });
