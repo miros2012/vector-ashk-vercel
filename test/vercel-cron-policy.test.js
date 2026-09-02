@@ -8,15 +8,15 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(fs.readFileSync(path.join(here, '..', 'vercel.json'), 'utf8'));
 const apiDirectory = path.join(here, '..', 'api');
 const financePath = '/api/nightly-finance-orchestrator';
+const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
 
-test('Hobby deployment uses two schedules on the same existing finance function', () => {
+test('Hobby deployment uses only once-per-day cron expressions', () => {
   assert.ok(Array.isArray(config.crons), 'vercel.json must define crons');
-  assert.equal(config.crons.length, 2, 'expected nightly full sync plus hourly lightweight ROP sync');
-  assert.ok(config.crons.every((cron) => cron.path === financePath), 'both schedules must reuse the same serverless function');
-  assert.deepEqual(
-    config.crons.map((cron) => cron.schedule).sort(),
-    ['0 4-15 * * *', '30 21 * * *'].sort()
-  );
+  assert.equal(config.crons.length, 13, 'expected nightly full sync plus 12 daily intraday ROP schedules');
+  assert.ok(config.crons.every((cron) => cron.path === financePath), 'all schedules must reuse the same serverless function');
+  const schedules = config.crons.map((cron) => cron.schedule);
+  assert.deepEqual(schedules.sort(), ['30 21 * * *', ...intradaySchedules].sort());
+  assert.ok(!schedules.includes('0 4-15 * * *'), 'Hobby cannot deploy a cron expression that runs more than once per day');
 });
 
 test('nightly finance cron schedule is daily at 02:30 Tyumen', () => {
@@ -25,11 +25,10 @@ test('nightly finance cron schedule is daily at 02:30 Tyumen', () => {
   assert.deepEqual(cron.schedule.trim().split(/\s+/), ['30', '21', '*', '*', '*']);
 });
 
-test('intraday ROP cron is hourly from 09:00 through 20:00 Tyumen', () => {
-  const cron = config.crons.find((item) => item.schedule === '0 4-15 * * *');
-  assert.ok(cron);
-  assert.equal(cron.path, financePath);
-  assert.deepEqual(cron.schedule.trim().split(/\s+/), ['0', '4-15', '*', '*', '*']);
+test('intraday ROP uses twelve once-daily UTC schedules covering 09:00 through 20:00 Tyumen', () => {
+  const schedules = config.crons.filter((item) => item.schedule !== '30 21 * * *').map((item) => item.schedule);
+  assert.deepEqual(schedules.sort(), intradaySchedules.sort());
+  assert.ok(config.crons.filter((item) => intradaySchedules.includes(item.schedule)).every((item) => item.path === financePath));
 });
 
 test('nightly orchestrator has enough duration for sequential HOURS and decisions stages', () => {
