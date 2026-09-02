@@ -23,3 +23,10 @@ test('each Hobby-safe intraday schedule selects lightweight payments plus ROP re
   assert.match(api, /INTRADAY_SCHEDULES\.has\(schedule\)/);
   assert.match(api, /refreshRopFromStaging/);
 });
+
+test('every source refresh publishes the standalone ROP dashboard in the same execution', () => {
+  assert.match(api, /publishRopNow/);
+  assert.match(api, /syncRopSourceThenPublishTarget/);
+  assert.match(api, /syncRopDailyControlAndPublish/);
+  assert.match(api, /refreshRopFromStagingAndPublish/);
+});
