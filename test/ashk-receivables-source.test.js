@@ -35,7 +35,8 @@ test('receivables source loads groups, skips empty groups, and fetches contracts
     baseUrl: 'https://app.dscontrol.ru',
     apiKey: 'secret-key',
     concurrency: 2,
-    timeoutMs: 5000
+    timeoutMs: 5000,
+    minIntervalMs: 1
   });
 
   const result = await source.fetchCurrent();
@@ -67,11 +68,42 @@ test('receivables source never exceeds configured group request concurrency', as
     baseUrl: 'https://app.dscontrol.ru',
     apiKey: 'secret-key',
     concurrency: 2,
-    timeoutMs: 5000
+    timeoutMs: 5000,
+    minIntervalMs: 1
   });
 
   await source.fetchCurrent();
   assert.equal(maxActive, 2);
+});
+
+test('receivables source spaces every ASHK request start to stay under the API rate limit', async () => {
+  const starts = [];
+  const fetchFn = async (url) => {
+    starts.push(Date.now());
+    if (String(url).endsWith('/api/StudyGroupList')) {
+      return jsonResponse({ success: true, data: [1,2,3].map(Id => ({ Id, StudentCount: 1 })) });
+    }
+    return jsonResponse({ success: true, data: [] });
+  };
+
+  const source = createAshkReceivablesSource({
+    fetchFn,
+    baseUrl: 'https://app.dscontrol.ru',
+    apiKey: 'secret-key',
+    concurrency: 3,
+    timeoutMs: 5000,
+    minIntervalMs: 40
+  });
+
+  await source.fetchCurrent();
+
+  assert.equal(starts.length, 4);
+  for (let index = 1; index < starts.length; index += 1) {
+    assert.ok(
+      starts[index] - starts[index - 1] >= 25,
+      `request ${index + 1} started too soon: ${starts[index] - starts[index - 1]}ms`
+    );
+  }
 });
 
 test('receivables source fails with endpoint-only error when ASHK returns application error', async () => {
@@ -87,7 +119,8 @@ test('receivables source fails with endpoint-only error when ASHK returns applic
     baseUrl: 'https://app.dscontrol.ru',
     apiKey: 'secret-key',
     concurrency: 1,
-    timeoutMs: 5000
+    timeoutMs: 5000,
+    minIntervalMs: 1
   });
 
   await assert.rejects(
