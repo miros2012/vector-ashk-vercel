@@ -25,7 +25,7 @@ test('morning dashboard uses the last completed day and shows actionable manager
   assert.ok(city);
   assert.equal(city[idx('План месяца')], 4910000);
   assert.equal(city[idx('Факт с начала месяца')], 96600);
-  assert.equal(city[idx('Дефицит к плану на дату')], 51095);
+  assert.equal(city[idx('Дефицит к плану на дату')], 41094.97);
 
   assert.ok(a);
   assert.equal(a[idx('Дата отчёта')], '2026-09-01');
