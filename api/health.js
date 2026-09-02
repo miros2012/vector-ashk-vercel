@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { runReceivablesNow } from './nightly-finance-orchestrator.js';
 
-const ONE_TIME_RECEIVABLES_TOKEN_HASH = 'd5b82c91563cacf5734a74427cbc2a826aff7fa69b800507bf6d270f7d7b55d6';
+const ONE_TIME_RECEIVABLES_TOKEN_HASH = '49a1c947ef47a93379ae76def8918df85847010eff33d338fa045a1f49b6b3b3';
 
 function manualTokenMatches(value) {
   const digest = createHash('sha256').update(String(value || '')).digest('hex');
