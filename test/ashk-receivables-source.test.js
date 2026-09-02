@@ -35,7 +35,8 @@ test('receivables source loads groups, skips empty groups, and fetches contracts
     baseUrl: 'https://app.dscontrol.ru',
     apiKey: 'secret-key',
     concurrency: 2,
-    timeoutMs: 5000
+    timeoutMs: 5000,
+    minIntervalMs: 1
   });
 
   const result = await source.fetchCurrent();
@@ -67,7 +68,8 @@ test('receivables source never exceeds configured group request concurrency', as
     baseUrl: 'https://app.dscontrol.ru',
     apiKey: 'secret-key',
     concurrency: 2,
-    timeoutMs: 5000
+    timeoutMs: 5000,
+    minIntervalMs: 1
   });
 
   await source.fetchCurrent();
@@ -114,7 +116,8 @@ test('receivables source fails with endpoint-only error when ASHK returns applic
     baseUrl: 'https://app.dscontrol.ru',
     apiKey: 'secret-key',
     concurrency: 1,
-    timeoutMs: 5000
+    timeoutMs: 5000,
+    minIntervalMs: 1
   });
 
   await assert.rejects(
