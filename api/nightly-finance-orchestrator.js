@@ -2,8 +2,10 @@ import { google } from 'googleapis';
 import syncHours from './sync-hours.js';
 import syncPayments from './sync-payments.js';
 import reconcileDecisions from './decision-reconcile-daily.js';
+import { publishRopNow } from './health.js';
 import { createNightlyFinanceOrchestrator } from '../lib/nightly-finance-orchestrator.js';
 import { createIntradayRopOrchestrator } from '../lib/rop-intraday-orchestrator.js';
+import { syncRopSourceThenPublishTarget } from '../lib/rop-publisher.js';
 import { createAshkReceivablesSource } from '../lib/ashk-receivables-source.js';
 import { createReceivablesSyncHandler } from '../lib/receivables-sync-handler.js';
 import { buildRopDailyControlWorkbook } from '../lib/rop-daily-control.js';
@@ -333,6 +335,20 @@ async function refreshRopFromStaging() {
   });
 }
 
+async function syncRopDailyControlAndPublish(payload) {
+  return syncRopSourceThenPublishTarget({
+    refreshSource: () => syncRopDailyControl(payload),
+    publishTarget: publishRopNow
+  });
+}
+
+async function refreshRopFromStagingAndPublish() {
+  return syncRopSourceThenPublishTarget({
+    refreshSource: refreshRopFromStaging,
+    publishTarget: publishRopNow
+  });
+}
+
 const receivablesSource = createAshkReceivablesSource({
   baseUrl: 'https://app.dscontrol.ru',
   apiKey: process.env.ASHK_API_KEY || '',
@@ -346,11 +362,11 @@ const syncReceivables = createReceivablesSyncHandler({
   writeSummary: values => writeValues(RECEIVABLES_SUMMARY_SHEET, 'A:F', values, 6),
   readDetail: () => readValues(RECEIVABLES_DETAIL_SHEET, 'A:M'),
   readSummary: () => readValues(RECEIVABLES_SUMMARY_SHEET, 'A:F'),
-  afterVerified: syncRopDailyControl
+  afterVerified: syncRopDailyControlAndPublish
 });
 
 export const runReceivablesNow = syncReceivables;
-export const runIntradayRopNow = refreshRopFromStaging;
+export const runIntradayRopNow = refreshRopFromStagingAndPublish;
 
 const nightlyHandler = createNightlyFinanceOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
@@ -363,7 +379,7 @@ const nightlyHandler = createNightlyFinanceOrchestrator({
 const intradayHandler = createIntradayRopOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runPayments: syncPayments,
-  refreshRop: refreshRopFromStaging
+  refreshRop: refreshRopFromStagingAndPublish
 });
 
 export default async function handler(req, res) {
