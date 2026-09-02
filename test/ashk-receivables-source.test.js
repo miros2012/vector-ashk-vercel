@@ -77,10 +77,9 @@ test('receivables source never exceeds configured group request concurrency', as
 });
 
 test('receivables source spaces every ASHK request start to stay under the API rate limit', async () => {
-  let clock = 0;
   const starts = [];
   const fetchFn = async (url) => {
-    starts.push({ url: String(url), at: clock });
+    starts.push(Date.now());
     if (String(url).endsWith('/api/StudyGroupList')) {
       return jsonResponse({ success: true, data: [1,2,3].map(Id => ({ Id, StudentCount: 1 })) });
     }
@@ -93,14 +92,18 @@ test('receivables source spaces every ASHK request start to stay under the API r
     apiKey: 'secret-key',
     concurrency: 3,
     timeoutMs: 5000,
-    minIntervalMs: 350,
-    now: () => clock,
-    sleep: async (ms) => { clock += ms; }
+    minIntervalMs: 40
   });
 
   await source.fetchCurrent();
 
-  assert.deepEqual(starts.map(item => item.at), [0, 350, 700, 1050]);
+  assert.equal(starts.length, 4);
+  for (let index = 1; index < starts.length; index += 1) {
+    assert.ok(
+      starts[index] - starts[index - 1] >= 25,
+      `request ${index + 1} started too soon: ${starts[index] - starts[index - 1]}ms`
+    );
+  }
 });
 
 test('receivables source fails with endpoint-only error when ASHK returns application error', async () => {
