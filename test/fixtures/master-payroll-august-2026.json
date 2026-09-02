@@ -1,0 +1,58 @@
+{
+  "archive": {
+    "sheet": "АШК_Часы_Табель__vercel__2026-08",
+    "verificationSheet": "АШК_Сверка_часов__vercel__2026-08",
+    "rows": 2734,
+    "hours": 7501,
+    "verification": "OK",
+    "businessTimezone": "Asia/Yekaterinburg",
+    "loadedAtObserved": "2026-09-02T04:13:09.739Z",
+    "note": "Offline regression controls captured from the verified live August archive. Event counts are authoritative for event-priced work; hours are a control signal."
+  },
+  "typeControls": [
+    {"sessionTypeName":"Внутренний экзамен город","events":188,"hours":189},
+    {"sessionTypeName":"Доп часы кат.В (90 минут)","events":7,"hours":14},
+    {"sessionTypeName":"Доп. часы кат В (120 минут)","events":521,"hours":1561},
+    {"sessionTypeName":"Дополнительное вождение МОТО","events":55,"hours":110},
+    {"sessionTypeName":"Мото","events":271,"hours":542},
+    {"sessionTypeName":"Основное вождение (120 минут)","events":1408,"hours":4224},
+    {"sessionTypeName":"Основное вождение (160 минут)","events":9,"hours":36},
+    {"sessionTypeName":"Тренажер","events":250,"hours":750},
+    {"sessionTypeName":"Tsl","events":25,"hours":75}
+  ],
+  "aliases": {
+    "козлов": "kozlov-ivan",
+    "козлов иван викторович": "kozlov-ivan",
+    "ходаков олег александрович": "khodakov-oleg",
+    "толстоухов сергей николаевич": "tolstoukhov-sergey",
+    "аталыков сергей сергеевич": "atalykov-sergey",
+    "жданова светлана фанисовна": "zhdanova-svetlana"
+  },
+  "confirmedEvidence": [
+    {"sourceId":"dds-13372","date":"2026-08-06","amount":30000,"counterparty":"Козлов","description":"Выплата аванса по заработной плате сотруднику (Козлов)","article":"Зарплата мастеров"},
+    {"sourceId":"dds-16543","date":"2026-08-15","amount":13167,"counterparty":"ХОДАКОВ ОЛЕГ АЛЕКСАНДРОВИЧ","description":"Аванс за август","article":"Зарплата мастеров"},
+    {"sourceId":"dds-16544","date":"2026-08-15","amount":13166,"counterparty":"Гасанов Артур Рамазанович","description":"Аванс по заработной плате Козлову Ивану Викторовичу","article":"Зарплата мастеров"},
+    {"sourceId":"dds-16545","date":"2026-08-15","amount":12931.75,"counterparty":"ТОЛСТОУХОВ СЕРГЕЙ НИКОЛАЕВИЧ","description":"Аванс за август","article":"Зарплата мастеров"},
+    {"sourceId":"dds-16551","date":"2026-08-15","amount":7825.68,"counterparty":"Аталыкова Диана Андреевна","description":"Аванс Аталыков Сергей Сергеевич","article":"Зарплата мастеров"},
+    {"sourceId":"dds-17885","date":"2026-08-31","amount":14582.25,"counterparty":"ТОЛСТОУХОВ СЕРГЕЙ НИКОЛАЕВИЧ","description":"Заработная плата за август","article":"Зарплата мастеров"},
+    {"sourceId":"dds-17886","date":"2026-08-31","amount":14847,"counterparty":"ХОДАКОВ ОЛЕГ АЛЕКСАНДРОВИЧ","description":"Заработная плата за август","article":"Зарплата мастеров"},
+    {"sourceId":"dds-17887","date":"2026-08-31","amount":27514,"counterparty":"Жданова Светлана Фанисовна","description":"Заработная плата за август","article":"Зарплата мастеров"},
+    {"sourceId":"dds-17888","date":"2026-08-31","amount":8017.92,"counterparty":"Аталыкова Диана Андреевна","description":"Заработная плата за август Аталыков Сергей Сергеевич","article":"Зарплата мастеров"},
+    {"sourceId":"dds-17899","date":"2026-08-31","amount":13583.35,"counterparty":"УФК","description":"Взыскание задолженности по исполнительному производству Козлов Иван Викторович","article":"Зарплата мастеров"},
+    {"sourceId":"dds-17900","date":"2026-08-31","amount":6790.65,"counterparty":"УФК","description":"Депозит службы судебных приставов Козлов Иван Викторович","article":"Зарплата мастеров"},
+    {"sourceId":"dds-17903","date":"2026-08-31","amount":13496.40,"counterparty":"УФК","description":"Алименты Аталыков Сергей Сергеевич","article":"Зарплата мастеров"}
+  ],
+  "blockedVehicleEvidence": [
+    {"sourceId":"fuel-unallocated-control","amount":1,"counterparty":"Газпромнефть","description":"ГСМ, общий платеж без персональной привязки","article":"Топливо"},
+    {"sourceId":"leasing-unallocated-control","amount":1,"counterparty":"Каркаде","description":"Лизинг автомобиля без подтвержденной привязки мастер↔авто","article":"Лизинг"}
+  ],
+  "expected": {
+    "previousHourBasedBControl": 2474542.5,
+    "bGrossEventBased": 2475542.5,
+    "motoGross": 121950,
+    "extraMotoGross": 35750,
+    "trainerGross": 37500,
+    "fullGross": 2670742.5,
+    "confirmedEvidenceTotal": 175922
+  }
+}
