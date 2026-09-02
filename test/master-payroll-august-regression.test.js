@@ -6,6 +6,7 @@ import { normalizePayrollEvidence } from '../lib/master-payroll-evidence.js';
 import { reconcileMasterPayroll } from '../lib/master-payroll-reconciliation.js';
 
 const fixtureUrl = new URL('./fixtures/master-payroll-august-2026.json', import.meta.url);
+const adjustmentsFixtureUrl = new URL('./fixtures/master-payroll-august-adjustments-2026.json', import.meta.url);
 
 function distributeHours(eventCount, totalHours) {
   const nominal = totalHours / eventCount;
@@ -164,5 +165,42 @@ test('August verified interim layer locks effective gross and confirmed net dedu
   assert.equal(result.totals.confirmedDeductions, fixture.expected.interimConfirmedDeductions);
   assert.equal(result.totals.outstandingNet, fixture.expected.interimOutstandingNet);
   assert.equal(result.masters.find((master) => master.masterKey === '3493666').status, 'REVIEW_REQUIRED');
+  assert.equal(result.promotionStatus, 'BLOCKED');
+});
+
+test('dated personal-ledger adjustments extend the verified interim layer without guessing fuel or undated debt', async () => {
+  const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'));
+  const adjustments = JSON.parse(await readFile(adjustmentsFixtureUrl, 'utf8'));
+  const evidence = normalizePayrollEvidence(
+    [...fixture.interimConfirmedEvidence, ...adjustments.additionalConfirmedEvidence],
+    fixture.aliases
+  );
+  const grossTotal = fixture.personalRateGrossControls.reduce((sum, master) => sum + master.gross, 0);
+  const result = reconcileMasterPayroll({
+    gross: {
+      archiveVerification: 'OK',
+      eventBasedRulesOk: true,
+      blockers: [],
+      masters: fixture.personalRateGrossControls,
+      totals: { gross: grossTotal }
+    },
+    evidence: {
+      ...evidence,
+      officialGrossByMaster: fixture.officialGrossByMaster,
+      existingPayoutsReconciled: false,
+      vehicleAllocationsExcluded: false
+    },
+    requiredBlockedTypes: []
+  });
+
+  assert.equal(adjustments.additionalConfirmedEvidence.reduce((sum, item) => sum + item.amount, 0), adjustments.expected.additionalConfirmedDeductions);
+  assert.equal(result.totals.payrollGross, fixture.expected.interimEffectivePayrollGross);
+  assert.equal(result.totals.confirmedDeductions, adjustments.expected.interimConfirmedDeductions);
+  assert.equal(result.totals.outstandingNet, adjustments.expected.interimOutstandingNet);
+  assert.equal(result.masters.find((master) => master.masterKey === '3493666').outstandingNet, adjustments.expected.kozlovInterimOutstandingNet);
+  assert.equal(result.masters.find((master) => master.masterKey === '2286161').outstandingNet, adjustments.expected.irkhuzhinInterimOutstandingNet);
+  assert.equal(result.masters.find((master) => master.masterKey === '3569348').outstandingNet, adjustments.expected.augustenyakInterimOutstandingNet);
+  assert.equal(adjustments.stillBlocked.fuelAllocation, true);
+  assert.equal(adjustments.stillBlocked.unallocatedPayrollPayouts, 3320);
   assert.equal(result.promotionStatus, 'BLOCKED');
 });
