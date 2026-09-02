@@ -54,6 +54,34 @@ test('aggregate invariants use confirmed evidence only', () => {
   assert.equal(result.gates.EVIDENCE_RECONCILED, true);
 });
 
+test('official settlement is counted once while a separate piecework advance remains separate', () => {
+  const result = reconcileMasterPayroll({
+    gross: {
+      archiveVerification: 'OK',
+      eventBasedRulesOk: true,
+      masters: [{ masterKey: 'kozlov', masterName: 'Козлов', gross: 109100 }],
+      totals: { gross: 109100 },
+      blockers: []
+    },
+    evidence: {
+      confirmed: [
+        { masterKey: 'kozlov', type: 'ADVANCE', amount: 30000, sourceId: 'piecework-advance', status: 'CONFIRMED' },
+        { masterKey: 'kozlov', type: 'ADVANCE', amount: 13166, sourceId: 'official-advance', status: 'CONFIRMED', settlementGroup: 'OFFICIAL_GROSS' },
+        { masterKey: 'kozlov', type: 'STATUTORY_DEDUCTION', amount: 13583.35, sourceId: 'fssp-1', status: 'CONFIRMED', settlementGroup: 'OFFICIAL_GROSS' },
+        { masterKey: 'kozlov', type: 'STATUTORY_DEDUCTION', amount: 6790.65, sourceId: 'fssp-2', status: 'CONFIRMED', settlementGroup: 'OFFICIAL_GROSS' }
+      ],
+      blocked: [],
+      officialGrossByMaster: { kozlov: 32200 }
+    },
+    requiredBlockedTypes: []
+  });
+
+  assert.equal(result.masters[0].officialGrossSettled, 32200);
+  assert.equal(result.masters[0].separateConfirmedDeductions, 30000);
+  assert.equal(result.masters[0].confirmedDeductions, 62200);
+  assert.equal(result.masters[0].outstandingNet, 46900);
+});
+
 test('READY requires every explicit promotion gate to be green', () => {
   const result = reconcileMasterPayroll({
     gross: {
