@@ -1,7 +1,7 @@
 # Verified master payroll gross-to-net design
 
 Date: 2026-09-02
-Status: design approved in chat; implementation pending written-spec review
+Status: implemented on feature branch; downstream promotion BLOCKED pending reconciliation gates
 Scope: August 2026 master payroll verification and downstream driving-fund control
 
 ## Goal
@@ -16,13 +16,14 @@ No production payout, `Фонд вождения`, DDS, P&L, or owner dashboard 
 
 Official work-event source: `GET /api/MasterWorkReportDetails`, BuildMode=1 / byTrainingHourType.
 
-August archive control:
+August archive control, re-read live during implementation:
 - 2,734 rows
 - 7,501 academic hours
 - verification = OK
 - business timezone = Asia/Yekaterinburg
+- observed archive LoadedAt = 2026-09-02T04:13:09.739Z
 
-Current category-B gross control is 2,474,542.50 RUB and remains useful as a component, not as total master gross.
+The previous category-B control of 2,474,542.50 RUB was hour-equivalent and remains historical only. The approved event-based rule produces corrected category-B gross of **2,475,542.50 RUB**. The 1,000 RUB difference comes from `Доп. часы кат В (120 минут)`: 521 events but 1,561 academic hours. Payroll is 521 x 1,500 RUB, not 1,561 x 500 RUB.
 
 ## Confirmed rate model
 
@@ -31,13 +32,13 @@ Rates are confirmed by the owner on 2026-09-02.
 | Work type | Pay unit | Confirmed rate | Equivalent hourly control |
 |---|---:|---:|---:|
 | Main driving 120/160 | academic hour | 383 RUB / acad h | 383 RUB / acad h |
-| Extra B 120 | 3 acad h lesson | 1,500 RUB / lesson | 500 RUB / acad h |
-| Extra B 90 legacy | 2 acad h lesson | 1,500 RUB / lesson | 750 RUB / acad h |
+| Extra B 120 | lesson/event | 1,500 RUB / lesson | nominally 500 RUB / acad h |
+| Extra B 90 legacy | lesson/event | 1,500 RUB / lesson | nominally 750 RUB / acad h |
 | Internal city exam | event/output | 200 RUB / event | not hour-based |
-| Tsl | 3 acad h lesson | 574.50 RUB / lesson | 191.50 RUB / acad h |
-| Moto | 2 acad h lesson | 450 RUB / lesson | 225 RUB / acad h |
-| Extra moto | 2 acad h lesson | 650 RUB / lesson | 325 RUB / acad h |
-| Trainer | 3 acad h lesson | 150 RUB / lesson | 50 RUB / acad h |
+| Tsl | lesson/event | 574.50 RUB / lesson | nominally 191.50 RUB / acad h |
+| Moto | lesson/event | 450 RUB / lesson | nominally 225 RUB / acad h |
+| Extra moto | lesson/event | 650 RUB / lesson | nominally 325 RUB / acad h |
+| Trainer | lesson/event | 150 RUB / lesson | nominally 50 RUB / acad h |
 
 For lesson-based types, payroll is calculated by event/lesson count. Academic hours are a control signal and must not silently change payroll when an ASHK event has a non-standard duration.
 
@@ -66,18 +67,7 @@ Per master, aggregate these components independently:
 - Extra moto
 - Trainer
 
-Each component stores:
-- employee/master identifier
-- normalized master name
-- work type
-- event count
-- academic hours
-- rate unit
-- rate
-- gross amount
-- verification status
-
-The final gross is the sum of all confirmed components.
+Each component stores employee/master identifier, normalized name, work type, event count, academic hours, rate unit, rate, gross amount, and verification status. The final gross is the sum of all confirmed components.
 
 ### 2. Confirmed payment/deduction evidence layer
 
@@ -87,16 +77,7 @@ Only individually attributable August records may reduce outstanding net:
 - statutory/executive deductions
 - individually confirmed other payroll deductions
 
-Each record must preserve:
-- DDS/source row or stable source id
-- date
-- source counterparty/description
-- normalized master
-- deduction/payment type
-- amount
-- confidence/status
-
-Ambiguous company-wide records are not allocated automatically.
+Each record preserves source row/id, date, counterparty/description, normalized master, type, amount, and confidence/status. Ambiguous company-wide records are not allocated automatically.
 
 ### 3. Blocked allocation layer
 
@@ -124,7 +105,7 @@ The payroll result can be promoted downstream only when all gates are green:
 2. All payroll work types used in August have a confirmed rate/unit.
 3. Sum of per-master verified gross equals aggregate verified gross.
 4. Internal exams are paid by event count, not hours.
-5. Moto, extra moto, and trainer are paid by lesson/event count; hours are only control.
+5. Moto, extra moto, trainer, Tsl and extra-driving lesson types are paid by event count; hours are control only.
 6. Confirmed advances/official payments/statutory deductions reconcile to source rows.
 7. No negative net is accepted without an explicit business explanation.
 8. Fuel/leasing deductions are either authoritatively allocated or explicitly excluded from final payroll.
@@ -145,35 +126,56 @@ The payroll result can be promoted downstream only when all gates are green:
 Before any downstream switch:
 - fixture tests for every work type and unit
 - explicit test that 188 internal-exam events with 189 hours pay 188 x 200, not 189 x 200
-- explicit tests that moto 2h event = 450 RUB, extra moto 2h event = 650 RUB, trainer 3h event = 150 RUB
+- explicit regression that 521 Extra B 120 events with 1,561 hours pay 521 x 1,500, not 1,561 x 500
+- explicit tests that moto event = 450 RUB, extra moto event = 650 RUB, trainer event = 150 RUB
 - aggregation test: per-master component sum equals total gross
 - deduction test: only confirmed individual evidence reduces net
 - blocker test: unallocated fuel/leasing cannot reduce individual net
 - negative-net test: status becomes REVIEW_REQUIRED
-- regression test against current August archive totals
+- regression test against current August archive controls
+
+## Implemented August control result
+
+The live staging block `VERIFIED FULL GROSS / NET — АВГУСТ 2026` in `АШК_Расчет_мастеров__staging` currently reconciles to:
+
+- Main B: 1,631,580 RUB
+- Extra B 120: 781,500 RUB
+- Extra B 90: 10,500 RUB
+- Internal exams: 37,600 RUB
+- Tsl: 14,362.50 RUB
+- **Corrected B gross: 2,475,542.50 RUB**
+- Moto: 121,950 RUB
+- Extra moto: 35,750 RUB
+- Trainer: 37,500 RUB
+- **Full verified gross: 2,670,742.50 RUB**
+- Confirmed advances: 77,090.43 RUB
+- Confirmed official payments: 64,961.17 RUB
+- Confirmed statutory deductions: 33,870.40 RUB
+- **Confirmed evidence total: 175,922 RUB**
+- **Intermediate outstanding net: 2,494,820.50 RUB**
+
+The intermediate outstanding net is explicitly **not** the final payout amount.
+
+Resolved diagnostic: Tolstoukhov's previous B-only gross was zero because his August work is moto. Full verified gross is 157,700 RUB; after 27,514 RUB confirmed August payments his intermediate outstanding net is 130,186 RUB.
+
+Still blocked: Atalykov has verified gross 15,041 RUB and confirmed August settlement/deductions 29,340 RUB, leaving -14,299 RUB. This is `REVIEW_REQUIRED`, not an automatic debt. It requires an explanation or an additional payroll component/source before final promotion.
+
+Other blockers: fuel/leasing remain unallocated to individual masters, and pooled/existing master payouts without a personal registry are not yet fully reconciled.
 
 ## Intended sheet/output changes
 
-Current interim block in `АШК_Расчет_мастеров__staging` remains diagnostic.
+The old interim blocks in `АШК_Расчет_мастеров__staging` remain for audit history. The implemented verified section contains full per-master gross by component, confirmed payment/deduction columns, unresolved allocation columns, outstanding net, status, aggregate reconciliation, and gate summary.
 
-Implementation should add/replace a clearly labeled verified section containing:
-- full per-master gross by component
-- confirmed deduction/payment columns
-- unresolved allocation columns
-- outstanding net
-- status/gate column
-- aggregate reconciliation row
-
-The existing `Фонд вождения` sheet is unchanged until final reconciliation is approved.
+The existing `Фонд вождения` sheet remains unchanged by this implementation.
 
 ## Downstream sequence after payroll verification
 
-1. Finalize per-master full gross.
-2. Reconcile confirmed payments/deductions.
-3. Resolve or explicitly exclude fuel/leasing allocations.
-4. Calculate final outstanding payroll.
-5. Compare required amount with current driving-fund balance.
-6. Update `Фонд вождения` reserve/control.
+1. Explain/reconcile the Atalykov negative net and any other review-required rows.
+2. Resolve or explicitly exclude fuel/leasing allocations.
+3. Reconcile pooled/existing August master payouts with individual recipients.
+4. Re-run gates and calculate final outstanding payroll.
+5. Compare approved requirement with current driving-fund balance.
+6. Only with owner approval, update `Фонд вождения` reserve/control.
 7. Propagate approved payroll obligation into DDS/P&L/Owner Dashboard/cash forecast.
 
 ## Non-goals
