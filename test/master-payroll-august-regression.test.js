@@ -135,7 +135,7 @@ test('evidence-linked August masters use personal-rate gross and do not silently
   assert.equal(result.totals.outstandingNet, fixture.expected.evidenceLinkedOutstanding);
   assert.deepEqual(result.unmatchedEvidenceMasterKeys, []);
   assert.equal(result.gates.EVIDENCE_RECONCILED, true);
-  assert.equal(result.promotionStatus, 'BLOCKED');
+  assert.equal(result.promotionStatus, 'VERIFIED_WITH_OPEN_REVIEW');
 
   const atalykov = result.masters.find((master) => master.masterKey === '2859064');
   const tolstoukhov = result.masters.find((master) => master.masterKey === '2064915');
@@ -170,7 +170,7 @@ test('August verified interim layer locks effective gross and confirmed net dedu
   assert.equal(result.totals.confirmedDeductions, fixture.expected.interimConfirmedDeductions);
   assert.equal(result.totals.outstandingNet, fixture.expected.interimOutstandingNet);
   assert.equal(result.masters.find((master) => master.masterKey === '3493666').status, 'REVIEW_REQUIRED');
-  assert.equal(result.promotionStatus, 'BLOCKED');
+  assert.equal(result.promotionStatus, 'VERIFIED_WITH_OPEN_REVIEW');
 });
 
 test('dated personal-ledger adjustments extend the verified interim layer without guessing fuel or undated debt', async () => {
@@ -207,5 +207,5 @@ test('dated personal-ledger adjustments extend the verified interim layer withou
   assertMoney(result.masters.find((master) => master.masterKey === '3569348').outstandingNet, adjustments.expected.augustenyakInterimOutstandingNet);
   assert.equal(adjustments.stillBlocked.fuelAllocation, true);
   assert.equal(adjustments.stillBlocked.unallocatedPayrollPayouts, 3320);
-  assert.equal(result.promotionStatus, 'BLOCKED');
+  assert.equal(result.promotionStatus, 'VERIFIED_WITH_OPEN_REVIEW');
 });
