@@ -65,32 +65,45 @@ test('commit is blocked unless server-side writes flag is enabled', async () => 
   assert.equal(writes, 0);
 });
 
-test('commit is blocked before backup or write when pre-write shadow has drift', async () => {
+test('enabled commit repairs pre-write shadow drift after backup and verifies clean state', async () => {
   let backupReads = 0;
-  let writes = 0;
+  let shadowRuns = 0;
+  const writes = [];
   const drift = {
     total: 2,
     matches: 1,
-    mismatches: [{ ruleId: 'DEC-EST-ADJ' }],
+    mismatches: [{ ruleId: 'DEC-EST-ADJ', fields: ['amount'] }],
     results: matchingComparison().results
   };
   const sync = createDecisionStateSynchronizer({
     spreadsheetId: 'sheet-1',
-    runShadow: async () => ({ comparison: drift }),
+    runShadow: async () => ({ comparison: ++shadowRuns === 1 ? drift : matchingComparison() }),
     sheets: {
       spreadsheets: {
         values: {
-          batchGet: async () => { backupReads += 1; return { data: { valueRanges: [] } }; },
-          batchUpdate: async () => { writes += 1; }
+          batchGet: async (request) => {
+            backupReads += 1;
+            return formulaBackup(request);
+          },
+          batchUpdate: async (request) => {
+            writes.push(request);
+            return { data: {} };
+          }
         }
       }
     },
     writesEnabled: true
   });
 
-  await assert.rejects(() => sync({ dryRun: false }), /pre-write shadow verification failed/);
-  assert.equal(backupReads, 0);
-  assert.equal(writes, 0);
+  const result = await sync({ dryRun: false });
+
+  assert.equal(backupReads, 1);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].requestBody.valueInputOption, 'RAW');
+  assert.equal(shadowRuns, 2);
+  assert.equal(result.matchesBefore, 1);
+  assert.equal(result.matchesAfter, 2);
+  assert.equal(result.verified, true);
 });
 
 test('enabled commit backs up formulas, uses one atomic write batch, and verifies a second shadow read', async () => {
