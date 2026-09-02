@@ -103,3 +103,17 @@ test('pooled master payment remains blocked without registry-backed individual a
   assert.equal(result.confirmed.length, 0);
   assert.equal(result.blocked[0].reason, 'NO_MASTER_ALLOCATION');
 });
+
+test('explicit settlementGroup survives normalization for official gross reconciliation', () => {
+  const rows = [{
+    sourceId: 'official-advance',
+    amount: 13166,
+    counterparty: 'Гасанов Артур Рамазанович',
+    description: 'Аванс по заработной плате Козлову Ивану Викторовичу',
+    article: 'Зарплата мастеров',
+    settlementGroup: 'OFFICIAL_GROSS'
+  }];
+  const result = normalizePayrollEvidence(rows, aliases);
+  assert.equal(result.confirmed[0].masterKey, 'kozlov-ivan');
+  assert.equal(result.confirmed[0].settlementGroup, 'OFFICIAL_GROSS');
+});
