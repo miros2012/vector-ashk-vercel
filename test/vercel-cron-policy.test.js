@@ -7,21 +7,29 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(fs.readFileSync(path.join(here, '..', 'vercel.json'), 'utf8'));
 const apiDirectory = path.join(here, '..', 'api');
+const financePath = '/api/nightly-finance-orchestrator';
 
-test('Hobby deployment config defines exactly one nightly finance orchestrator cron', () => {
+test('Hobby deployment uses two schedules on the same existing finance function', () => {
   assert.ok(Array.isArray(config.crons), 'vercel.json must define crons');
-  assert.equal(config.crons.length, 1, 'Hobby plan must use exactly one daily finance cron');
-
-  const [cron] = config.crons;
-  assert.equal(cron.path, '/api/nightly-finance-orchestrator');
-  assert.equal(cron.schedule, '30 21 * * *');
+  assert.equal(config.crons.length, 2, 'expected nightly full sync plus hourly lightweight ROP sync');
+  assert.ok(config.crons.every((cron) => cron.path === financePath), 'both schedules must reuse the same serverless function');
+  assert.deepEqual(
+    config.crons.map((cron) => cron.schedule).sort(),
+    ['0 4-15 * * *', '30 21 * * *'].sort()
+  );
 });
 
 test('nightly finance cron schedule is daily at 02:30 Tyumen', () => {
-  const schedule = config.crons?.[0]?.schedule || '';
-  const fields = schedule.trim().split(/\s+/);
-  assert.equal(fields.length, 5, 'cron must use a five-field schedule');
-  assert.deepEqual(fields, ['30', '21', '*', '*', '*']);
+  const cron = config.crons.find((item) => item.schedule === '30 21 * * *');
+  assert.ok(cron);
+  assert.deepEqual(cron.schedule.trim().split(/\s+/), ['30', '21', '*', '*', '*']);
+});
+
+test('intraday ROP cron is hourly from 09:00 through 20:00 Tyumen', () => {
+  const cron = config.crons.find((item) => item.schedule === '0 4-15 * * *');
+  assert.ok(cron);
+  assert.equal(cron.path, financePath);
+  assert.deepEqual(cron.schedule.trim().split(/\s+/), ['0', '4-15', '*', '*', '*']);
 });
 
 test('nightly orchestrator has enough duration for sequential HOURS and decisions stages', () => {

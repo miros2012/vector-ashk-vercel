@@ -4,10 +4,12 @@ import { readFileSync } from 'node:fs';
 
 const nightly = readFileSync(new URL('../api/nightly-finance-orchestrator.js', import.meta.url), 'utf8');
 
-test('nightly ROP hook fetches details only for payments missing from current contract snapshot', () => {
-  assert.match(nightly, /fallbackStudentIds/);
-  assert.match(nightly, /receivablesSource\.fetchStudent/);
-  assert.match(nightly, /fallbackStudents/);
+test('ROP hooks fetch details only for payments missing from the available contract snapshot', () => {
+  assert.match(nightly, /missingStudentIds/);
+  assert.match(nightly, /fetchFallbackStudents/);
+  assert.match(nightly, /receivablesSource\.fetchStudent\(studentId\)/);
   assert.match(nightly, /STUDENT_NOT_IN_CURRENT_SNAPSHOT/);
   assert.match(nightly, /buildRopDailyControlWorkbook\([\s\S]*fallbackStudents/);
+  assert.match(nightly, /fallbackRequested/);
+  assert.match(nightly, /fallbackResolved/);
 });

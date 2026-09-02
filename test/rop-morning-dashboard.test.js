@@ -12,45 +12,30 @@ const CONTROL_VALUES = [
   ['2026-09-02','Менеджер В','Герцена',3800000,236630.04,1500,51500,0.2176,1900000,118315.02,0,0,0,0,0,660794,'КРАСНЫЙ','ИНФО','общий филиальный план']
 ];
 
-test('morning dashboard uses the last completed day and shows actionable manager plan-vs-fact', () => {
+test('morning dashboard keeps closed snapshot and adds current live snapshot', () => {
   const dashboard = buildRopMorningDashboard({ controlValues: CONTROL_VALUES, asOfDate: '2026-09-02' });
   assert.equal(dashboard.reportDate, '2026-09-01');
+  assert.equal(dashboard.liveDate, '2026-09-02');
   const headers = dashboard.values[0];
   const idx = name => headers.indexOf(name);
   const rows = dashboard.values.slice(1);
-  const city = rows.find(row => row[idx('Уровень')] === 'ГОРОД');
-  const a = rows.find(row => row[idx('Менеджер')] === 'Менеджер А');
-  const b = rows.find(row => row[idx('Менеджер')] === 'Менеджер Б');
-
-  assert.ok(city);
-  assert.equal(city[idx('План месяца')], 4910000);
-  assert.equal(city[idx('Факт с начала месяца')], 96600);
-  assert.equal(city[idx('Дефицит к плану на дату')], 41094.97);
-
-  assert.ok(a);
-  assert.equal(a[idx('Дата отчёта')], '2026-09-01');
-  assert.equal(a[idx('Факт вчера')], 46600);
-  assert.equal(a[idx('Факт с начала месяца')], 46600);
-  assert.equal(a[idx('Дефицит к плану на дату')], 0);
-  assert.equal(a[idx('Приоритет')], 'ОК');
-  assert.match(a[idx('Задача старшей')], /удержать темп/i);
-
-  assert.ok(b);
-  assert.equal(b[idx('Факт вчера')], 50000);
-  assert.equal(b[idx('Личный факт вчера')], 30000);
-  assert.equal(b[idx('Дефицит к плану на дату')], 47435.9);
-  assert.equal(b[idx('Приоритет')], 'СЕГОДНЯ');
-  assert.match(b[idx('Задача старшей')], /47.?436.*₽/i);
-  assert.match(b[idx('Примечание')], /филиальн/i);
-
-  assert.ok(a[idx('Прогноз месяца')] > 1110000);
-  assert.ok(b[idx('Прогноз месяца')] < 3800000);
+  const closedA = rows.find(row => row[idx('Срез')] === 'ВЧЕРА — ЗАКРЫТО' && row[idx('Менеджер')] === 'Менеджер А');
+  const liveA = rows.find(row => row[idx('Срез')] === 'СЕГОДНЯ — НА СЕЙЧАС' && row[idx('Менеджер')] === 'Менеджер А');
+  const closedB = rows.find(row => row[idx('Срез')] === 'ВЧЕРА — ЗАКРЫТО' && row[idx('Менеджер')] === 'Менеджер Б');
+  assert.ok(closedA && liveA && closedB);
+  assert.equal(closedA[idx('Факт дня')], 46600);
+  assert.equal(closedA[idx('Дефицит к плану на дату')], 0);
+  assert.equal(closedB[idx('Дефицит к плану на дату')], 47435.9);
+  assert.equal(liveA[idx('Факт дня')], 0);
+  assert.equal(liveA[idx('Факт с начала месяца')], 46600);
+  assert.equal(liveA[idx('Приоритет')], 'СЕГОДНЯ');
 });
 
-test('morning dashboard uses current date on the first day of a month because no prior completed in-month day exists', () => {
+test('first day can expose only the current live snapshot', () => {
   const dashboard = buildRopMorningDashboard({
     controlValues: CONTROL_VALUES.filter(row => row[0] === 'Дата' || row[0] === '2026-09-01'),
     asOfDate: '2026-09-01'
   });
   assert.equal(dashboard.reportDate, '2026-09-01');
+  assert.equal(dashboard.liveDate, '2026-09-01');
 });

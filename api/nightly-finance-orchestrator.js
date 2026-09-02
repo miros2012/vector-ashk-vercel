@@ -3,6 +3,7 @@ import syncHours from './sync-hours.js';
 import syncPayments from './sync-payments.js';
 import reconcileDecisions from './decision-reconcile-daily.js';
 import { createNightlyFinanceOrchestrator } from '../lib/nightly-finance-orchestrator.js';
+import { createIntradayRopOrchestrator } from '../lib/rop-intraday-orchestrator.js';
 import { createAshkReceivablesSource } from '../lib/ashk-receivables-source.js';
 import { createReceivablesSyncHandler } from '../lib/receivables-sync-handler.js';
 import { buildRopDailyControlWorkbook } from '../lib/rop-daily-control.js';
@@ -20,6 +21,7 @@ const ROP_TASKS_SHEET = 'РОП_Задачи_Сегодня';
 const ROP_UNMATCHED_SHEET = 'РОП_Неопознанные_Оплаты__diag';
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
+const INTRADAY_SCHEDULE = '0 4-15 * * *';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -125,6 +127,114 @@ async function readValues(sheetName, range) {
   return result.data.values || [];
 }
 
+function persistedContractsToStudents(values) {
+  return (Array.isArray(values) ? values.slice(1) : [])
+    .filter(row => Array.isArray(row) && Number(row?.[0]) > 0)
+    .map(row => ({
+      Id: Number(row[0]),
+      ContractDate: row[1] ?? '',
+      TrainingRoomName: row[3] ?? '',
+      OwnerName: row[4] ?? '',
+      SalesSum: row[5] ?? 0,
+      DebitSum: row[6] ?? 0,
+      Debt: row[7] ?? 0,
+      State: row[8] ?? '',
+      ContractName: row[9] ?? ''
+    }));
+}
+
+function missingStudentIds(workbook) {
+  return [...new Set(
+    workbook.unmatchedPaymentValues
+      .slice(1)
+      .filter(row => String(row?.[4] || '') === 'STUDENT_NOT_IN_CURRENT_SNAPSHOT')
+      .map(row => Number(row?.[2]))
+      .filter(studentId => Number.isInteger(studentId) && studentId > 0)
+  )];
+}
+
+async function fetchFallbackStudents(studentIds) {
+  let failures = 0;
+  const details = await Promise.all(studentIds.map(async studentId => {
+    try {
+      const student = await receivablesSource.fetchStudent(studentId);
+      if (Number(student?.Id) !== studentId) {
+        failures += 1;
+        return null;
+      }
+      return student;
+    } catch {
+      failures += 1;
+      return null;
+    }
+  }));
+  return { students: details.filter(Boolean), failures };
+}
+
+async function persistRopOutputs({ workbook, date, month, writeContracts = true, fallbackRequested = 0, fallbackResolved = 0, fallbackLookupFailures = 0 }) {
+  const morningDashboard = buildRopMorningDashboard({
+    controlValues: workbook.controlValues,
+    asOfDate: date
+  });
+  const tasksToday = buildRopTasksToday({
+    morningValues: morningDashboard.values,
+    taskDate: date
+  });
+
+  if (writeContracts) {
+    await writeValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J', workbook.currentMonthContractsValues, 10);
+  }
+  await writeValues(ROP_CONTROL_SHEET, 'A:S', workbook.controlValues, 19);
+  await writeValues(ROP_MORNING_SHEET, 'A:V', morningDashboard.values, 22);
+  await writeValues(ROP_TASKS_SHEET, 'A:P', tasksToday.values, 16);
+  await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
+
+  const reads = await Promise.all([
+    writeContracts ? readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J') : Promise.resolve(null),
+    readValues(ROP_CONTROL_SHEET, 'A:S'),
+    readValues(ROP_MORNING_SHEET, 'A:V'),
+    readValues(ROP_TASKS_SHEET, 'A:P'),
+    readValues(ROP_UNMATCHED_SHEET, 'A:G')
+  ]);
+  const [contractsReadback, controlReadback, morningReadback, tasksReadback, unmatchedReadback] = reads;
+  const contractsVerified = !writeContracts || (
+    contractsReadback.length === workbook.currentMonthContractsValues.length
+    && String(contractsReadback?.[0]?.[0] || '') === 'StudentId'
+  );
+  const controlVerified = controlReadback.length === workbook.controlValues.length
+    && String(controlReadback?.[0]?.[0] || '') === 'Дата';
+  const morningVerified = morningReadback.length === morningDashboard.values.length
+    && String(morningReadback?.[0]?.[0] || '') === 'Срез';
+  const tasksVerified = tasksReadback.length === tasksToday.values.length
+    && String(tasksReadback?.[0]?.[0] || '') === 'Дата задачи';
+  const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length
+    && String(unmatchedReadback?.[0]?.[0] || '') === 'ID оплаты';
+  if (!contractsVerified || !controlVerified || !morningVerified || !tasksVerified || !unmatchedVerified) {
+    throw new Error('ROP daily control readback verification failed');
+  }
+
+  const result = {
+    ok: true,
+    month,
+    asOfDate: date,
+    liveDate: morningDashboard.liveDate,
+    controlRows: workbook.controlValues.length - 1,
+    morningReportDate: morningDashboard.reportDate,
+    morningPriorityCount: morningDashboard.metrics.todayPriority,
+    tasksTodayCount: tasksToday.metrics.tasks,
+    tasksTodayDeficit: tasksToday.metrics.totalDeficit,
+    currentMonthContracts: workbook.metrics.currentMonthContracts,
+    fallbackRequested,
+    fallbackResolved,
+    fallbackLookupFailures,
+    unmatchedPayments: workbook.metrics.unmatchedPayments,
+    unmatchedPaymentAmount: workbook.metrics.unmatchedPaymentAmount,
+    verified: true
+  };
+  console.log(JSON.stringify({ event: 'rop-daily-control-sync', ...result }));
+  return result;
+}
+
 async function syncRopDailyControl({ groups, contractsByGroup }) {
   const { date, month } = tyumenToday();
   const [planValues, paymentValues] = await Promise.all([
@@ -140,33 +250,13 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     month,
     asOfDate: date
   });
-
-  const fallbackStudentIds = [...new Set(
-    workbook.unmatchedPaymentValues
-      .slice(1)
-      .filter(row => String(row?.[4] || '') === 'STUDENT_NOT_IN_CURRENT_SNAPSHOT')
-      .map(row => Number(row?.[2]))
-      .filter(studentId => Number.isInteger(studentId) && studentId > 0)
-  )];
-  const fallbackStudents = [];
+  const ids = missingStudentIds(workbook);
+  let fallbackStudents = [];
   let fallbackLookupFailures = 0;
-
-  if (fallbackStudentIds.length) {
-    const details = await Promise.all(fallbackStudentIds.map(async studentId => {
-      try {
-        const student = await receivablesSource.fetchStudent(studentId);
-        if (Number(student?.Id) !== studentId) {
-          fallbackLookupFailures += 1;
-          return null;
-        }
-        return student;
-      } catch {
-        fallbackLookupFailures += 1;
-        return null;
-      }
-    }));
-    fallbackStudents.push(...details.filter(Boolean));
-
+  if (ids.length) {
+    const fallback = await fetchFallbackStudents(ids);
+    fallbackStudents = fallback.students;
+    fallbackLookupFailures = fallback.failures;
     if (fallbackStudents.length) {
       workbook = buildRopDailyControlWorkbook({
         planValues,
@@ -180,82 +270,67 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     }
   }
 
-  const morningDashboard = buildRopMorningDashboard({
-    controlValues: workbook.controlValues,
+  return persistRopOutputs({
+    workbook,
+    date,
+    month,
+    writeContracts: true,
+    fallbackRequested: ids.length,
+    fallbackResolved: fallbackStudents.length,
+    fallbackLookupFailures
+  });
+}
+
+async function refreshRopFromStaging() {
+  const { date, month } = tyumenToday();
+  const [planValues, paymentValues, currentContractsValues] = await Promise.all([
+    readValues(ROP_PLAN_SHEET, 'A:H'),
+    readValues(PAYMENTS_STAGING_SHEET, 'A:H'),
+    readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J')
+  ]);
+  const baseStudents = persistedContractsToStudents(currentContractsValues);
+  if (!baseStudents.length) throw new Error('Current-month ROP contract staging is empty');
+
+  let fallbackStudents = baseStudents;
+  let workbook = buildRopDailyControlWorkbook({
+    planValues,
+    groups: [],
+    contractsByGroup: {},
+    fallbackStudents,
+    paymentValues,
+    month,
     asOfDate: date
   });
-  const tasksToday = buildRopTasksToday({
-    morningValues: morningDashboard.values,
-    taskDate: date
-  });
-
-  await writeValues(
-    CURRENT_MONTH_CONTRACTS_SHEET,
-    'A:J',
-    workbook.currentMonthContractsValues,
-    10
-  );
-  await writeValues(ROP_CONTROL_SHEET, 'A:S', workbook.controlValues, 19);
-  await writeValues(ROP_MORNING_SHEET, 'A:U', morningDashboard.values, 21);
-  await writeValues(ROP_TASKS_SHEET, 'A:P', tasksToday.values, 16);
-  await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
-
-  const [contractsReadback, controlReadback, morningReadback, tasksReadback, unmatchedReadback] = await Promise.all([
-    readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
-    readValues(ROP_CONTROL_SHEET, 'A:S'),
-    readValues(ROP_MORNING_SHEET, 'A:U'),
-    readValues(ROP_TASKS_SHEET, 'A:P'),
-    readValues(ROP_UNMATCHED_SHEET, 'A:G')
-  ]);
-  const contractsVerified = contractsReadback.length === workbook.currentMonthContractsValues.length
-    && String(contractsReadback?.[0]?.[0] || '') === 'StudentId';
-  const controlVerified = controlReadback.length === workbook.controlValues.length
-    && String(controlReadback?.[0]?.[0] || '') === 'Дата';
-  const morningVerified = morningReadback.length === morningDashboard.values.length
-    && String(morningReadback?.[0]?.[0] || '') === 'Дата отчёта';
-  const tasksVerified = tasksReadback.length === tasksToday.values.length
-    && String(tasksReadback?.[0]?.[0] || '') === 'Дата задачи';
-  const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length
-    && String(unmatchedReadback?.[0]?.[0] || '') === 'ID оплаты';
-  if (!contractsVerified || !controlVerified || !morningVerified || !tasksVerified || !unmatchedVerified) {
-    throw new Error('ROP daily control readback verification failed');
+  const ids = missingStudentIds(workbook);
+  let fallbackLookupFailures = 0;
+  let resolved = [];
+  if (ids.length) {
+    const fallback = await fetchFallbackStudents(ids);
+    resolved = fallback.students;
+    fallbackLookupFailures = fallback.failures;
+    if (resolved.length) {
+      fallbackStudents = [...baseStudents, ...resolved];
+      workbook = buildRopDailyControlWorkbook({
+        planValues,
+        groups: [],
+        contractsByGroup: {},
+        fallbackStudents,
+        paymentValues,
+        month,
+        asOfDate: date
+      });
+    }
   }
 
-  console.log(JSON.stringify({
-    event: 'rop-daily-control-sync',
+  return persistRopOutputs({
+    workbook,
+    date,
     month,
-    asOfDate: date,
-    controlRows: workbook.controlValues.length - 1,
-    morningReportDate: morningDashboard.reportDate,
-    morningPriorityCount: morningDashboard.metrics.todayPriority,
-    tasksTodayCount: tasksToday.metrics.tasks,
-    tasksTodayDeficit: tasksToday.metrics.totalDeficit,
-    currentMonthContracts: workbook.metrics.currentMonthContracts,
-    fallbackRequested: fallbackStudentIds.length,
-    fallbackResolved: fallbackStudents.length,
-    fallbackLookupFailures,
-    unmatchedPayments: workbook.metrics.unmatchedPayments,
-    unmatchedPaymentAmount: workbook.metrics.unmatchedPaymentAmount,
-    verified: true
-  }));
-
-  return {
-    ok: true,
-    month,
-    asOfDate: date,
-    controlRows: workbook.controlValues.length - 1,
-    morningReportDate: morningDashboard.reportDate,
-    morningPriorityCount: morningDashboard.metrics.todayPriority,
-    tasksTodayCount: tasksToday.metrics.tasks,
-    tasksTodayDeficit: tasksToday.metrics.totalDeficit,
-    currentMonthContracts: workbook.metrics.currentMonthContracts,
-    fallbackRequested: fallbackStudentIds.length,
-    fallbackResolved: fallbackStudents.length,
-    fallbackLookupFailures,
-    unmatchedPayments: workbook.metrics.unmatchedPayments,
-    unmatchedPaymentAmount: workbook.metrics.unmatchedPaymentAmount,
-    verified: true
-  };
+    writeContracts: false,
+    fallbackRequested: ids.length,
+    fallbackResolved: resolved.length,
+    fallbackLookupFailures
+  });
 }
 
 const receivablesSource = createAshkReceivablesSource({
@@ -275,8 +350,9 @@ const syncReceivables = createReceivablesSyncHandler({
 });
 
 export const runReceivablesNow = syncReceivables;
+export const runIntradayRopNow = refreshRopFromStaging;
 
-const handler = createNightlyFinanceOrchestrator({
+const nightlyHandler = createNightlyFinanceOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runHours: syncHours,
   runPayments: syncPayments,
@@ -284,4 +360,16 @@ const handler = createNightlyFinanceOrchestrator({
   runDecisions: reconcileDecisions
 });
 
-export default handler;
+const intradayHandler = createIntradayRopOrchestrator({
+  cronSecret: process.env.CRON_SECRET || '',
+  runPayments: syncPayments,
+  refreshRop: refreshRopFromStaging
+});
+
+export default async function handler(req, res) {
+  const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
+  if (schedule === INTRADAY_SCHEDULE) {
+    return intradayHandler(req, res);
+  }
+  return nightlyHandler(req, res);
+}
