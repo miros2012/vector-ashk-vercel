@@ -14,13 +14,15 @@ test('negative outstanding net is REVIEW_REQUIRED', () => {
 });
 
 test('unallocated fuel blocks final promotion without reducing net', () => {
+  const blocked = [{ type: 'FUEL', amount: 3000, reason: 'NO_MASTER_ALLOCATION' }];
   const result = reconcileMasterPayroll({
     gross: { masters: [{ masterKey: 'a', masterName: 'A', gross: 10000 }], totals: { gross: 10000 }, blockers: [] },
-    evidence: { confirmed: [], blocked: [{ type: 'FUEL', amount: 3000, reason: 'NO_MASTER_ALLOCATION' }] },
+    evidence: { confirmed: [], blocked },
     requiredBlockedTypes: ['FUEL']
   });
   assert.equal(result.masters[0].outstandingNet, 10000);
   assert.equal(result.totals.blocked, 3000);
+  assert.deepEqual(result.blocked, blocked);
   assert.equal(result.promotionStatus, 'BLOCKED');
   assert.equal(result.gates.VEHICLE_ALLOCATIONS_RESOLVED_OR_EXCLUDED, false);
 });
