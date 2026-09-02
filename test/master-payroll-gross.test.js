@@ -129,3 +129,64 @@ test('gross is aggregated by employee and preserves per-type event/hour counts',
   assert.equal(masterA.components['Мото'].events, 2);
   assert.equal(masterA.components['Мото'].academicHours, 4);
 });
+
+test('personal rate card overrides universal planning rate and pays driving by event', () => {
+  const rows = [
+    { employeeId: '2859064', masterName: 'Аталыков Сергей Сергеевич', sessionTypeName: 'Основное вождение (120 минут)', academicHours: 3, factDate: '2026-08-06', eventKey: 'a1' },
+    { employeeId: '2859064', masterName: 'Аталыков Сергей Сергеевич', sessionTypeName: 'Основное вождение (120 минут)', academicHours: 3, factDate: '2026-08-13', eventKey: 'a2' },
+    { employeeId: '2859064', masterName: 'Аталыков Сергей Сергеевич', sessionTypeName: 'Доп. часы кат В (120 минут)', academicHours: 3, factDate: '2026-08-18', eventKey: 'a3' }
+  ];
+  const rateModel = {
+    shared: {
+      'Внутренний экзамен город': { mode: 'event', rate: 200, group: 'B' }
+    },
+    employees: {
+      '2859064': {
+        rates: {
+          'Основное вождение (120 минут)': { mode: 'event', rate: 1000, group: 'B' },
+          'Доп. часы кат В (120 минут)': { mode: 'event', rate: 1500, group: 'B' }
+        }
+      }
+    }
+  };
+
+  const result = calculateVerifiedGross(rows, rateModel);
+  assert.equal(result.totals.gross, 3500);
+  assert.equal(result.blockers.length, 0);
+});
+
+test('dated rate segments support a mid-month switch for the same master', () => {
+  const rows = [
+    { employeeId: '3540779', masterName: 'Захаров Никита Викторович', sessionTypeName: 'Основное вождение (120 минут)', academicHours: 3, factDate: '2026-08-24', eventKey: 'before' },
+    { employeeId: '3540779', masterName: 'Захаров Никита Викторович', sessionTypeName: 'Основное вождение (120 минут)', academicHours: 3, factDate: '2026-08-25', eventKey: 'after' }
+  ];
+  const rateModel = {
+    shared: {},
+    employees: {
+      '3540779': {
+        rates: {
+          'Основное вождение (120 минут)': [
+            { from: '2026-08-01', to: '2026-08-24', mode: 'event', rate: 670, group: 'B' },
+            { from: '2026-08-25', to: '2026-08-31', mode: 'event', rate: 1200, group: 'B' }
+          ]
+        }
+      }
+    }
+  };
+
+  const result = calculateVerifiedGross(rows, rateModel);
+  assert.equal(result.totals.gross, 1870);
+  assert.equal(result.blockers.length, 0);
+});
+
+test('missing personal rate blocks payroll gross instead of falling back to planning rate', () => {
+  const rows = [
+    { employeeId: 'x', masterName: 'Master X', sessionTypeName: 'Основное вождение (120 минут)', academicHours: 3, factDate: '2026-08-10', eventKey: 'x1' }
+  ];
+  const rateModel = { shared: {}, employees: {} };
+
+  const result = calculateVerifiedGross(rows, rateModel);
+  assert.equal(result.totals.gross, 0);
+  assert.equal(result.blockers.length, 1);
+  assert.equal(result.blockers[0].reason, 'MISSING_MASTER_RATE');
+});
