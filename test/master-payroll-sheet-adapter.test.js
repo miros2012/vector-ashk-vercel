@@ -60,7 +60,7 @@ test('aggregate row contains unresolved fuel and leasing while master rows do no
   assert.equal(rows[1][14], 'не распределено');
 });
 
-test('gate summary is rendered and no production sheet name is exported', () => {
+test('gate summary is rendered and no production sheet name is exported', async () => {
   const rows = buildMasterPayrollSheetValues({
     masters: [],
     totals: { gross: 0, confirmedDeductions: 0, outstandingNet: 0, blocked: 0 },
