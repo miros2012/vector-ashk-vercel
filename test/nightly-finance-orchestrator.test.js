@@ -33,6 +33,7 @@ test('nightly orchestrator rejects non-GET and invalid cron auth before child ha
   const handler = createNightlyFinanceOrchestrator({
     cronSecret: 'secret-value',
     runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
     runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
   });
 
@@ -47,36 +48,40 @@ test('nightly orchestrator rejects non-GET and invalid cron auth before child ha
   assert.deepEqual(calls, []);
 });
 
-test('nightly orchestrator runs HOURS before decisions and returns aggregate stages', async () => {
+test('nightly orchestrator runs HOURS, receivables, then decisions and returns aggregate stages', async () => {
   const calls = [];
   const handler = createNightlyFinanceOrchestrator({
     cronSecret: 'secret-value',
-    runHours: handlerReturning(200, { ok: true, month: '2026-09', source: { rows: 5, hours: 10 }, comparison: { ok: true } }, calls, 'hours'),
-    runDecisions: handlerReturning(200, { ok: true, mode: 'dry_run', verified: true, total: 4, matches: 4 }, calls, 'decisions')
+    runHours: handlerReturning(200, { ok: true, month: '2026-09' }, calls, 'hours'),
+    runReceivables: handlerReturning(200, { ok: true, total: { debt: 50000 } }, calls, 'receivables'),
+    runDecisions: handlerReturning(200, { ok: true, mode: 'dry_run' }, calls, 'decisions')
   });
 
   const res = responseRecorder();
   await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(calls.map((item) => item.name), ['hours', 'decisions']);
+  assert.deepEqual(calls.map((item) => item.name), ['hours', 'receivables', 'decisions']);
   assert.equal(calls[0].authorization, 'Bearer secret-value');
   assert.equal(calls[1].authorization, 'Bearer secret-value');
+  assert.equal(calls[2].authorization, 'Bearer secret-value');
   assert.deepEqual(res.body, {
     ok: true,
     stages: {
       hours: { ok: true, statusCode: 200 },
+      receivables: { ok: true, statusCode: 200 },
       decisions: { ok: true, statusCode: 200 }
     }
   });
   assert.equal(JSON.stringify(res.body).includes('secret-value'), false);
 });
 
-test('nightly orchestrator skips decisions when HOURS fails', async () => {
+test('nightly orchestrator skips receivables and decisions when HOURS fails', async () => {
   const calls = [];
   const handler = createNightlyFinanceOrchestrator({
     cronSecret: 'secret-value',
     runHours: handlerReturning(502, { ok: false, error: 'Staging verification failed' }, calls, 'hours'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
     runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
   });
 
@@ -89,6 +94,31 @@ test('nightly orchestrator skips decisions when HOURS fails', async () => {
     ok: false,
     stages: {
       hours: { ok: false, statusCode: 502 },
+      receivables: { ok: false, statusCode: null, skipped: true },
+      decisions: { ok: false, statusCode: null, skipped: true }
+    }
+  });
+});
+
+test('nightly orchestrator skips decisions when receivables fails', async () => {
+  const calls = [];
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret-value',
+    runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runReceivables: handlerReturning(500, { ok: false, error: 'Receivables sync failed' }, calls, 'receivables'),
+    runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(calls.map((item) => item.name), ['hours', 'receivables']);
+  assert.deepEqual(res.body, {
+    ok: false,
+    stages: {
+      hours: { ok: true, statusCode: 200 },
+      receivables: { ok: false, statusCode: 500 },
       decisions: { ok: false, statusCode: null, skipped: true }
     }
   });
