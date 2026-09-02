@@ -68,7 +68,7 @@ async function ensureSheet(sheets, title, rowCount, columnCount) {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
-        requests: [{ addSheet: { properties: { title, gridProperties: { rowCount, columnCount } } }]
+        requests: [{ addSheet: { properties: { title, gridProperties: { rowCount, columnCount } } } }]
       }
     });
     return;
