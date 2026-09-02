@@ -1,0 +1,2 @@
+Production deployment marker for the approved dual ROP dashboard + hourly 09:00–20:00 Tyumen refresh.
+Runtime tree was verified by PR #25 CI before this marker.
