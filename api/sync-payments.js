@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { paymentMetrics, paymentMetricsMatch } from '../lib/payments-staging-verification.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
@@ -61,40 +62,29 @@ async function fetchAshkMonth() {
         'Content-Type': 'application/json'
       }
     });
-    const text = await r.text();
-    if (!r.ok) throw new Error(`АШК HTTP ${r.status}: ${text.slice(0, 500)}`);
+    const responseText = await r.text();
+    if (!r.ok) throw new Error(`АШК HTTP ${r.status}: ${responseText.slice(0, 500)}`);
     let json;
-    try { json = JSON.parse(text); } catch { throw new Error(`АШК вернул не JSON: ${text.slice(0, 500)}`); }
+    try { json = JSON.parse(responseText); } catch { throw new Error(`АШК вернул не JSON: ${responseText.slice(0, 500)}`); }
     if (json?.success === false) throw new Error(`АШК success=false: ${JSON.stringify(json.data || json).slice(0, 500)}`);
     const data = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
     all.push(...data);
-    await new Promise(r2 => setTimeout(r2, 1100));
+    await new Promise(resolve => setTimeout(resolve, 1100));
   }
   const byId = new Map();
   for (const item of all) {
     const id = String(item?.Id ?? '').trim();
     if (id) byId.set(id, item);
   }
-  const items = [...byId.values()].sort((a, b) => String(a.PayDate ?? '').localeCompare(String(b.PayDate ?? '')));
-  return items;
+  return [...byId.values()].sort((a, b) => String(a.PayDate ?? '').localeCompare(String(b.PayDate ?? '')));
 }
-function metricsFromRows(rows) {
-  const debitTotal = rows.reduce((s, r) => s + toNumber(r[7]), 0);
-  const dates = rows.map(r => String(r[1] ?? '')).filter(Boolean).sort();
-  return {
-    rows: rows.length,
-    debitTotal: Math.round(debitTotal * 100) / 100,
-    minPayDate: dates[0] || null,
-    maxPayDate: dates.at(-1) || null
-  };
-}
-async function readLiveMetrics(sheets) {
+async function readMetrics(sheets, sheetName) {
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${LIVE_SHEET}'!A2:H`
+    range: `'${sheetName}'!A2:H`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
   });
-  const values = r.data.values || [];
-  return metricsFromRows(values.filter(row => String(row[0] ?? '').trim()));
+  return paymentMetrics(r.data.values || []);
 }
 
 export default async function handler(req, res) {
@@ -122,28 +112,42 @@ export default async function handler(req, res) {
       valueInputOption: 'RAW',
       requestBody: { values: [...headers, ...rows] }
     });
-    const staging = metricsFromRows(rows);
-    const live = await readLiveMetrics(sheets);
+
+    const stagingExpected = paymentMetrics(rows);
+    const stagingReadback = await readMetrics(sheets, STAGING_SHEET);
+    if (!paymentMetricsMatch(stagingReadback, stagingExpected)) {
+      console.error('sync-payments-staging-verification: mismatch');
+      return res.status(502).json({ ok: false, error: 'Payment staging verification failed' });
+    }
+
+    const live = await readMetrics(sheets, LIVE_SHEET);
     const comparison = {
-      rowDiff: staging.rows - live.rows,
-      debitDiff: Math.round((staging.debitTotal - live.debitTotal) * 100) / 100,
-      sameRows: staging.rows === live.rows,
-      sameDebit: Math.abs(staging.debitTotal - live.debitTotal) < 0.01
+      rowDiff: stagingExpected.rows - live.rows,
+      debitDiff: Math.round((stagingExpected.debitTotal - live.debitTotal) * 100) / 100,
+      sameRows: stagingExpected.rows === live.rows,
+      sameDebit: Math.abs(stagingExpected.debitTotal - live.debitTotal) < 0.01
     };
-    console.log(JSON.stringify({ event: 'sync-payments-staging', staging, live, comparison }));
+    console.log(JSON.stringify({
+      event: 'sync-payments-staging',
+      staging: stagingExpected,
+      verified: true,
+      live,
+      comparison
+    }));
     return res.status(200).json({
       ok: true,
       mode: 'staging_only',
+      verified: true,
       spreadsheetId: SPREADSHEET_ID,
       stagingSheet: STAGING_SHEET,
       liveSheet: LIVE_SHEET,
-      staging,
+      staging: stagingExpected,
       live,
       comparison,
       note: 'Рабочий лист не изменён.'
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ ok: false, error: String(error?.message || error) });
+    console.error(error?.name || 'Error');
+    return res.status(500).json({ ok: false, error: 'Payment staging sync failed' });
   }
 }
