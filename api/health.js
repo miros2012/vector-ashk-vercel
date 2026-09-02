@@ -3,10 +3,7 @@ import { createRopPublisher } from '../lib/rop-publisher.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
-const PUBLISH_SCHEDULES = new Set([
-  '35 21 * * *',
-  ...Array.from({ length: 12 }, (_, index) => `5 ${index + 4} * * *`)
-]);
+const PUBLISH_SCHEDULES = new Set(['35 21 * * *']);
 const RANGES = {
   'РОП_Штаб_Утро': 'A:V',
   'РОП_Задачи_Сегодня': 'A:P',
@@ -118,7 +115,7 @@ async function writeTargetSheet(spreadsheetId, sheetName, values) {
   }
 }
 
-const publishRop = createRopPublisher({
+export const publishRopNow = createRopPublisher({
   targetSpreadsheetId: TARGET_ROP_SPREADSHEET_ID,
   readSheet: readSourceSheet,
   readTargetSheet,
@@ -142,7 +139,7 @@ export default async function handler(req, res) {
       return res.status(403).json({ ok: false, error: 'forbidden' });
     }
     try {
-      const result = await publishRop();
+      const result = await publishRopNow();
       return res.status(200).json({ ok: true, mode: 'rop_publish', sheets: result.sheets });
     } catch (error) {
       console.error('rop-publish:', error?.name || 'Error');

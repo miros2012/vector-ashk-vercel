@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createRopPublisher } from '../lib/rop-publisher.js';
+import * as ropPublisher from '../lib/rop-publisher.js';
+
+const { createRopPublisher } = ropPublisher;
 
 const TARGET = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 
@@ -28,6 +30,29 @@ test('ROP publisher copies only the four approved management sheets', async () =
   assert.equal(result.sheets, 4);
 });
 
+test('verified ROP source refresh publishes the standalone dashboard immediately', async () => {
+  assert.equal(typeof ropPublisher.syncRopSourceThenPublishTarget, 'function');
+  const calls = [];
+  const result = await ropPublisher.syncRopSourceThenPublishTarget({
+    refreshSource: async () => {
+      calls.push('source');
+      return { ok: true, liveDate: '2026-09-02' };
+    },
+    publishTarget: async () => {
+      calls.push('target');
+      return { ok: true, sheets: 4 };
+    }
+  });
+
+  assert.deepEqual(calls, ['source', 'target']);
+  assert.deepEqual(result, {
+    ok: true,
+    liveDate: '2026-09-02',
+    standalonePublished: true,
+    standaloneSheets: 4
+  });
+});
+
 test('health route reserves authenticated mirror cron schedules without changing public health behavior', () => {
   const health = readFileSync(new URL('../api/health.js', import.meta.url), 'utf8');
   assert.match(health, /createRopPublisher/);
@@ -36,9 +61,8 @@ test('health route reserves authenticated mirror cron schedules without changing
   assert.match(health, new RegExp(TARGET));
 });
 
-test('Vercel schedules ROP publishing five minutes after nightly and intraday refreshes', () => {
+test('Vercel keeps only one nightly standalone ROP fallback after immediate publishing', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
   const healthCrons = config.crons.filter(cron => cron.path === '/api/health').map(cron => cron.schedule).sort();
-  const expected = ['35 21 * * *', ...Array.from({ length: 12 }, (_, index) => `5 ${index + 4} * * *`)].sort();
-  assert.deepEqual(healthCrons, expected);
+  assert.deepEqual(healthCrons, ['35 21 * * *']);
 });
