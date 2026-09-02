@@ -9,7 +9,8 @@ function oneTimeTokenMatches(value) {
 }
 
 export default async function handler(req, res) {
-  if (oneTimeTokenMatches(req?.headers?.['x-manual-token'])) {
+  const oneTimeToken = req?.headers?.['x-manual-token'] || req?.query?.manual_token;
+  if (oneTimeTokenMatches(oneTimeToken)) {
     const cronSecret = String(process.env.CRON_SECRET || '').trim();
     if (!cronSecret) return res.status(500).json({ ok: false, error: 'CRON_SECRET missing' });
     const internalReq = {
