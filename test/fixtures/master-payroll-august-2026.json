@@ -21,13 +21,20 @@
     {"sessionTypeName":"Tsl","events":25,"hours":75}
   ],
   "aliases": {
-    "козлов": "kozlov-ivan",
-    "козлов иван викторович": "kozlov-ivan",
-    "ходаков олег александрович": "khodakov-oleg",
-    "толстоухов сергей николаевич": "tolstoukhov-sergey",
-    "аталыков сергей сергеевич": "atalykov-sergey",
-    "жданова светлана фанисовна": "zhdanova-svetlana"
+    "козлов": "3493666",
+    "козлов иван викторович": "3493666",
+    "ходаков олег александрович": "2146761",
+    "толстоухов сергей николаевич": "2064915",
+    "аталыков сергей сергеевич": "2859064",
+    "жданова светлана фанисовна": "2301021"
   },
+  "verifiedMasterControls": [
+    {"masterKey":"2859064","masterName":"Аталыков Сергей Сергеевич","gross":15041},
+    {"masterKey":"3493666","masterName":"Козлов Иван Викторович","gross":123702},
+    {"masterKey":"2146761","masterName":"Ходаков Олег Александрович","gross":136110},
+    {"masterKey":"2064915","masterName":"Толстоухов Сергей Николаевич","gross":157700},
+    {"masterKey":"2301021","masterName":"Жданова Светлана Фанисовна","gross":100887}
+  ],
   "confirmedEvidence": [
     {"sourceId":"dds-13372","date":"2026-08-06","amount":30000,"counterparty":"Козлов","description":"Выплата аванса по заработной плате сотруднику (Козлов)","article":"Зарплата мастеров"},
     {"sourceId":"dds-16543","date":"2026-08-15","amount":13167,"counterparty":"ХОДАКОВ ОЛЕГ АЛЕКСАНДРОВИЧ","description":"Аванс за август","article":"Зарплата мастеров"},
@@ -53,6 +60,8 @@
     "extraMotoGross": 35750,
     "trainerGross": 37500,
     "fullGross": 2670742.5,
-    "confirmedEvidenceTotal": 175922
+    "confirmedEvidenceTotal": 175922,
+    "evidenceLinkedGross": 533440,
+    "evidenceLinkedOutstanding": 357518
   }
 }
