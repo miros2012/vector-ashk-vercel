@@ -45,7 +45,7 @@ function grossByGroup(result, group) {
     .reduce((sum, component) => sum + component.gross, 0), 0);
 }
 
-test('August 2026 archive regression locks verified event counts, hours and full gross', async () => {
+test('August archive controls stay verified while the old universal-rate gross is explicitly rejected', async () => {
   const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'));
   const rows = expandVerifiedTypeControls(fixture.typeControls);
 
@@ -54,22 +54,34 @@ test('August 2026 archive regression locks verified event counts, hours and full
   assert.equal(fixture.archive.verification, 'OK');
   assert.equal(fixture.archive.businessTimezone, 'Asia/Yekaterinburg');
 
-  const gross = calculateVerifiedGross(rows, MASTER_PAYROLL_RATE_MODEL);
-  const bGross = grossByGroup(gross, 'B');
-  const motoGross = grossByGroup(gross, 'MOTO');
-  const extraMotoGross = grossByGroup(gross, 'EXTRA_MOTO');
-  const trainerGross = grossByGroup(gross, 'TRAINER');
+  const legacyPlanningGross = calculateVerifiedGross(rows, MASTER_PAYROLL_RATE_MODEL);
+  const bGross = grossByGroup(legacyPlanningGross, 'B');
+  const motoGross = grossByGroup(legacyPlanningGross, 'MOTO');
+  const extraMotoGross = grossByGroup(legacyPlanningGross, 'EXTRA_MOTO');
+  const trainerGross = grossByGroup(legacyPlanningGross, 'TRAINER');
 
-  assert.equal(bGross, fixture.expected.bGrossEventBased);
-  assert.equal(bGross - fixture.expected.previousHourBasedBControl, 1000);
-  assert.equal(motoGross, fixture.expected.motoGross);
-  assert.equal(extraMotoGross, fixture.expected.extraMotoGross);
-  assert.equal(trainerGross, fixture.expected.trainerGross);
-  assert.equal(gross.totals.gross, fixture.expected.fullGross);
-  assert.equal(gross.masters.reduce((sum, master) => sum + master.gross, 0), gross.totals.gross);
+  assert.equal(bGross, fixture.expected.legacyUniversalBGrossEventBased);
+  assert.equal(bGross - fixture.expected.legacyUniversalPreviousHourBasedBControl, 1000);
+  assert.equal(motoGross, fixture.expected.legacyUniversalMotoGross);
+  assert.equal(extraMotoGross, fixture.expected.legacyUniversalExtraMotoGross);
+  assert.equal(trainerGross, fixture.expected.legacyUniversalTrainerGross);
+  assert.equal(legacyPlanningGross.totals.gross, fixture.expected.legacyUniversalRejectedGross);
+  assert.notEqual(legacyPlanningGross.totals.gross, fixture.expected.personalRateAshkBackedGross);
 });
 
-test('August evidence registry totals 175,922 RUB and vehicle costs stay blocked', async () => {
+test('August personal rate-card control covers all active masters and locks the ASHK-backed subtotal only', async () => {
+  const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'));
+  const controls = fixture.personalRateGrossControls;
+  const subtotal = controls.reduce((sum, master) => sum + master.gross, 0);
+
+  assert.equal(controls.length, fixture.expected.activeRateCards);
+  assert.equal(new Set(controls.map((master) => master.masterKey)).size, fixture.expected.activeRateCards);
+  assert.equal(subtotal, fixture.expected.personalRateAshkBackedGross);
+  assert.equal(fixture.expected.manualComponentsReconciled, false);
+  assert.notEqual(subtotal, fixture.expected.legacyUniversalRejectedGross);
+});
+
+test('August evidence registry totals 175,922 RUB and unallocated vehicle costs stay blocked', async () => {
   const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'));
   const evidence = normalizePayrollEvidence(
     [...fixture.confirmedEvidence, ...fixture.blockedVehicleEvidence],
@@ -92,7 +104,7 @@ test('verified controls preserve the two event-count anomalies that invalidate h
   assert.equal(exams.events * 200, 37600);
 });
 
-test('evidence-linked August masters reconcile by real EmployeeId with no silent unmatched payments', async () => {
+test('evidence-linked August masters use personal-rate gross and do not silently lose payments', async () => {
   const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'));
   const evidence = normalizePayrollEvidence(fixture.confirmedEvidence, fixture.aliases);
   const grossTotal = fixture.verifiedMasterControls.reduce((sum, master) => sum + master.gross, 0);
@@ -117,10 +129,11 @@ test('evidence-linked August masters reconcile by real EmployeeId with no silent
   assert.equal(result.totals.outstandingNet, fixture.expected.evidenceLinkedOutstanding);
   assert.deepEqual(result.unmatchedEvidenceMasterKeys, []);
   assert.equal(result.gates.EVIDENCE_RECONCILED, true);
+  assert.equal(result.promotionStatus, 'BLOCKED');
 
   const atalykov = result.masters.find((master) => master.masterKey === '2859064');
   const tolstoukhov = result.masters.find((master) => master.masterKey === '2064915');
-  assert.equal(atalykov.outstandingNet, -14299);
+  assert.equal(atalykov.outstandingNet, -15640);
   assert.equal(atalykov.status, 'REVIEW_REQUIRED');
   assert.equal(tolstoukhov.outstandingNet, 130186);
 });
