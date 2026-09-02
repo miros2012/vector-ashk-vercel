@@ -68,7 +68,7 @@ async function ensureSheet(sheets, title, rowCount, columnCount) {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
-        requests: [{ addSheet: { properties: { title, gridProperties: { rowCount, columnCount } } } }]
+        requests: [{ addSheet: { properties: { title, gridProperties: { rowCount, columnCount } } }]
       }
     });
     return;
@@ -128,7 +128,7 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     readValues(PAYMENTS_STAGING_SHEET, 'A:H')
   ]);
 
-  const workbook = buildRopDailyControlWorkbook({
+  let workbook = buildRopDailyControlWorkbook({
     planValues,
     groups,
     contractsByGroup,
@@ -136,6 +136,45 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     month,
     asOfDate: date
   });
+
+  const fallbackStudentIds = [...new Set(
+    workbook.unmatchedPaymentValues
+      .slice(1)
+      .filter(row => String(row?.[4] || '') === 'STUDENT_NOT_IN_CURRENT_SNAPSHOT')
+      .map(row => Number(row?.[2]))
+      .filter(studentId => Number.isInteger(studentId) && studentId > 0)
+  )];
+  const fallbackStudents = [];
+  let fallbackLookupFailures = 0;
+
+  if (fallbackStudentIds.length) {
+    const details = await Promise.all(fallbackStudentIds.map(async studentId => {
+      try {
+        const student = await receivablesSource.fetchStudent(studentId);
+        if (Number(student?.Id) !== studentId) {
+          fallbackLookupFailures += 1;
+          return null;
+        }
+        return student;
+      } catch {
+        fallbackLookupFailures += 1;
+        return null;
+      }
+    }));
+    fallbackStudents.push(...details.filter(Boolean));
+
+    if (fallbackStudents.length) {
+      workbook = buildRopDailyControlWorkbook({
+        planValues,
+        groups,
+        contractsByGroup,
+        fallbackStudents,
+        paymentValues,
+        month,
+        asOfDate: date
+      });
+    }
+  }
 
   await writeValues(
     CURRENT_MONTH_CONTRACTS_SHEET,
@@ -167,6 +206,9 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     asOfDate: date,
     controlRows: workbook.controlValues.length - 1,
     currentMonthContracts: workbook.metrics.currentMonthContracts,
+    fallbackRequested: fallbackStudentIds.length,
+    fallbackResolved: fallbackStudents.length,
+    fallbackLookupFailures,
     unmatchedPayments: workbook.metrics.unmatchedPayments,
     unmatchedPaymentAmount: workbook.metrics.unmatchedPaymentAmount,
     verified: true
@@ -178,6 +220,9 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     asOfDate: date,
     controlRows: workbook.controlValues.length - 1,
     currentMonthContracts: workbook.metrics.currentMonthContracts,
+    fallbackRequested: fallbackStudentIds.length,
+    fallbackResolved: fallbackStudents.length,
+    fallbackLookupFailures,
     unmatchedPayments: workbook.metrics.unmatchedPayments,
     unmatchedPaymentAmount: workbook.metrics.unmatchedPaymentAmount,
     verified: true
