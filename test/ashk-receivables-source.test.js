@@ -74,6 +74,33 @@ test('receivables source never exceeds configured group request concurrency', as
   assert.equal(maxActive, 2);
 });
 
+test('receivables source spaces every ASHK request start to stay under the API rate limit', async () => {
+  let clock = 0;
+  const starts = [];
+  const fetchFn = async (url) => {
+    starts.push({ url: String(url), at: clock });
+    if (String(url).endsWith('/api/StudyGroupList')) {
+      return jsonResponse({ success: true, data: [1,2,3].map(Id => ({ Id, StudentCount: 1 })) });
+    }
+    return jsonResponse({ success: true, data: [] });
+  };
+
+  const source = createAshkReceivablesSource({
+    fetchFn,
+    baseUrl: 'https://app.dscontrol.ru',
+    apiKey: 'secret-key',
+    concurrency: 3,
+    timeoutMs: 5000,
+    minIntervalMs: 350,
+    now: () => clock,
+    sleep: async (ms) => { clock += ms; }
+  });
+
+  await source.fetchCurrent();
+
+  assert.deepEqual(starts.map(item => item.at), [0, 350, 700, 1050]);
+});
+
 test('receivables source fails with endpoint-only error when ASHK returns application error', async () => {
   const fetchFn = async (url) => {
     if (String(url).endsWith('/api/StudyGroupList')) {
