@@ -200,6 +200,8 @@ const syncReceivables = createReceivablesSyncHandler({
   afterVerified: syncRopDailyControl
 });
 
+export const runReceivablesNow = syncReceivables;
+
 const handler = createNightlyFinanceOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runHours: syncHours,

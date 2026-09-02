@@ -13,6 +13,7 @@
     { "source": "/api/owner-action-queue", "destination": "/api/decision-event?ownerRoute=queue" }
   ],
   "functions": {
+    "api/health.js": { "maxDuration": 180 },
     "api/master-hours-diagnostic.js": { "maxDuration": 60 },
     "api/sync-hours.js": { "maxDuration": 60 },
     "api/sync-payments.js": { "maxDuration": 60 },
