@@ -49,6 +49,51 @@ test('receivables source loads groups, skips empty groups, and fetches contracts
   assert.equal(calls.every(call => call.headers?.api_key === 'secret-key'), true);
 });
 
+test('receivables source can fetch one contract by stable StudentId for ROP fallback', async () => {
+  const calls = [];
+  const fetchFn = async (url, options) => {
+    calls.push({ url: String(url), headers: options?.headers });
+    return jsonResponse({ success: true, data: {
+      Id: 3465984,
+      StudyGroupId: 123,
+      TrainingRoomName: 'Сити-Центр',
+      OwnerName: 'Менеджер Б',
+      ContractDate: '2025-12-01',
+      Debt: 0
+    } });
+  };
+
+  const source = createAshkReceivablesSource({
+    fetchFn,
+    baseUrl: 'https://app.dscontrol.ru',
+    apiKey: 'secret-key',
+    concurrency: 2,
+    timeoutMs: 5000,
+    minIntervalMs: 1
+  });
+
+  const student = await source.fetchStudent(3465984);
+
+  assert.equal(student.Id, 3465984);
+  assert.equal(student.TrainingRoomName, 'Сити-Центр');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://app.dscontrol.ru/api/StudentExternalGet?param=3465984');
+  assert.equal(calls[0].headers?.api_key, 'secret-key');
+});
+
+test('receivables source rejects invalid StudentId before external call', async () => {
+  let called = false;
+  const source = createAshkReceivablesSource({
+    fetchFn: async () => { called = true; return jsonResponse({ success: true, data: {} }); },
+    baseUrl: 'https://app.dscontrol.ru',
+    apiKey: 'secret-key',
+    minIntervalMs: 1
+  });
+
+  await assert.rejects(() => source.fetchStudent('not-an-id'), /StudentId/);
+  assert.equal(called, false);
+});
+
 test('receivables source never exceeds configured group request concurrency', async () => {
   let active = 0;
   let maxActive = 0;

@@ -89,3 +89,59 @@ test('ROP workbook exposes unmatched payment amount instead of silently assignin
   assert.equal(workbook.metrics.unmatchedPayments, 1);
   assert.equal(workbook.metrics.unmatchedPaymentAmount, 7000);
 });
+
+test('ROP workbook uses targeted student details only as fallback when current snapshot misses a StudentId', () => {
+  const paymentValues = [
+    ...PAYMENT_VALUES,
+    [6,'2026-09-01 14:00:00',999,9,1,'Дополнительное вождение',2700,2700]
+  ];
+  const fallbackStudents = [{
+    Id: 999,
+    StudyGroupId: 9990,
+    TrainingRoomName: 'Сити-Центр',
+    OwnerName: 'Менеджер В',
+    ContractDate: '2026-05-01',
+    SalesSum: 50000,
+    DebitSum: 50000,
+    Debt: 0,
+    State: 'DRV',
+    ContractName: 'old-contract'
+  }];
+
+  const workbook = buildRopDailyControlWorkbook({
+    planValues: PLAN_VALUES,
+    groups: GROUPS,
+    contractsByGroup: CONTRACTS,
+    fallbackStudents,
+    paymentValues,
+    month: '2026-09',
+    asOfDate: '2026-09-02'
+  });
+
+  assert.equal(workbook.metrics.unmatchedPayments, 0);
+  assert.equal(workbook.metrics.unmatchedPaymentAmount, 0);
+  assert.equal(workbook.metrics.fallbackStudentsUsed, 1);
+
+  const headers = workbook.controlValues[0];
+  const idx = name => headers.indexOf(name);
+  const rows = workbook.controlValues.slice(1);
+  const bSep1 = rows.find(r => r[idx('Дата')] === '2026-09-01' && r[idx('Менеджер')] === 'Менеджер Б');
+  const cSep1 = rows.find(r => r[idx('Дата')] === '2026-09-01' && r[idx('Менеджер')] === 'Менеджер В');
+  assert.equal(bSep1[idx('Факт филиала за день')], 52700);
+  assert.equal(cSep1[idx('Факт филиала за день')], 52700);
+  assert.equal(cSep1[idx('Личный факт за день')], 2700);
+
+  // Live current snapshot must win over fallback data for the same StudentId.
+  const liveWins = buildRopDailyControlWorkbook({
+    planValues: PLAN_VALUES,
+    groups: GROUPS,
+    contractsByGroup: CONTRACTS,
+    fallbackStudents: [{ ...fallbackStudents[0], Id: 201, TrainingRoomName: 'Зарека', OwnerName: 'Менеджер А' }],
+    paymentValues: PAYMENT_VALUES,
+    month: '2026-09',
+    asOfDate: '2026-09-02'
+  });
+  const liveRows = liveWins.controlValues.slice(1);
+  const liveBSep1 = liveRows.find(r => r[idx('Дата')] === '2026-09-01' && r[idx('Менеджер')] === 'Менеджер Б');
+  assert.equal(liveBSep1[idx('Факт филиала за день')], 50000);
+});
