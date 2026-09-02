@@ -10,15 +10,15 @@ const apiDirectory = path.join(here, '..', 'api');
 const financePath = '/api/nightly-finance-orchestrator';
 const publishPath = '/api/health';
 const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
-const publishSchedules = ['35 21 * * *', ...Array.from({ length: 12 }, (_, index) => `5 ${index + 4} * * *`)];
+const publishSchedules = ['35 21 * * *'];
 
 test('Hobby deployment uses only once-per-day cron expressions on finance and ROP publisher routes', () => {
   assert.ok(Array.isArray(config.crons), 'vercel.json must define crons');
   const financeCrons = config.crons.filter((cron) => cron.path === financePath);
   const publishCrons = config.crons.filter((cron) => cron.path === publishPath);
   assert.equal(financeCrons.length, 13, 'expected nightly full sync plus 12 daily intraday ROP schedules');
-  assert.equal(publishCrons.length, 13, 'expected 13 delayed ROP publication schedules');
-  assert.equal(config.crons.length, 26, 'only finance and ROP publication schedules should be configured');
+  assert.equal(publishCrons.length, 1, 'expected one nightly standalone ROP fallback');
+  assert.equal(config.crons.length, 14, 'only finance schedules and one ROP fallback should be configured');
   assert.deepEqual(financeCrons.map((cron) => cron.schedule).sort(), ['30 21 * * *', ...intradaySchedules].sort());
   assert.deepEqual(publishCrons.map((cron) => cron.schedule).sort(), publishSchedules.sort());
   assert.ok(!config.crons.some((cron) => cron.schedule.includes('-')), 'Hobby cron expressions must not run multiple times per day');
@@ -37,7 +37,7 @@ test('intraday ROP uses twelve once-daily UTC schedules covering 09:00 through 2
   assert.deepEqual(schedules.sort(), intradaySchedules.sort());
 });
 
-test('ROP publisher runs five minutes after each finance refresh on the existing health function', () => {
+test('ROP publisher keeps a nightly fallback after immediate source-to-target publishing', () => {
   const schedules = config.crons.filter((item) => item.path === publishPath).map((item) => item.schedule);
   assert.deepEqual(schedules.sort(), publishSchedules.sort());
 });
