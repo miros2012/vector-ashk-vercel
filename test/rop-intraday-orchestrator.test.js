@@ -1,0 +1,50 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createIntradayRopOrchestrator } from '../lib/rop-intraday-orchestrator.js';
+
+function responseRecorder() {
+  return {
+    statusCode: 200,
+    body: null,
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; }
+  };
+}
+
+test('intraday orchestrator runs payments then ROP refresh only', async () => {
+  const calls = [];
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runPayments: async (req, res) => {
+      calls.push(['payments', req.method]);
+      return res.status(200).json({ ok: true });
+    },
+    refreshRop: async () => {
+      calls.push(['rop']);
+      return { ok: true, liveDate: '2026-09-02' };
+    }
+  });
+  const req = { method: 'GET', headers: { authorization: 'Bearer secret' } };
+  const res = responseRecorder();
+  await handler(req, res);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls, [['payments', 'POST'], ['rop']]);
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.stages.payments.ok, true);
+  assert.equal(res.body.stages.rop.ok, true);
+});
+
+test('intraday orchestrator fails closed when payment sync fails', async () => {
+  let refreshed = false;
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runPayments: async (_req, res) => res.status(502).json({ ok: false }),
+    refreshRop: async () => { refreshed = true; return { ok: true }; }
+  });
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+  assert.equal(res.statusCode, 502);
+  assert.equal(refreshed, false);
+});
