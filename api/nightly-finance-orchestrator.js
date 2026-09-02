@@ -13,6 +13,7 @@ const RECEIVABLES_SUMMARY_SHEET = 'АШК_Дебиторка_Свод__vercel';
 const PAYMENTS_STAGING_SHEET = 'АШК_Оплаты__vercel';
 const ROP_PLAN_SHEET = 'РОП_План_Сентябрь';
 const ROP_CONTROL_SHEET = 'РОП_Контроль_Дня';
+const ROP_UNMATCHED_SHEET = 'РОП_Неопознанные_Оплаты__diag';
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
 
@@ -143,16 +144,20 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     10
   );
   await writeValues(ROP_CONTROL_SHEET, 'A:S', workbook.controlValues, 19);
+  await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
 
-  const [contractsReadback, controlReadback] = await Promise.all([
+  const [contractsReadback, controlReadback, unmatchedReadback] = await Promise.all([
     readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
-    readValues(ROP_CONTROL_SHEET, 'A:S')
+    readValues(ROP_CONTROL_SHEET, 'A:S'),
+    readValues(ROP_UNMATCHED_SHEET, 'A:G')
   ]);
   const contractsVerified = contractsReadback.length === workbook.currentMonthContractsValues.length
     && String(contractsReadback?.[0]?.[0] || '') === 'StudentId';
   const controlVerified = controlReadback.length === workbook.controlValues.length
     && String(controlReadback?.[0]?.[0] || '') === 'Дата';
-  if (!contractsVerified || !controlVerified) {
+  const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length
+    && String(unmatchedReadback?.[0]?.[0] || '') === 'ID оплаты';
+  if (!contractsVerified || !controlVerified || !unmatchedVerified) {
     throw new Error('ROP daily control readback verification failed');
   }
 
