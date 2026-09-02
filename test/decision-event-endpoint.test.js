@@ -15,3 +15,11 @@ test('decision-event endpoint wires Google Sheets and protected execution API', 
   assert.match(source, /VECTOR_SYNC_KEY/);
   assert.match(source, /TOCHKA_BRIDGE_KEY/);
 });
+
+test('decision-event endpoint dispatches rewritten owner dashboard routes', () => {
+  const source = fs.readFileSync(path.join(here, '..', 'api', 'decision-event.js'), 'utf8');
+  assert.match(source, /createOwnerActionApi/);
+  assert.match(source, /createDecisionEffectivenessApi/);
+  assert.match(source, /createOwnerActionQueueApi/);
+  assert.match(source, /ownerRoute/);
+});

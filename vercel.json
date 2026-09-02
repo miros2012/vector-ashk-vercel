@@ -7,6 +7,11 @@
       "main": true
     }
   },
+  "rewrites": [
+    { "source": "/api/owner-action", "destination": "/api/decision-event?ownerRoute=action" },
+    { "source": "/api/decision-effectiveness", "destination": "/api/decision-event?ownerRoute=effectiveness" },
+    { "source": "/api/owner-action-queue", "destination": "/api/decision-event?ownerRoute=queue" }
+  ],
   "functions": {
     "api/master-hours-diagnostic.js": { "maxDuration": 60 },
     "api/sync-hours.js": { "maxDuration": 60 },

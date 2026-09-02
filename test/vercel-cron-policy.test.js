@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(fs.readFileSync(path.join(here, '..', 'vercel.json'), 'utf8'));
+const apiDirectory = path.join(here, '..', 'api');
 
 test('Hobby deployment config defines exactly one nightly finance orchestrator cron', () => {
   assert.ok(Array.isArray(config.crons), 'vercel.json must define crons');
@@ -35,4 +36,21 @@ test('Hobby Vercel auto-deploys only main to avoid preview build-rate exhaustion
   assert.equal(enabled['**/*'], false, 'nested branches must stay disabled');
   assert.equal(enabled['preview-*'], undefined, 'preview branches must not auto-deploy');
   assert.equal(enabled['release-*'], undefined, 'release branches must not auto-deploy');
+});
+
+test('Hobby deployment stays within the 12 Serverless Function limit', () => {
+  const apiFunctions = fs.readdirSync(apiDirectory).filter((name) => name.endsWith('.js'));
+  assert.ok(
+    apiFunctions.length <= 12,
+    `Hobby plan allows at most 12 Serverless Functions, found ${apiFunctions.length}`
+  );
+});
+
+test('owner dashboard URLs rewrite to the existing decision-event function', () => {
+  const rewrites = config.rewrites || [];
+  assert.deepEqual(rewrites, [
+    { source: '/api/owner-action', destination: '/api/decision-event?ownerRoute=action' },
+    { source: '/api/decision-effectiveness', destination: '/api/decision-event?ownerRoute=effectiveness' },
+    { source: '/api/owner-action-queue', destination: '/api/decision-event?ownerRoute=queue' }
+  ]);
 });

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 test('queue route wires Sheets transport into the existing decision lifecycle', () => {
-  const source = fs.readFileSync(path.join(here, '..', 'api', 'owner-action-queue.js'), 'utf8');
+  const source = fs.readFileSync(path.join(here, '..', 'api', 'decision-event.js'), 'utf8');
   assert.match(source, /createOwnerActionQueueApi/);
   assert.match(source, /createOwnerActionQueueSheetAdapter/);
   assert.match(source, /createOwnerActionControlSheetAdapter/);

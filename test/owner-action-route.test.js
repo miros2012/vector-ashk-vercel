@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 test('owner-action route wires protected readonly Google Sheets API', () => {
-  const source = fs.readFileSync(path.join(here, '..', 'api', 'owner-action.js'), 'utf8');
+  const source = fs.readFileSync(path.join(here, '..', 'api', 'decision-event.js'), 'utf8');
   assert.match(source, /createOwnerActionApi/);
   assert.match(source, /createOwnerActionSheetAdapter/);
   assert.match(source, /google\.auth\.JWT/);
