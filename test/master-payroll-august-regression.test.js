@@ -46,6 +46,11 @@ function grossByGroup(result, group) {
     .reduce((sum, component) => sum + component.gross, 0), 0);
 }
 
+function assertMoney(actual, expected) {
+  const cents = (value) => Math.round((Number(value) + Number.EPSILON) * 100);
+  assert.equal(cents(actual), cents(expected));
+}
+
 test('August archive controls stay verified while the old universal-rate gross is explicitly rejected', async () => {
   const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'));
   const rows = expandVerifiedTypeControls(fixture.typeControls);
@@ -193,13 +198,13 @@ test('dated personal-ledger adjustments extend the verified interim layer withou
     requiredBlockedTypes: []
   });
 
-  assert.equal(adjustments.additionalConfirmedEvidence.reduce((sum, item) => sum + item.amount, 0), adjustments.expected.additionalConfirmedDeductions);
-  assert.equal(result.totals.payrollGross, fixture.expected.interimEffectivePayrollGross);
-  assert.equal(result.totals.confirmedDeductions, adjustments.expected.interimConfirmedDeductions);
-  assert.equal(result.totals.outstandingNet, adjustments.expected.interimOutstandingNet);
-  assert.equal(result.masters.find((master) => master.masterKey === '3493666').outstandingNet, adjustments.expected.kozlovInterimOutstandingNet);
-  assert.equal(result.masters.find((master) => master.masterKey === '2286161').outstandingNet, adjustments.expected.irkhuzhinInterimOutstandingNet);
-  assert.equal(result.masters.find((master) => master.masterKey === '3569348').outstandingNet, adjustments.expected.augustenyakInterimOutstandingNet);
+  assertMoney(adjustments.additionalConfirmedEvidence.reduce((sum, item) => sum + item.amount, 0), adjustments.expected.additionalConfirmedDeductions);
+  assertMoney(result.totals.payrollGross, fixture.expected.interimEffectivePayrollGross);
+  assertMoney(result.totals.confirmedDeductions, adjustments.expected.interimConfirmedDeductions);
+  assertMoney(result.totals.outstandingNet, adjustments.expected.interimOutstandingNet);
+  assertMoney(result.masters.find((master) => master.masterKey === '3493666').outstandingNet, adjustments.expected.kozlovInterimOutstandingNet);
+  assertMoney(result.masters.find((master) => master.masterKey === '2286161').outstandingNet, adjustments.expected.irkhuzhinInterimOutstandingNet);
+  assertMoney(result.masters.find((master) => master.masterKey === '3569348').outstandingNet, adjustments.expected.augustenyakInterimOutstandingNet);
   assert.equal(adjustments.stillBlocked.fuelAllocation, true);
   assert.equal(adjustments.stillBlocked.unallocatedPayrollPayouts, 3320);
   assert.equal(result.promotionStatus, 'BLOCKED');
