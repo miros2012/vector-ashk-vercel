@@ -21,7 +21,7 @@ const ROP_TASKS_SHEET = 'РОП_Задачи_Сегодня';
 const ROP_UNMATCHED_SHEET = 'РОП_Неопознанные_Оплаты__diag';
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
-const INTRADAY_SCHEDULE = '0 4-15 * * *';
+const INTRADAY_SCHEDULES = new Set(Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`));
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -368,7 +368,7 @@ const intradayHandler = createIntradayRopOrchestrator({
 
 export default async function handler(req, res) {
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
-  if (schedule === INTRADAY_SCHEDULE) {
+  if (INTRADAY_SCHEDULES.has(schedule)) {
     return intradayHandler(req, res);
   }
   return nightlyHandler(req, res);
