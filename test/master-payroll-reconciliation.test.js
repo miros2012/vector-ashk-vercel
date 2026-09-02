@@ -91,3 +91,25 @@ test('gross aggregate mismatch blocks promotion', () => {
   assert.equal(result.gates.PER_MASTER_EQUALS_AGGREGATE, false);
   assert.equal(result.promotionStatus, 'BLOCKED');
 });
+
+test('confirmed evidence for a master absent from verified gross blocks reconciliation', () => {
+  const result = reconcileMasterPayroll({
+    gross: {
+      archiveVerification: 'OK',
+      masters: [{ masterKey: 'a', masterName: 'A', gross: 10000 }],
+      totals: { gross: 10000 },
+      blockers: []
+    },
+    evidence: {
+      confirmed: [{ masterKey: 'missing-master', type: 'ADVANCE', amount: 1000, sourceId: 'm1', status: 'CONFIRMED' }],
+      blocked: [],
+      existingPayoutsReconciled: true,
+      vehicleAllocationsExcluded: true
+    },
+    requiredBlockedTypes: []
+  });
+
+  assert.equal(result.gates.EVIDENCE_RECONCILED, false);
+  assert.equal(result.promotionStatus, 'BLOCKED');
+  assert.deepEqual(result.unmatchedEvidenceMasterKeys, ['missing-master']);
+});
