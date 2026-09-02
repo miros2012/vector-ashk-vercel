@@ -16,6 +16,7 @@ const BALANCES_SHEET = 'Точка_Остатки';
 const DECISION_AUDIT_SHEET = 'Rule Engine Audit';
 const DEFAULT_BRIDGE_URL = 'https://tochka-realtime-bridge.onrender.com';
 const FRESH_MS = 30000;
+const INTERNAL_OWNER_ACTION_KEY = 'owner-action-internal-only';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -161,7 +162,7 @@ function internalDecisionCommand(decisionApi, configuredKey) {
 }
 
 async function processOwnerActionQueue(sheets) {
-  const configuredKey = process.env.VECTOR_SYNC_KEY || process.env.TOCHKA_BRIDGE_KEY || '';
+  const configuredKey = process.env.VECTOR_SYNC_KEY || process.env.TOCHKA_BRIDGE_KEY || INTERNAL_OWNER_ACTION_KEY;
   const queue = createOwnerActionQueueSheetAdapter({ sheets, spreadsheetId: SPREADSHEET_ID });
   const control = createOwnerActionControlSheetAdapter({ sheets, spreadsheetId: SPREADSHEET_ID });
   const decisionApi = createDecisionEventApi({ sheets, spreadsheetId: SPREADSHEET_ID, configuredKey });

@@ -47,3 +47,8 @@ test('owner action transport failure cannot fail balance refresh or expose comma
   assert.match(source, /ownerActionQueue\s*[,}]/);
   assert.doesNotMatch(source, /ownerActionQueue[\s\S]{0,300}(response|evidence|actualEffect)/);
 });
+
+test('internal owner action consumer does not depend on an external sync key', () => {
+  assert.match(source, /INTERNAL_OWNER_ACTION_KEY/);
+  assert.match(source, /VECTOR_SYNC_KEY\s*\|\|\s*process\.env\.TOCHKA_BRIDGE_KEY\s*\|\|\s*INTERNAL_OWNER_ACTION_KEY/);
+});
