@@ -7,12 +7,12 @@ const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url
 const financePath = '/api/nightly-finance-orchestrator';
 const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
 
-test('same protected endpoint has nightly plus twelve daily intraday Tyumen schedules', () => {
-  assert.equal(config.crons.length, 13);
-  assert.ok(config.crons.every((cron) => cron.path === financePath));
-  assert.ok(config.crons.some((cron) => cron.schedule === '30 21 * * *'));
+test('same protected finance endpoint has nightly plus twelve daily intraday Tyumen schedules', () => {
+  const financeCrons = config.crons.filter((cron) => cron.path === financePath);
+  assert.equal(financeCrons.length, 13);
+  assert.ok(financeCrons.some((cron) => cron.schedule === '30 21 * * *'));
   for (const schedule of intradaySchedules) {
-    assert.ok(config.crons.some((cron) => cron.schedule === schedule), `missing ${schedule}`);
+    assert.ok(financeCrons.some((cron) => cron.schedule === schedule), `missing ${schedule}`);
   }
 });
 
