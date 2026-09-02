@@ -17,3 +17,10 @@ test('verified receivables hook builds the live ROP control from the same ASHK c
   assert.match(source, /afterVerified/);
   assert.match(source, /АШК_Оплаты__vercel/);
 });
+
+test('nightly ROP sync persists and readback-verifies unmatched payment diagnostics', () => {
+  assert.match(source, /РОП_Неопознанные_Оплаты__diag/);
+  assert.match(source, /workbook\.unmatchedPaymentValues/);
+  assert.match(source, /unmatchedReadback/);
+  assert.match(source, /ID оплаты/);
+});
