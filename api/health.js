@@ -47,6 +47,16 @@ async function readSourceSheet(sheetName) {
   return result.data.values || [];
 }
 
+async function readTargetSheet(spreadsheetId, sheetName) {
+  const sheets = await getSheets();
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${sheetName}'!${RANGES[sheetName]}`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  });
+  return result.data.values || [];
+}
+
 async function ensureTargetSheet(sheets, spreadsheetId, sheetName, rowCount, columnCount) {
   const metadata = await sheets.spreadsheets.get({
     spreadsheetId,
@@ -111,6 +121,7 @@ async function writeTargetSheet(spreadsheetId, sheetName, values) {
 const publishRop = createRopPublisher({
   targetSpreadsheetId: TARGET_ROP_SPREADSHEET_ID,
   readSheet: readSourceSheet,
+  readTargetSheet,
   writeSheet: writeTargetSheet
 });
 
