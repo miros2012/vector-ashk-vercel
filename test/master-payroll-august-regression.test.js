@@ -137,3 +137,32 @@ test('evidence-linked August masters use personal-rate gross and do not silently
   assert.equal(atalykov.status, 'REVIEW_REQUIRED');
   assert.equal(tolstoukhov.outstandingNet, 130186);
 });
+
+test('August verified interim layer locks effective gross and confirmed net deductions', async () => {
+  const fixture = JSON.parse(await readFile(fixtureUrl, 'utf8'));
+  const evidence = normalizePayrollEvidence(fixture.interimConfirmedEvidence, fixture.aliases);
+  const grossTotal = fixture.personalRateGrossControls.reduce((sum, master) => sum + master.gross, 0);
+  const result = reconcileMasterPayroll({
+    gross: {
+      archiveVerification: 'OK',
+      eventBasedRulesOk: true,
+      blockers: [],
+      masters: fixture.personalRateGrossControls,
+      totals: { gross: grossTotal }
+    },
+    evidence: {
+      ...evidence,
+      officialGrossByMaster: fixture.officialGrossByMaster,
+      existingPayoutsReconciled: false,
+      vehicleAllocationsExcluded: false
+    },
+    requiredBlockedTypes: []
+  });
+
+  assert.equal(result.totals.gross, fixture.expected.personalRateAshkBackedGross);
+  assert.equal(result.totals.payrollGross, fixture.expected.interimEffectivePayrollGross);
+  assert.equal(result.totals.confirmedDeductions, fixture.expected.interimConfirmedDeductions);
+  assert.equal(result.totals.outstandingNet, fixture.expected.interimOutstandingNet);
+  assert.equal(result.masters.find((master) => master.masterKey === '3493666').status, 'REVIEW_REQUIRED');
+  assert.equal(result.promotionStatus, 'BLOCKED');
+});
