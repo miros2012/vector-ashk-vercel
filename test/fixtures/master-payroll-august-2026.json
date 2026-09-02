@@ -87,26 +87,20 @@
   },
   "interimConfirmedEvidence": [
     {"sourceId":"dds-13372","date":"2026-08-06","amount":30000,"masterKey":"3493666","counterparty":"Козлов","description":"Выплата отдельного сдельного аванса Козлову","article":"Зарплата мастеров"},
-
     {"sourceId":"dds-16543","date":"2026-08-15","amount":13167,"masterKey":"2146761","counterparty":"Ходаков Олег Александрович","description":"Аванс за август","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
     {"sourceId":"dds-17886","date":"2026-08-31","amount":14847,"masterKey":"2146761","counterparty":"Ходаков Олег Александрович","description":"Заработная плата за август","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
-
     {"sourceId":"dds-16545","date":"2026-08-15","amount":12931.75,"masterKey":"2064915","counterparty":"Толстоухов Сергей Николаевич","description":"Аванс за август","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
     {"sourceId":"dds-17885","date":"2026-08-31","amount":14582.25,"masterKey":"2064915","counterparty":"Толстоухов Сергей Николаевич","description":"Заработная плата за август","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
-
     {"sourceId":"dds-16551","date":"2026-08-15","amount":7825.68,"masterKey":"2859064","counterparty":"Аталыкова Диана Андреевна","description":"Аванс Аталыков Сергей Сергеевич","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
     {"sourceId":"dds-17888","date":"2026-08-31","amount":8017.92,"masterKey":"2859064","counterparty":"Аталыкова Диана Андреевна","description":"Заработная плата за август Аталыков Сергей Сергеевич","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
     {"sourceId":"dds-17903","date":"2026-08-31","amount":13496.40,"masterKey":"2859064","counterparty":"УФК","description":"Алименты Аталыков Сергей Сергеевич","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
-
     {"sourceId":"dds-16544","date":"2026-08-15","amount":13166,"masterKey":"3493666","counterparty":"Гасанов Артур Рамазанович","description":"Аванс по заработной плате Козлову Ивану Викторовичу","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
     {"sourceId":"dds-17899","date":"2026-08-31","amount":13583.35,"masterKey":"3493666","counterparty":"УФК","description":"Взыскание задолженности по исполнительному производству Козлов Иван Викторович","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
     {"sourceId":"dds-17900","date":"2026-08-31","amount":6790.65,"masterKey":"3493666","counterparty":"УФК","description":"Депозит службы судебных приставов Козлов Иван Викторович","article":"Зарплата мастеров","settlementGroup":"OFFICIAL_GROSS"},
-
     {"sourceId":"dds-17887","date":"2026-08-31","amount":27514,"masterKey":"2301021","counterparty":"Жданова Светлана Фанисовна","description":"Заработная плата за август","article":"Зарплата мастеров"},
     {"sourceId":"dds-zhdanova-advance-2026-08-20","date":"2026-08-20","amount":3000,"masterKey":"2301021","counterparty":"ИП Егоров","description":"Аванс Жданова Светлана Фанисовна","article":"Зарплата мастеров"},
-    {"sourceId":"dds-shirinov-2026-08-26","date":"2026-08-26","amount":32600,"masterKey":"3800382","counterparty":"ИП Егоров","description":"Расчёт Ширинов Вусал Ильгар оглы","article":"Зарплата мастеров"},
-    {"sourceId":"dds-zakharov-2026-08-26","date":"2026-08-26","amount":2000,"masterKey":"3540779","counterparty":"ИП Захаров","description":"Оплата зачета Вождение Захаров Никита Викторович","article":"Зарплата мастеров"},
-
+    {"sourceId":"dds-shirinov-2026-08-26","date":"2026-08-26","amount":32600,"masterKey":"3800382","counterparty":"ИП Егоров","description":"Расчёт Ширинов Вусал Ильгар оглы","article":"Зарплата мастеров","evidenceType":"OTHER_CONFIRMED_INDIVIDUAL"},
+    {"sourceId":"dds-zakharov-2026-08-26","date":"2026-08-26","amount":2000,"masterKey":"3540779","counterparty":"ИП Захаров","description":"Оплата зачета Вождение Захаров Никита Викторович","article":"Зарплата мастеров","evidenceType":"OTHER_CONFIRMED_INDIVIDUAL"},
     {"sourceId":"lease-kozlov-13887-2026","date":"2026-08-06","amount":47886.94,"masterKey":"3493666","counterparty":"ООО КАРКАДЕ","description":"TENET 050, договор 13887/2026","article":"Лизинг"},
     {"sourceId":"lease-sosnovskiy-13886-2026","date":"2026-08-06","amount":48624.09,"masterKey":"3541283","counterparty":"ООО КАРКАДЕ","description":"TENET 529, договор 13886/2026","article":"Лизинг"},
     {"sourceId":"lease-semenenko-8590-2026","date":"2026-08-07","amount":43190.28,"masterKey":"3316407","counterparty":"ООО КАРКАДЕ","description":"TENET 486, договор 8590/2026","article":"Лизинг"},
