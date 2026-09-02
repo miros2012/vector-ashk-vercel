@@ -6,6 +6,7 @@ import { createNightlyFinanceOrchestrator } from '../lib/nightly-finance-orchest
 import { createAshkReceivablesSource } from '../lib/ashk-receivables-source.js';
 import { createReceivablesSyncHandler } from '../lib/receivables-sync-handler.js';
 import { buildRopDailyControlWorkbook } from '../lib/rop-daily-control.js';
+import { buildRopMorningDashboard } from '../lib/rop-morning-dashboard.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const RECEIVABLES_DETAIL_SHEET = 'АШК_Дебиторка__vercel';
@@ -13,6 +14,7 @@ const RECEIVABLES_SUMMARY_SHEET = 'АШК_Дебиторка_Свод__vercel';
 const PAYMENTS_STAGING_SHEET = 'АШК_Оплаты__vercel';
 const ROP_PLAN_SHEET = 'РОП_План_Сентябрь';
 const ROP_CONTROL_SHEET = 'РОП_Контроль_Дня';
+const ROP_MORNING_SHEET = 'РОП_Штаб_Утро';
 const ROP_UNMATCHED_SHEET = 'РОП_Неопознанные_Оплаты__diag';
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
@@ -176,6 +178,11 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     }
   }
 
+  const morningDashboard = buildRopMorningDashboard({
+    controlValues: workbook.controlValues,
+    asOfDate: date
+  });
+
   await writeValues(
     CURRENT_MONTH_CONTRACTS_SHEET,
     'A:J',
@@ -183,20 +190,24 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     10
   );
   await writeValues(ROP_CONTROL_SHEET, 'A:S', workbook.controlValues, 19);
+  await writeValues(ROP_MORNING_SHEET, 'A:U', morningDashboard.values, 21);
   await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
 
-  const [contractsReadback, controlReadback, unmatchedReadback] = await Promise.all([
+  const [contractsReadback, controlReadback, morningReadback, unmatchedReadback] = await Promise.all([
     readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
     readValues(ROP_CONTROL_SHEET, 'A:S'),
+    readValues(ROP_MORNING_SHEET, 'A:U'),
     readValues(ROP_UNMATCHED_SHEET, 'A:G')
   ]);
   const contractsVerified = contractsReadback.length === workbook.currentMonthContractsValues.length
     && String(contractsReadback?.[0]?.[0] || '') === 'StudentId';
   const controlVerified = controlReadback.length === workbook.controlValues.length
     && String(controlReadback?.[0]?.[0] || '') === 'Дата';
+  const morningVerified = morningReadback.length === morningDashboard.values.length
+    && String(morningReadback?.[0]?.[0] || '') === 'Дата отчёта';
   const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length
     && String(unmatchedReadback?.[0]?.[0] || '') === 'ID оплаты';
-  if (!contractsVerified || !controlVerified || !unmatchedVerified) {
+  if (!contractsVerified || !controlVerified || !morningVerified || !unmatchedVerified) {
     throw new Error('ROP daily control readback verification failed');
   }
 
@@ -205,6 +216,8 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     month,
     asOfDate: date,
     controlRows: workbook.controlValues.length - 1,
+    morningReportDate: morningDashboard.reportDate,
+    morningPriorityCount: morningDashboard.metrics.todayPriority,
     currentMonthContracts: workbook.metrics.currentMonthContracts,
     fallbackRequested: fallbackStudentIds.length,
     fallbackResolved: fallbackStudents.length,
@@ -219,6 +232,8 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
     month,
     asOfDate: date,
     controlRows: workbook.controlValues.length - 1,
+    morningReportDate: morningDashboard.reportDate,
+    morningPriorityCount: morningDashboard.metrics.todayPriority,
     currentMonthContracts: workbook.metrics.currentMonthContracts,
     fallbackRequested: fallbackStudentIds.length,
     fallbackResolved: fallbackStudents.length,
