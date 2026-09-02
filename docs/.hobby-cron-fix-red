@@ -1,0 +1,1 @@
+RED expected: tests require 12 once-daily intraday cron schedules while production still has one hourly expression.
