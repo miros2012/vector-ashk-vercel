@@ -13,6 +13,7 @@
     { "source": "/api/owner-action-queue", "destination": "/api/decision-event?ownerRoute=queue" }
   ],
   "functions": {
+    "api/health.js": { "maxDuration": 60 },
     "api/master-hours-diagnostic.js": { "maxDuration": 60 },
     "api/sync-hours.js": { "maxDuration": 60 },
     "api/sync-payments.js": { "maxDuration": 60 },
@@ -31,6 +32,19 @@
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 12 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 13 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 14 * * *" },
-    { "path": "/api/nightly-finance-orchestrator", "schedule": "0 15 * * *" }
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "0 15 * * *" },
+    { "path": "/api/health", "schedule": "35 21 * * *" },
+    { "path": "/api/health", "schedule": "5 4 * * *" },
+    { "path": "/api/health", "schedule": "5 5 * * *" },
+    { "path": "/api/health", "schedule": "5 6 * * *" },
+    { "path": "/api/health", "schedule": "5 7 * * *" },
+    { "path": "/api/health", "schedule": "5 8 * * *" },
+    { "path": "/api/health", "schedule": "5 9 * * *" },
+    { "path": "/api/health", "schedule": "5 10 * * *" },
+    { "path": "/api/health", "schedule": "5 11 * * *" },
+    { "path": "/api/health", "schedule": "5 12 * * *" },
+    { "path": "/api/health", "schedule": "5 13 * * *" },
+    { "path": "/api/health", "schedule": "5 14 * * *" },
+    { "path": "/api/health", "schedule": "5 15 * * *" }
   ]
 }
