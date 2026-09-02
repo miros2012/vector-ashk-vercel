@@ -6,6 +6,10 @@ import { createDecisionStateSynchronizer } from '../lib/decision-state-sync-serv
 import { createDecisionReconciler } from '../lib/decision-reconciliation.js';
 import { createDecisionReconciliationAudit } from '../lib/decision-reconciliation-audit.js';
 import { createDecisionReconciliationAuditAppender } from '../lib/decision-reconciliation-audit-sheet.js';
+import { createDecisionEventApi } from '../lib/decision-event-api.js';
+import { createOwnerActionControlSheetAdapter } from '../lib/owner-action-control-sheet-adapter.js';
+import { createOwnerActionQueueApi } from '../lib/owner-action-queue-api.js';
+import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sheet-adapter.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const BALANCES_SHEET = 'Точка_Остатки';
@@ -139,6 +143,53 @@ function failedReconciliationStatus() {
   };
 }
 
+function internalDecisionCommand(decisionApi, configuredKey) {
+  return async (command) => {
+    const response = {
+      body: { ok: false, error: 'decision lifecycle unavailable' },
+      setHeader() {},
+      status() { return this; },
+      json(body) { this.body = body; return this; }
+    };
+    await decisionApi({
+      method: 'POST',
+      headers: { 'x-vector-key': configuredKey },
+      body: command
+    }, response);
+    return response.body;
+  };
+}
+
+async function processOwnerActionQueue(sheets) {
+  const configuredKey = process.env.VECTOR_SYNC_KEY || process.env.TOCHKA_BRIDGE_KEY || '';
+  const queue = createOwnerActionQueueSheetAdapter({ sheets, spreadsheetId: SPREADSHEET_ID });
+  const control = createOwnerActionControlSheetAdapter({ sheets, spreadsheetId: SPREADSHEET_ID });
+  const decisionApi = createDecisionEventApi({ sheets, spreadsheetId: SPREADSHEET_ID, configuredKey });
+  const queueApi = createOwnerActionQueueApi({
+    configuredKey,
+    readControl: control.readControl,
+    appendCommand: control.appendCommand,
+    setControlState: control.setControlState,
+    clearDashboardInputs: control.clearDashboardInputs,
+    readReadyCommands: queue.readReadyCommands,
+    markCommand: queue.markCommand,
+    executeCommand: internalDecisionCommand(decisionApi, configuredKey)
+  });
+  const response = {
+    body: null,
+    setHeader() {},
+    status() { return this; },
+    json(body) { this.body = body; return this; }
+  };
+  await queueApi({ method: 'POST', headers: { 'x-vector-key': configuredKey } }, response);
+  if (!response.body?.ok) throw new Error('owner action queue processing failed');
+  return response.body;
+}
+
+function failedOwnerActionQueueStatus() {
+  return { ok: false, staged: 0, ready: 0, succeeded: 0, failed: 0 };
+}
+
 export default async function handler(req, res) {
   if (!['GET', 'POST'].includes(req.method)) {
     return res.status(405).json({ ok: false, error: 'Use GET or POST' });
@@ -174,13 +225,23 @@ export default async function handler(req, res) {
       decisionReconciliation = failedReconciliationStatus();
     }
 
+    let ownerActionQueue;
+    try {
+      ownerActionQueue = await processOwnerActionQueue(sheets);
+    } catch (error) {
+      console.error('balances-owner-action-queue:', error);
+      ownerActionQueue = failedOwnerActionQueueStatus();
+    }
+
     console.log(JSON.stringify({
       event: 'tochka-balances-refresh',
       liveCount: normalized.summary.liveCount,
       mirroredAt: mirror.mirroredAt,
       trigger: req.method === 'POST' ? String(req.headers?.['x-vector-refresh'] || 'post') : 'get',
       decisionReconciliationOk: decisionReconciliation.ok,
-      decisionReconciliationMode: decisionReconciliation.mode
+      decisionReconciliationMode: decisionReconciliation.mode,
+      ownerActionQueueOk: ownerActionQueue.ok,
+      ownerActionQueueSucceeded: ownerActionQueue.succeeded
     }));
 
     return res.status(200).json({
@@ -189,7 +250,8 @@ export default async function handler(req, res) {
       refreshed: true,
       liveCount: normalized.summary.liveCount,
       lastUpdated: mirror.mirroredAt,
-      decisionReconciliation
+      decisionReconciliation,
+      ownerActionQueue
     });
   } catch (e) {
     console.error('balances:', e);

@@ -30,3 +30,20 @@ test('balance response includes non-sensitive reconciliation status and catches 
   assert.match(source, /decisionReconciliation\s*[,}]/);
   assert.doesNotMatch(source, /decisionReconciliation[\s\S]{0,400}mismatches/);
 });
+
+test('owner action transport runs after a live mirror and never on the cached balance path', () => {
+  const cacheReturn = source.indexOf("source: 'cached_live'");
+  const mirror = source.indexOf('await mirrorToGoogleSheet(normalized, sheets)');
+  const transport = source.indexOf('ownerActionQueue = await processOwnerActionQueue(sheets)');
+
+  assert.ok(cacheReturn >= 0);
+  assert.ok(transport > mirror, 'owner action transport must run only after a live balance mirror');
+  assert.ok(transport > cacheReturn, 'cached early return must happen before owner action transport');
+});
+
+test('owner action transport failure cannot fail balance refresh or expose command details', () => {
+  assert.match(source, /balances-owner-action-queue:/);
+  assert.match(source, /failedOwnerActionQueueStatus/);
+  assert.match(source, /ownerActionQueue\s*[,}]/);
+  assert.doesNotMatch(source, /ownerActionQueue[\s\S]{0,300}(response|evidence|actualEffect)/);
+});
