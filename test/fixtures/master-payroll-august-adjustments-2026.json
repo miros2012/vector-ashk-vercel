@@ -1,0 +1,78 @@
+{
+  "additionalConfirmedEvidence": [
+    {
+      "sourceId": "payroll-card-irkhuzhin-lease-2026-08",
+      "date": "2026-08-31",
+      "amount": 46199,
+      "masterKey": "2286161",
+      "counterparty": "Payroll card",
+      "description": "Лизинг Ирхужин Руслан Рашитович; payroll card 46 199.00, bank control 46 198.22",
+      "article": "Лизинг",
+      "evidenceType": "OTHER_CONFIRMED_INDIVIDUAL"
+    },
+    {
+      "sourceId": "payroll-card-augustenyak-lease-2026-08",
+      "date": "2026-08-31",
+      "amount": 50470,
+      "masterKey": "3569348",
+      "counterparty": "Payroll card",
+      "description": "Лизинг Августеняк Роман Александрович, августовская карточка",
+      "article": "Лизинг",
+      "evidenceType": "OTHER_CONFIRMED_INDIVIDUAL"
+    },
+    {
+      "sourceId": "personal-ledger-augustenyak-initial-2026-09-01",
+      "date": "2026-09-01",
+      "amount": 16667,
+      "masterKey": "3569348",
+      "counterparty": "Personal deduction ledger",
+      "description": "Первоначальный взнос 100000 на 6 месяцев; вычет 16 667; дата расчета 01.09.2026",
+      "article": "Персональный вычет",
+      "evidenceType": "OTHER_CONFIRMED_INDIVIDUAL"
+    },
+    {
+      "sourceId": "personal-ledger-kozlov-fine-5000-2026-09-01",
+      "date": "2026-09-01",
+      "amount": 5000,
+      "masterKey": "3493666",
+      "counterparty": "Personal deduction ledger",
+      "description": "Штраф от 24.06.26; дата расчета 01.09.2026",
+      "article": "Персональный вычет",
+      "evidenceType": "OTHER_CONFIRMED_INDIVIDUAL"
+    },
+    {
+      "sourceId": "personal-ledger-kozlov-fine-562-50-a-2026-09-01",
+      "date": "2026-09-01",
+      "amount": 562.5,
+      "masterKey": "3493666",
+      "counterparty": "Personal deduction ledger",
+      "description": "Штраф от 09.08.26; дата расчета 01.09.2026",
+      "article": "Персональный вычет",
+      "evidenceType": "OTHER_CONFIRMED_INDIVIDUAL"
+    },
+    {
+      "sourceId": "personal-ledger-kozlov-fine-562-50-b-2026-09-01",
+      "date": "2026-09-01",
+      "amount": 562.5,
+      "masterKey": "3493666",
+      "counterparty": "Personal deduction ledger",
+      "description": "Штраф от 17.08.26; дата расчета 01.09.2026",
+      "article": "Персональный вычет",
+      "evidenceType": "OTHER_CONFIRMED_INDIVIDUAL"
+    }
+  ],
+  "expected": {
+    "additionalConfirmedDeductions": 119461,
+    "interimConfirmedDeductions": 529782.22,
+    "interimOutstandingNet": 1816839.78,
+    "kozlovInterimOutstandingNet": -7111.94,
+    "irkhuzhinInterimOutstandingNet": 98201,
+    "augustenyakInterimOutstandingNet": 62963
+  },
+  "stillBlocked": {
+    "fuelAllocation": true,
+    "unallocatedPayrollPayouts": 3320,
+    "kozlovUndatedFine": 562.5,
+    "augustenyakUndatedRepair": 10996
+  }
+}
