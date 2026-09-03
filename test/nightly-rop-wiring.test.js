@@ -18,9 +18,15 @@ test('verified receivables hook builds the live ROP control from the same ASHK c
   assert.match(source, /АШК_Оплаты__vercel/);
 });
 
-test('both ROP refresh paths read the payment employee column from staging', () => {
-  const reads = source.match(/readValues\(PAYMENTS_STAGING_SHEET, 'A:I'\)/g) || [];
+test('both ROP refresh paths read seller attribution columns from staging', () => {
+  const reads = source.match(/readValues\(PAYMENTS_STAGING_SHEET, 'A:K'\)/g) || [];
   assert.equal(reads.length, 2);
+});
+
+test('hourly ROP flow persists expanded seller diagnostics after payment sync', () => {
+  assert.match(source, /writeValues\(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:L'/);
+  assert.match(source, /runPayments:[\s\S]*refreshRop/);
+  assert.doesNotMatch(source, /const\s+NEW_[A-Z_]*API_ROUTE/);
 });
 
 test('nightly ROP sync persists and readback-verifies unmatched payment diagnostics', () => {

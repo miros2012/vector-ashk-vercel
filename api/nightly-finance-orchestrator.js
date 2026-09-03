@@ -210,7 +210,7 @@ async function persistRopOutputs({
   await writeValues(ROP_TASKS_SHEET, 'A:P', tasksToday.values, 16);
   await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N', debtorPriority.values, 14);
   await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
-  await writeValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:J', workbook.paymentAttributionValues, 10);
+  await writeValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:L', workbook.paymentAttributionValues, 12);
 
   const reads = await Promise.all([
     writeContracts ? readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J') : Promise.resolve(null),
@@ -219,7 +219,7 @@ async function persistRopOutputs({
     readValues(ROP_TASKS_SHEET, 'A:P'),
     readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N'),
     readValues(ROP_UNMATCHED_SHEET, 'A:G'),
-    readValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:J')
+    readValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:L')
   ]);
   const [
     contractsReadback,
@@ -245,7 +245,7 @@ async function persistRopOutputs({
   const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length
     && String(unmatchedReadback?.[0]?.[0] || '') === 'ID оплаты';
   const paymentAttributionVerified = paymentAttributionReadback.length === workbook.paymentAttributionValues.length
-    && String(paymentAttributionReadback?.[0]?.[9] || '') === 'Статус привязки';
+    && String(paymentAttributionReadback?.[0]?.[11] || '') === 'Статус привязки';
   if (!contractsVerified || !controlVerified || !morningVerified || !tasksVerified
     || !debtorPriorityVerified || !unmatchedVerified || !paymentAttributionVerified) {
     throw new Error('ROP daily control readback verification failed');
@@ -282,7 +282,7 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
   const { date, month } = tyumenToday();
   const [planValues, paymentValues, receivablesValues] = await Promise.all([
     readValues(ROP_PLAN_SHEET, 'A:H'),
-    readValues(PAYMENTS_STAGING_SHEET, 'A:I'),
+    readValues(PAYMENTS_STAGING_SHEET, 'A:K'),
     readValues(RECEIVABLES_DETAIL_SHEET, 'A:M')
   ]);
   let fallbackStudents = receivablesValuesToStudents(receivablesValues);
@@ -334,7 +334,7 @@ async function refreshRopFromStaging() {
   const { date, month } = tyumenToday();
   const [planValues, paymentValues, currentContractsValues, receivablesValues] = await Promise.all([
     readValues(ROP_PLAN_SHEET, 'A:H'),
-    readValues(PAYMENTS_STAGING_SHEET, 'A:I'),
+    readValues(PAYMENTS_STAGING_SHEET, 'A:K'),
     readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
     readValues(RECEIVABLES_DETAIL_SHEET, 'A:M')
   ]);
