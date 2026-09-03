@@ -448,13 +448,11 @@ export default async function handler(req, res) {
     if (!isOneTimeRefreshAuthorized(req)) {
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
-    try {
-      const result = await runIntradayRopNow();
-      return res.status(200).json({ ok: true, mode: 'one_time_intraday_refresh', result });
-    } catch (error) {
-      console.error('one-time-intraday-refresh:', error?.name || 'Error');
-      return res.status(500).json({ ok: false, error: 'refresh_failed' });
-    }
+    return intradayHandler({
+      method: 'GET',
+      headers: { authorization: `Bearer ${process.env.CRON_SECRET || ''}` },
+      query: {}
+    }, res);
   }
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (INTRADAY_SCHEDULES.has(schedule)) {
