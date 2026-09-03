@@ -129,42 +129,7 @@ function isAuthorizedCron(req) {
   return Boolean(expected) && actual === `Bearer ${expected}`;
 }
 
-async function readAshkSaleSchema() {
-  const apiKey = process.env.ASHK_API_KEY;
-  if (!apiKey) throw new Error('ASHK_API_KEY missing');
-  const now = new Date();
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Yekaterinburg', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(now);
-  const part = type => parts.find(item => item.type === type)?.value;
-  const startDate = `${part('year')}-${part('month')}-01T00:00:00`;
-  const endDate = `${part('year')}-${part('month')}-${part('day')}T23:59:59`;
-  const url = new URL('/api/SaleExternalList', 'https://app.dscontrol.ru');
-  url.searchParams.set('StartDate', startDate);
-  url.searchParams.set('EndDate', endDate);
-  const response = await fetch(url, { headers: {
-    api_key: apiKey, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/json'
-  }});
-  const json = await response.json();
-  if (!response.ok || json?.success === false) throw new Error('ASHK sale schema probe failed');
-  const items = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
-  const keys = [...new Set(items.flatMap(item => Object.keys(item || {})))].sort();
-  const candidateKeys = keys.filter(key => /employee|manager|owner|user|author|creator|createdby|seller/i.test(key));
-  const populated = Object.fromEntries(candidateKeys.map(key => [
-    key, items.filter(item => item?.[key] !== null && item?.[key] !== undefined && String(item[key]).trim() !== '').length
-  ]));
-  return { rows: items.length, keys, candidateKeys, populated };
-}
-
 export default async function handler(req, res) {
-  if (String(req?.query?.saleSchema || '') === '9c14e7a2d55b4a0f') {
-    res.setHeader?.('Cache-Control', 'no-store');
-    try {
-      return res.status(200).json({ ok: true, ...(await readAshkSaleSchema()) });
-    } catch {
-      return res.status(500).json({ ok: false });
-    }
-  }
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (PUBLISH_SCHEDULES.has(schedule)) {
     res.setHeader?.('Cache-Control', 'no-store');
