@@ -206,20 +206,20 @@ async function persistRopOutputs({
     await writeValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J', workbook.currentMonthContractsValues, 10);
   }
   await writeValues(ROP_CONTROL_SHEET, 'A:S', workbook.controlValues, 19);
-  await writeValues(ROP_MORNING_SHEET, 'A:V', morningDashboard.values, 22);
+  await writeValues(ROP_MORNING_SHEET, 'A:X', morningDashboard.values, 24);
   await writeValues(ROP_TASKS_SHEET, 'A:P', tasksToday.values, 16);
   await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N', debtorPriority.values, 14);
   await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
-  await writeValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:I', workbook.paymentAttributionValues, 9);
+  await writeValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:J', workbook.paymentAttributionValues, 10);
 
   const reads = await Promise.all([
     writeContracts ? readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J') : Promise.resolve(null),
     readValues(ROP_CONTROL_SHEET, 'A:S'),
-    readValues(ROP_MORNING_SHEET, 'A:V'),
+    readValues(ROP_MORNING_SHEET, 'A:X'),
     readValues(ROP_TASKS_SHEET, 'A:P'),
     readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N'),
     readValues(ROP_UNMATCHED_SHEET, 'A:G'),
-    readValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:I')
+    readValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:J')
   ]);
   const [
     contractsReadback,
@@ -245,7 +245,7 @@ async function persistRopOutputs({
   const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length
     && String(unmatchedReadback?.[0]?.[0] || '') === 'ID оплаты';
   const paymentAttributionVerified = paymentAttributionReadback.length === workbook.paymentAttributionValues.length
-    && String(paymentAttributionReadback?.[0]?.[8] || '') === 'Статус привязки';
+    && String(paymentAttributionReadback?.[0]?.[9] || '') === 'Статус привязки';
   if (!contractsVerified || !controlVerified || !morningVerified || !tasksVerified
     || !debtorPriorityVerified || !unmatchedVerified || !paymentAttributionVerified) {
     throw new Error('ROP daily control readback verification failed');
