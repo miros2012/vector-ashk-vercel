@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { createRopPublisher } from '../lib/rop-publisher.js';
+import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
@@ -9,7 +10,7 @@ const RANGES = {
   'РОП_Задачи_Сегодня': 'A:P',
   'РОП_Контроль_Дня': 'A:S',
   'РОП_План_Сентябрь': 'A:H',
-  'РОП_Дебиторка_Приоритет': 'A:N'
+  'РОП_Дебиторка_Приоритет': 'A:V'
 };
 
 function privateKey() {
@@ -105,6 +106,9 @@ async function writeTargetSheet(spreadsheetId, sheetName, values) {
     valueInputOption: 'RAW',
     requestBody: { values }
   });
+  if (sheetName === 'РОП_Дебиторка_Приоритет') {
+    await formatDebtorPrioritySheet({ sheets, spreadsheetId, sheetName });
+  }
   const readback = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `'${sheetName}'!${RANGES[sheetName]}`,

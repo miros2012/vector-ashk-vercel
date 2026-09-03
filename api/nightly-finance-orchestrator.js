@@ -5,7 +5,8 @@ import reconcileDecisions from './decision-reconcile-daily.js';
 import { publishRopNow } from './health.js';
 import { createNightlyFinanceOrchestrator } from '../lib/nightly-finance-orchestrator.js';
 import { createIntradayRopOrchestrator } from '../lib/rop-intraday-orchestrator.js';
-import { syncRopSourceThenPublishTarget } from '../lib/rop-publisher.js';
+import { mergeDebtorManualFields, syncRopSourceThenPublishTarget } from '../lib/rop-publisher.js';
+import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
 import { createAshkReceivablesSource } from '../lib/ashk-receivables-source.js';
 import { createReceivablesSyncHandler } from '../lib/receivables-sync-handler.js';
 import { buildRopDailyControlWorkbook, receivablesValuesToStudents } from '../lib/rop-daily-control.js';
@@ -201,6 +202,8 @@ async function persistRopOutputs({
     planValues,
     limitPerBranch: 5
   });
+  const existingDebtorValues = await readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:V');
+  debtorPriority.values = mergeDebtorManualFields(debtorPriority.values, existingDebtorValues);
 
   if (writeContracts) {
     await writeValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J', workbook.currentMonthContractsValues, 10);
@@ -208,7 +211,8 @@ async function persistRopOutputs({
   await writeValues(ROP_CONTROL_SHEET, 'A:S', workbook.controlValues, 19);
   await writeValues(ROP_MORNING_SHEET, 'A:X', morningDashboard.values, 24);
   await writeValues(ROP_TASKS_SHEET, 'A:P', tasksToday.values, 16);
-  await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N', debtorPriority.values, 14);
+  await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:V', debtorPriority.values, 22);
+  await formatDebtorPrioritySheet({ sheets: await getSheets(), spreadsheetId: SPREADSHEET_ID });
   await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
   await writeValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:L', workbook.paymentAttributionValues, 12);
 
@@ -217,7 +221,7 @@ async function persistRopOutputs({
     readValues(ROP_CONTROL_SHEET, 'A:S'),
     readValues(ROP_MORNING_SHEET, 'A:X'),
     readValues(ROP_TASKS_SHEET, 'A:P'),
-    readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N'),
+    readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:V'),
     readValues(ROP_UNMATCHED_SHEET, 'A:G'),
     readValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:L')
   ]);
@@ -283,7 +287,7 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
   const [planValues, paymentValues, receivablesValues] = await Promise.all([
     readValues(ROP_PLAN_SHEET, 'A:H'),
     readValues(PAYMENTS_STAGING_SHEET, 'A:K'),
-    readValues(RECEIVABLES_DETAIL_SHEET, 'A:M')
+    readValues(RECEIVABLES_DETAIL_SHEET, 'A:N')
   ]);
   let fallbackStudents = receivablesValuesToStudents(receivablesValues);
 
@@ -336,7 +340,7 @@ async function refreshRopFromStaging() {
     readValues(ROP_PLAN_SHEET, 'A:H'),
     readValues(PAYMENTS_STAGING_SHEET, 'A:K'),
     readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
-    readValues(RECEIVABLES_DETAIL_SHEET, 'A:M')
+    readValues(RECEIVABLES_DETAIL_SHEET, 'A:N')
   ]);
   const baseStudents = persistedContractsToStudents(currentContractsValues);
   if (!baseStudents.length) throw new Error('Current-month ROP contract staging is empty');
@@ -408,9 +412,9 @@ const receivablesSource = createAshkReceivablesSource({
 
 const syncReceivables = createReceivablesSyncHandler({
   fetchCurrent: receivablesSource.fetchCurrent,
-  writeDetail: values => writeValues(RECEIVABLES_DETAIL_SHEET, 'A:M', values, 13),
+  writeDetail: values => writeValues(RECEIVABLES_DETAIL_SHEET, 'A:N', values, 14),
   writeSummary: values => writeValues(RECEIVABLES_SUMMARY_SHEET, 'A:F', values, 6),
-  readDetail: () => readValues(RECEIVABLES_DETAIL_SHEET, 'A:M'),
+  readDetail: () => readValues(RECEIVABLES_DETAIL_SHEET, 'A:N'),
   readSummary: () => readValues(RECEIVABLES_SUMMARY_SHEET, 'A:F'),
   afterVerified: syncRopDailyControlAndPublish
 });

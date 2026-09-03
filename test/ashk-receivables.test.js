@@ -11,6 +11,7 @@ test('buildReceivableRows maps group branch, normalizes amounts, and keeps only 
     [10, [
       {
         Id: 101,
+        PersonName: 'Иванов Иван Иванович',
         StudyGroupId: 10,
         OwnerName: 'Менеджер А',
         ContractName: 'A-101',
@@ -52,6 +53,7 @@ test('buildReceivableRows maps group branch, normalizes amounts, and keeps only 
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(row => row.studentId), [101, 201]);
   assert.equal(rows[0].branch, 'Герцена');
+  assert.equal(rows[0].studentName, 'Иванов Иван Иванович');
   assert.equal(rows[0].manager, 'Менеджер А');
   assert.equal(rows[0].salesSum, 100000.5);
   assert.equal(rows[0].debitSum, 70000);

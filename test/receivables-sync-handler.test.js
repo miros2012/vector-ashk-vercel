@@ -21,7 +21,7 @@ test('receivables sync writes positive-debt detail, verifies readback, and retur
     ],
     contractsByGroup: new Map([
       [10, [
-        { Id: 101, OwnerName: 'Менеджер А', Debt: 30000, SalesSum: 100000, DebitSum: 70000 },
+        { Id: 101, PersonName: 'Иванов Иван', OwnerName: 'Менеджер А', Debt: 30000, SalesSum: 100000, DebitSum: 70000 },
         { Id: 102, OwnerName: 'Менеджер А', Debt: 0, SalesSum: 50000, DebitSum: 50000 }
       ]],
       [20, [
@@ -48,6 +48,8 @@ test('receivables sync writes positive-debt detail, verifies readback, and retur
   assert.equal(JSON.stringify(res.body).includes('Менеджер А'), false);
   assert.equal(writes.detail.length, 3);
   assert.equal(writes.detail[0][0], 'StudentId');
+  assert.equal(writes.detail[0][1], 'Курсант');
+  assert.equal(writes.detail[1][1], 'Иванов Иван');
   assert.deepEqual(writes.detail.slice(1).map(row => row[0]), [101, 201]);
   assert.equal(writes.summary[0][0], 'Тип');
   assert.equal(writes.summary.some(row => row[0] === 'ИТОГО' && row[3] === 50000), true);
