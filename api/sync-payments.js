@@ -78,6 +78,43 @@ async function fetchAshkMonth() {
   }
   return [...byId.values()].sort((a, b) => String(a.PayDate ?? '').localeCompare(String(b.PayDate ?? '')));
 }
+
+function valueType(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function safeSchemaSample(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'object') return `[object:${Object.keys(value).sort().join(',')}]`;
+  return String(value);
+}
+
+export function summarizePaymentSchema(items) {
+  const fields = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    for (const [field, value] of Object.entries(item || {})) {
+      const current = fields.get(field) || { types: new Set(), samples: new Set() };
+      current.types.add(valueType(value));
+      const sample = safeSchemaSample(value);
+      if (sample && current.samples.size < 5) current.samples.add(sample);
+      fields.set(field, current);
+    }
+  }
+  const staffPattern = /employee|staff|worker|manager|owner|user|author|creator|createdby|cashier|operator|сотрудник/i;
+  const sorted = [...fields.entries()].sort(([a], [b]) => a.localeCompare(b));
+  return {
+    fields: sorted.map(([field, meta]) => ({ field, types: [...meta.types].sort() })),
+    staffCandidates: sorted
+      .filter(([field]) => staffPattern.test(field))
+      .map(([field, meta]) => ({ field, types: [...meta.types].sort(), samples: [...meta.samples] }))
+  };
+}
+
+export async function inspectAshkPaymentSchema() {
+  return summarizePaymentSchema(await fetchAshkMonth());
+}
 async function readMetrics(sheets, sheetName) {
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -127,12 +164,14 @@ export default async function handler(req, res) {
       sameRows: stagingExpected.rows === live.rows,
       sameDebit: Math.abs(stagingExpected.debitTotal - live.debitTotal) < 0.01
     };
+    const paymentSchema = summarizePaymentSchema(items);
     console.log(JSON.stringify({
       event: 'sync-payments-staging',
       staging: stagingExpected,
       verified: true,
       live,
-      comparison
+      comparison,
+      paymentFields: paymentSchema.fields
     }));
     return res.status(200).json({
       ok: true,
