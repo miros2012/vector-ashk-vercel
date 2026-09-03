@@ -63,7 +63,9 @@ test('logs in and reads SaleList with session cookies', async () => {
 
   const sales = await session.requestJson('/api/SaleList', { Period: 'Today' });
   assert.equal(sales.data[0].Id, 77);
+  assert.equal(calls[0].url, 'https://app.dscontrol.ru/login');
   assert.equal(calls[1].options.headers.__RequestVerificationToken, 'csrf');
+  assert.match(calls[1].options.body, /PreventPass=false/);
   assert.match(calls[2].options.headers.Cookie, /session=b/);
   assert.match(calls[2].url, /Period=Today/);
 });
@@ -77,7 +79,7 @@ test('re-authenticates only once after an expired session', async () => {
     password: 'secret',
     fetchFn: async url => {
       const value = String(url);
-      if (value === 'https://app.dscontrol.ru/') {
+      if (value === 'https://app.dscontrol.ru/login') {
         loginGets += 1;
         return response({ body: '<input name="__RequestVerificationToken" value="csrf">', contentType: 'text/html' });
       }
