@@ -7,14 +7,15 @@ const { createRopPublisher } = ropPublisher;
 
 const TARGET = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 
-test('ROP publisher copies only the four approved management sheets', async () => {
+test('ROP publisher copies the approved management sheets including debtor priorities', async () => {
   const reads = [];
   const writes = [];
   const source = {
     'РОП_Штаб_Утро': [['h1'], ['morning']],
     'РОП_Задачи_Сегодня': [['h1'], ['tasks']],
     'РОП_Контроль_Дня': [['h1'], ['control']],
-    'РОП_План_Сентябрь': [['h1'], ['plan']]
+    'РОП_План_Сентябрь': [['h1'], ['plan']],
+    'РОП_Дебиторка_Приоритет': [['h1'], ['debtors']]
   };
   const publish = createRopPublisher({
     targetSpreadsheetId: TARGET,
@@ -27,7 +28,7 @@ test('ROP publisher copies only the four approved management sheets', async () =
   assert.deepEqual(reads, Object.keys(source));
   assert.deepEqual(writes.map(item => item.sheetName), Object.keys(source));
   assert.ok(writes.every(item => item.spreadsheetId === TARGET));
-  assert.equal(result.sheets, 4);
+  assert.equal(result.sheets, 5);
 });
 
 test('verified ROP source refresh publishes the standalone dashboard immediately', async () => {

@@ -24,3 +24,10 @@ test('nightly ROP sync persists and readback-verifies unmatched payment diagnost
   assert.match(source, /unmatchedReadback/);
   assert.match(source, /ID оплаты/);
 });
+
+test('ROP sync persists and verifies the debtor priority queue', () => {
+  assert.match(source, /РОП_Дебиторка_Приоритет/);
+  assert.match(source, /buildRopDebtorPriority/);
+  assert.match(source, /debtorPriorityReadback/);
+  assert.match(source, /StudentId/);
+});

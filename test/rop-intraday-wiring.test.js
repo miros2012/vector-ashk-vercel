@@ -24,6 +24,12 @@ test('each Hobby-safe intraday schedule selects lightweight payments plus ROP re
   assert.match(api, /refreshRopFromStaging/);
 });
 
+test('intraday ROP refresh reconstructs debt from the full verified receivables staging sheet', () => {
+  assert.match(api, /RECEIVABLES_DETAIL_SHEET/);
+  assert.match(api, /receivablesValuesToStudents/);
+  assert.match(api, /readValues\(RECEIVABLES_DETAIL_SHEET,\s*'A:M'\)/s);
+});
+
 test('every source refresh publishes the standalone ROP dashboard in the same execution', () => {
   assert.match(api, /publishRopNow/);
   assert.match(api, /syncRopSourceThenPublishTarget/);
