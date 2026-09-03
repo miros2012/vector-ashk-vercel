@@ -1,9 +1,15 @@
 import { google } from 'googleapis';
 import { paymentMetrics, paymentMetricsMatch } from '../lib/payments-staging-verification.js';
+import { createAshkWebSession } from '../lib/ashk-web-session.js';
+import {
+  attributePaymentsToSales,
+  createAshkSaleSource
+} from '../lib/ashk-sale-attribution.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const STAGING_SHEET = 'АШК_Оплаты__vercel';
+const SALES_STAGING_SHEET = 'АШК_Продажи__vercel';
 const LIVE_SHEET = 'АШК_Оплаты';
 const TZ = 'Asia/Yekaterinburg';
 
@@ -146,6 +152,30 @@ async function readMetrics(sheets, sheetName) {
   return paymentMetrics(r.data.values || []);
 }
 
+function saleMetrics(values) {
+  const rows = Array.isArray(values) ? values : [];
+  return {
+    rows: rows.length,
+    sumTotal: Math.round(rows.reduce((sum, row) => sum + toNumber(row?.[6]), 0) * 100) / 100,
+    paidTotal: Math.round(rows.reduce((sum, row) => sum + toNumber(row?.[7]), 0) * 100) / 100
+  };
+}
+
+function saleMetricsMatch(actual, expected) {
+  return actual.rows === expected.rows
+    && Math.abs(actual.sumTotal - expected.sumTotal) < 0.01
+    && Math.abs(actual.paidTotal - expected.paidTotal) < 0.01;
+}
+
+async function readSaleMetrics(sheets) {
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${SALES_STAGING_SHEET}'!A2:H`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  });
+  return saleMetrics(result.data.values || []);
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'Use POST' });
@@ -156,18 +186,45 @@ export default async function handler(req, res) {
     }
     const [rawItems, sheets] = await Promise.all([fetchAshkMonth(), sheetsClient()]);
     const operations = await fetchAshkCashboxOperations();
-    const attribution = attributePaymentsToCashboxOperations(rawItems, operations);
-    const items = attribution.items;
-    await ensureSheet(sheets, STAGING_SHEET);
-    const headers = [['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit','PaymentEmployeeName']];
+    const comparisonAttribution = attributePaymentsToCashboxOperations(rawItems, operations);
+    const { year, month, day } = tyumenParts();
+    const session = createAshkWebSession({
+      baseUrl: ASHK_BASE_URL,
+      login: process.env['ASHK_WEB_LOGIN'],
+      password: process.env['ASHK_WEB_PASSWORD']
+    });
+    const saleSource = createAshkSaleSource({ session, concurrency: 4 });
+    const saleResult = await saleSource.fetchForPayments({
+      payments: rawItems,
+      startDate: `${year}-${pad2(month)}-01`,
+      endDate: `${year}-${pad2(month)}-${pad2(day)}`
+    });
+    const saleAttribution = attributePaymentsToSales(comparisonAttribution.items, saleResult.sales);
+    const items = saleAttribution.items;
+
+    await Promise.all([
+      ensureSheet(sheets, STAGING_SHEET),
+      ensureSheet(sheets, SALES_STAGING_SHEET)
+    ]);
+    const headers = [[
+      'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
+      'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
+    ]];
     const rows = items.map(item => [
       item.Id ?? '', item.PayDate ?? '', item.StudentId ?? '', item.SaleId ?? '',
       item.ProductId ?? '', item.ProductName ?? '', toNumber(item.SaleSum), toNumber(item.Debit),
-      item.PaymentEmployeeName ?? ''
+      item.PaymentEmployeeName ?? '', item.SaleEmployeeName ?? '', item.SaleAttributionStatus ?? ''
+    ]);
+    const salesHeaders = [[
+      'Id','Date','EmployeeName','StudentOwnerName','StudentId','ProductName','Sum','Paid'
+    ]];
+    const salesRows = saleResult.sales.map(item => [
+      item.Id ?? '', item.Date ?? '', item.EmployeeName ?? '', item.StudentOwnerName ?? '',
+      item.StudentId ?? '', item.ProductName ?? '', toNumber(item.Sum), toNumber(item.Paid)
     ]);
     await sheets.spreadsheets.values.clear({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${STAGING_SHEET}'!A:I`
+      range: `'${STAGING_SHEET}'!A:K`
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
@@ -175,12 +232,27 @@ export default async function handler(req, res) {
       valueInputOption: 'RAW',
       requestBody: { values: [...headers, ...rows] }
     });
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SALES_STAGING_SHEET}'!A:H`
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SALES_STAGING_SHEET}'!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [...salesHeaders, ...salesRows] }
+    });
 
     const stagingExpected = paymentMetrics(rows);
-    const stagingReadback = await readMetrics(sheets, STAGING_SHEET);
-    if (!paymentMetricsMatch(stagingReadback, stagingExpected)) {
+    const salesExpected = saleMetrics(salesRows);
+    const [stagingReadback, salesReadback] = await Promise.all([
+      readMetrics(sheets, STAGING_SHEET),
+      readSaleMetrics(sheets)
+    ]);
+    if (!paymentMetricsMatch(stagingReadback, stagingExpected)
+      || !saleMetricsMatch(salesReadback, salesExpected)) {
       console.error('sync-payments-staging-verification: mismatch');
-      return res.status(502).json({ ok: false, error: 'Payment staging verification failed' });
+      return res.status(502).json({ ok: false, error: 'Payment or sale staging verification failed' });
     }
 
     const live = await readMetrics(sheets, LIVE_SHEET);
@@ -196,7 +268,10 @@ export default async function handler(req, res) {
       verified: true,
       live,
       comparison,
-      employeeAttribution: attribution.metrics
+      saleSource: saleResult.metrics,
+      saleAttribution: saleAttribution.metrics,
+      cashboxComparison: comparisonAttribution.metrics,
+      credentials: 'configured'
     }));
     return res.status(200).json({
       ok: true,
@@ -204,11 +279,16 @@ export default async function handler(req, res) {
       verified: true,
       spreadsheetId: SPREADSHEET_ID,
       stagingSheet: STAGING_SHEET,
+      salesStagingSheet: SALES_STAGING_SHEET,
       liveSheet: LIVE_SHEET,
       staging: stagingExpected,
+      salesStaging: salesExpected,
       live,
       comparison,
-      employeeAttribution: attribution.metrics,
+      saleSource: saleResult.metrics,
+      saleAttribution: saleAttribution.metrics,
+      cashboxComparison: comparisonAttribution.metrics,
+      credentials: 'configured',
       note: 'Рабочий лист не изменён.'
     });
   } catch (error) {
