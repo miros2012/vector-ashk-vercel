@@ -23,11 +23,11 @@ test('morning dashboard keeps closed snapshot and adds current live snapshot', (
   const liveA = rows.find(row => row[idx('Срез')] === 'СЕГОДНЯ — НА СЕЙЧАС' && row[idx('Менеджер')] === 'Менеджер А');
   const closedB = rows.find(row => row[idx('Срез')] === 'ВЧЕРА — ЗАКРЫТО' && row[idx('Менеджер')] === 'Менеджер Б');
   assert.ok(closedA && liveA && closedB);
-  assert.equal(closedA[idx('Факт дня')], 46600);
-  assert.equal(closedA[idx('Дефицит к плану на дату')], 0);
-  assert.equal(closedB[idx('Дефицит к плану на дату')], 47435.9);
-  assert.equal(liveA[idx('Факт дня')], 0);
-  assert.equal(liveA[idx('Факт с начала месяца')], 46600);
+  assert.equal(closedA[idx('Факт филиала за день')], 46600);
+  assert.equal(closedA[idx('Дефицит филиала к плану на дату')], 0);
+  assert.equal(closedB[idx('Дефицит филиала к плану на дату')], 47435.9);
+  assert.equal(liveA[idx('Факт филиала за день')], 0);
+  assert.equal(liveA[idx('Факт филиала с начала месяца')], 46600);
   assert.equal(liveA[idx('Приоритет')], 'СЕГОДНЯ');
 });
 

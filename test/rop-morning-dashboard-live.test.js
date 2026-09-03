@@ -13,7 +13,7 @@ test('morning dashboard contains both closed yesterday and live today snapshots'
   const headers = dashboard.values[0];
   const idx = name => headers.indexOf(name);
   assert.ok(idx('Срез') >= 0);
-  assert.ok(idx('Факт дня') >= 0);
+  assert.ok(idx('Факт филиала за день') >= 0);
 
   const rows = dashboard.values.slice(1);
   const closed = rows.find(row => row[idx('Срез')] === 'ВЧЕРА — ЗАКРЫТО' && row[idx('Уровень')] === 'МЕНЕДЖЕР');
@@ -21,14 +21,14 @@ test('morning dashboard contains both closed yesterday and live today snapshots'
 
   assert.ok(closed);
   assert.equal(closed[idx('Дата отчёта')], '2026-09-01');
-  assert.equal(closed[idx('Факт дня')], 46600);
-  assert.equal(closed[idx('Факт с начала месяца')], 46600);
+  assert.equal(closed[idx('Факт филиала за день')], 46600);
+  assert.equal(closed[idx('Факт филиала с начала месяца')], 46600);
 
   assert.ok(live);
   assert.equal(live[idx('Дата отчёта')], '2026-09-02');
-  assert.equal(live[idx('Факт дня')], 27000);
-  assert.equal(live[idx('Факт с начала месяца')], 73600);
-  assert.equal(live[idx('Дефицит к плану на дату')], 24172.02);
+  assert.equal(live[idx('Факт филиала за день')], 27000);
+  assert.equal(live[idx('Факт филиала с начала месяца')], 73600);
+  assert.equal(live[idx('Дефицит филиала к плану на дату')], 24172.02);
   assert.equal(live[idx('Приоритет')], 'СЕГОДНЯ');
 
   assert.equal(dashboard.reportDate, '2026-09-01');
