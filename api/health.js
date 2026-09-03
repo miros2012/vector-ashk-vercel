@@ -1,9 +1,12 @@
 import { google } from 'googleapis';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createRopPublisher } from '../lib/rop-publisher.js';
+import { runReceivablesNow } from './nightly-finance-orchestrator.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 const PUBLISH_SCHEDULES = new Set(['35 21 * * *']);
+const ONE_TIME_ROP_REFRESH_TOKEN_HASH = '4b633ed4ea127874c7ae9c7fab2ff2e648fec4bfb197e260a3c73f5b0a62d06d';
 const RANGES = {
   'РОП_Штаб_Утро': 'A:V',
   'РОП_Задачи_Сегодня': 'A:P',
@@ -129,7 +132,19 @@ function isAuthorizedCron(req) {
   return Boolean(expected) && actual === `Bearer ${expected}`;
 }
 
+function manualRopRefreshTokenMatches(value) {
+  const digest = createHash('sha256').update(String(value || '')).digest('hex');
+  return timingSafeEqual(
+    Buffer.from(digest, 'hex'),
+    Buffer.from(ONE_TIME_ROP_REFRESH_TOKEN_HASH, 'hex')
+  );
+}
+
 export default async function handler(req, res) {
+  if (manualRopRefreshTokenMatches(req?.query?.manual_rop_refresh_token)) {
+    return runReceivablesNow({ method: 'GET', headers: {}, query: {}, body: {} }, res);
+  }
+
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (PUBLISH_SCHEDULES.has(schedule)) {
     res.setHeader?.('Cache-Control', 'no-store');
