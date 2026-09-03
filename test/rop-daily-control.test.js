@@ -58,7 +58,7 @@ test('ROP workbook reconstructs day-by-day branch and manager performance from c
   assert.ok(aSep1);
   assert.equal(aSep1[idx('Факт филиала за день')], 60000);
   assert.equal(aSep1[idx('Факт филиала с начала месяца')], 60000);
-  assert.equal(aSep1[idx('Личный факт за день')], 60000); // one-manager branch owns old receivables too
+  assert.equal(aSep1[idx('Личный факт за день')], 50000); // personal fact follows the ASHK owner
   assert.equal(aSep1[idx('Новых договоров с начала месяца')], 1);
   assert.equal(aSep1[idx('100% оплаченных новых договоров')], 1);
   assert.equal(aSep1[idx('Текущая ДЗ филиала')], 10000);
@@ -146,6 +146,59 @@ test('ROP workbook uses targeted student details only as fallback when current s
   const liveRows = liveWins.controlValues.slice(1);
   const liveBSep1 = liveRows.find(r => r[idx('Дата')] === '2026-09-01' && r[idx('Менеджер')] === 'Менеджер Б');
   assert.equal(liveBSep1[idx('Факт филиала за день')], 50000);
+});
+
+test('personal fact follows the active ASHK owner even when the contract belongs to another branch', () => {
+  const planValues = [
+    ...PLAN_VALUES,
+    ['Кумаритова','Республики','Республика',300000,300000,'5/2','Да','']
+  ];
+  const groups = [
+    ...GROUPS,
+    { Id: 30, TrainingRoomName: 'Республика' }
+  ];
+  const contractsByGroup = new Map([
+    ...CONTRACTS,
+    [10, [
+      ...CONTRACTS.get(10),
+      { Id: 301, StudyGroupId: 10, OwnerName: 'Кумаритова Алина', ContractDate: '2026-08-20', SalesSum: 50000, DebitSum: 50000, Debt: 0 }
+    ]],
+    [20, [
+      ...CONTRACTS.get(20),
+      { Id: 302, StudyGroupId: 20, OwnerName: 'Менеджер А', ContractDate: '2026-08-20', SalesSum: 70000, DebitSum: 70000, Debt: 0 }
+    ]]
+  ]);
+  const paymentValues = [
+    ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit'],
+    [10,'2026-09-02 10:00:00',301,10,1,'Курс',50000,5000],
+    [11,'2026-09-02 11:00:00',302,11,1,'Курс',70000,7000]
+  ];
+
+  const workbook = buildRopDailyControlWorkbook({
+    planValues,
+    groups,
+    contractsByGroup,
+    paymentValues,
+    month: '2026-09',
+    asOfDate: '2026-09-02'
+  });
+
+  const headers = workbook.controlValues[0];
+  const idx = name => headers.indexOf(name);
+  const row = manager => workbook.controlValues.slice(1).find(item =>
+    item[idx('Дата')] === '2026-09-02' && item[idx('Менеджер')] === manager
+  );
+
+  assert.equal(row('Менеджер А')[idx('Факт филиала за день')], 5000);
+  assert.equal(row('Менеджер А')[idx('Личный факт за день')], 7000);
+  assert.equal(row('Кумаритова')[idx('Факт филиала за день')], 0);
+  assert.equal(row('Кумаритова')[idx('Личный факт за день')], 5000);
+
+  assert.deepEqual(workbook.paymentAttributionValues, [
+    ['ID оплаты','Дата','StudentId','Сумма','Филиал','Филиал АШК','Менеджер АШК','Зачтён менеджеру','Статус привязки'],
+    ['10','2026-09-02',301,5000,'Зарека','Зарека','Кумаритова Алина','Кумаритова','OK_ACTIVE_MANAGER'],
+    ['11','2026-09-02',302,7000,'Герцена','Сити-Центр','Менеджер А','Менеджер А','OK_ACTIVE_MANAGER']
+  ]);
 });
 
 test('ROP workbook uses the full receivables snapshot for branch debt without double-counting live contracts', () => {

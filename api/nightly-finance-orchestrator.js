@@ -22,6 +22,7 @@ const ROP_MORNING_SHEET = 'РОП_Штаб_Утро';
 const ROP_TASKS_SHEET = 'РОП_Задачи_Сегодня';
 const ROP_DEBTOR_PRIORITY_SHEET = 'РОП_Дебиторка_Приоритет';
 const ROP_UNMATCHED_SHEET = 'РОП_Неопознанные_Оплаты__diag';
+const ROP_PAYMENT_ATTRIBUTION_SHEET = 'РОП_Привязка_Оплат__diag';
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
 const INTRADAY_SCHEDULES = new Set(Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`));
@@ -209,6 +210,7 @@ async function persistRopOutputs({
   await writeValues(ROP_TASKS_SHEET, 'A:P', tasksToday.values, 16);
   await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N', debtorPriority.values, 14);
   await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
+  await writeValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:I', workbook.paymentAttributionValues, 9);
 
   const reads = await Promise.all([
     writeContracts ? readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J') : Promise.resolve(null),
@@ -216,9 +218,18 @@ async function persistRopOutputs({
     readValues(ROP_MORNING_SHEET, 'A:V'),
     readValues(ROP_TASKS_SHEET, 'A:P'),
     readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N'),
-    readValues(ROP_UNMATCHED_SHEET, 'A:G')
+    readValues(ROP_UNMATCHED_SHEET, 'A:G'),
+    readValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:I')
   ]);
-  const [contractsReadback, controlReadback, morningReadback, tasksReadback, debtorPriorityReadback, unmatchedReadback] = reads;
+  const [
+    contractsReadback,
+    controlReadback,
+    morningReadback,
+    tasksReadback,
+    debtorPriorityReadback,
+    unmatchedReadback,
+    paymentAttributionReadback
+  ] = reads;
   const contractsVerified = !writeContracts || (
     contractsReadback.length === workbook.currentMonthContractsValues.length
     && String(contractsReadback?.[0]?.[0] || '') === 'StudentId'
@@ -233,7 +244,10 @@ async function persistRopOutputs({
     && String(debtorPriorityReadback?.[0]?.[5] || '') === 'StudentId';
   const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length
     && String(unmatchedReadback?.[0]?.[0] || '') === 'ID оплаты';
-  if (!contractsVerified || !controlVerified || !morningVerified || !tasksVerified || !debtorPriorityVerified || !unmatchedVerified) {
+  const paymentAttributionVerified = paymentAttributionReadback.length === workbook.paymentAttributionValues.length
+    && String(paymentAttributionReadback?.[0]?.[8] || '') === 'Статус привязки';
+  if (!contractsVerified || !controlVerified || !morningVerified || !tasksVerified
+    || !debtorPriorityVerified || !unmatchedVerified || !paymentAttributionVerified) {
     throw new Error('ROP daily control readback verification failed');
   }
 
@@ -255,6 +269,9 @@ async function persistRopOutputs({
     fallbackLookupFailures,
     unmatchedPayments: workbook.metrics.unmatchedPayments,
     unmatchedPaymentAmount: workbook.metrics.unmatchedPaymentAmount,
+    managerAttributedPayments: workbook.metrics.managerAttributedPayments,
+    managerUnattributedPayments: workbook.metrics.managerUnattributedPayments,
+    managerUnattributedAmount: workbook.metrics.managerUnattributedAmount,
     verified: true
   };
   console.log(JSON.stringify({ event: 'rop-daily-control-sync', ...result }));
