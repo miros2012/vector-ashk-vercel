@@ -41,4 +41,6 @@ test('ROP sync persists and verifies the debtor priority queue', () => {
   assert.match(source, /buildRopDebtorPriority/);
   assert.match(source, /debtorPriorityReadback/);
   assert.match(source, /StudentId/);
+  assert.match(source, /mergeDebtorManualFields/);
+  assert.match(source, /writeValues\(ROP_DEBTOR_PRIORITY_SHEET, 'A:V'/);
 });
