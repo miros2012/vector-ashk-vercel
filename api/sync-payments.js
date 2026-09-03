@@ -115,6 +115,59 @@ export function summarizePaymentSchema(items) {
 export async function inspectAshkPaymentSchema() {
   return summarizePaymentSchema(await fetchAshkMonth());
 }
+
+function schemaPaths(value, prefix = '', depth = 0, result = new Map()) {
+  if (depth > 4 || value === null || value === undefined) return result;
+  if (Array.isArray(value)) {
+    result.set(prefix || '[]', 'array');
+    for (const item of value.slice(0, 3)) schemaPaths(item, `${prefix}[]`, depth + 1, result);
+    return result;
+  }
+  if (typeof value !== 'object') {
+    if (prefix) result.set(prefix, typeof value);
+    return result;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    result.set(path, valueType(child));
+    schemaPaths(child, path, depth + 1, result);
+  }
+  return result;
+}
+
+async function inspectRelatedPaymentEndpoints(sample) {
+  const apiKey = process.env.ASHK_API_KEY;
+  const candidates = [
+    `/api/PaymentRecordExternalGet?param=${encodeURIComponent(sample.Id ?? '')}`,
+    `/api/PaymentRecordGet?param=${encodeURIComponent(sample.Id ?? '')}`,
+    `/api/SaleExternalGet?param=${encodeURIComponent(sample.SaleId ?? '')}`,
+    `/api/SaleGet?param=${encodeURIComponent(sample.SaleId ?? '')}`,
+    `/api/CashboxExternalGet?param=${encodeURIComponent(sample.CashboxId ?? '')}`,
+    `/api/CashboxGet?param=${encodeURIComponent(sample.CashboxId ?? '')}`,
+    '/api/CashboxList'
+  ];
+  const results = [];
+  for (const path of candidates) {
+    const response = await fetch(`${ASHK_BASE_URL}${path}`, {
+      headers: {
+        'api_key': apiKey,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/json'
+      }
+    });
+    const body = await response.text();
+    let payload = null;
+    try { payload = JSON.parse(body); } catch { /* schema-only diagnostic */ }
+    results.push({
+      endpoint: path.replace(/=[^&]+/g, '=…'),
+      status: response.status,
+      success: payload?.success,
+      schema: payload ? [...schemaPaths(payload).entries()].map(([field, type]) => ({ field, type })) : []
+    });
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
+  return results;
+}
 async function readMetrics(sheets, sheetName) {
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -165,13 +218,17 @@ export default async function handler(req, res) {
       sameDebit: Math.abs(stagingExpected.debitTotal - live.debitTotal) < 0.01
     };
     const paymentSchema = summarizePaymentSchema(items);
+    const relatedPaymentEndpoints = req.query?.inspectDetails === '1' && items[0]
+      ? await inspectRelatedPaymentEndpoints(items[0])
+      : undefined;
     console.log(JSON.stringify({
       event: 'sync-payments-staging',
       staging: stagingExpected,
       verified: true,
       live,
       comparison,
-      paymentFields: paymentSchema.fields
+      paymentFields: paymentSchema.fields,
+      relatedPaymentEndpoints
     }));
     return res.status(200).json({
       ok: true,
