@@ -282,7 +282,7 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
   const { date, month } = tyumenToday();
   const [planValues, paymentValues, receivablesValues] = await Promise.all([
     readValues(ROP_PLAN_SHEET, 'A:H'),
-    readValues(PAYMENTS_STAGING_SHEET, 'A:H'),
+    readValues(PAYMENTS_STAGING_SHEET, 'A:I'),
     readValues(RECEIVABLES_DETAIL_SHEET, 'A:M')
   ]);
   let fallbackStudents = receivablesValuesToStudents(receivablesValues);
@@ -334,7 +334,7 @@ async function refreshRopFromStaging() {
   const { date, month } = tyumenToday();
   const [planValues, paymentValues, currentContractsValues, receivablesValues] = await Promise.all([
     readValues(ROP_PLAN_SHEET, 'A:H'),
-    readValues(PAYMENTS_STAGING_SHEET, 'A:H'),
+    readValues(PAYMENTS_STAGING_SHEET, 'A:I'),
     readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
     readValues(RECEIVABLES_DETAIL_SHEET, 'A:M')
   ]);
