@@ -36,13 +36,13 @@ Use three stable internal Google Sheets as the source/runtime boundary:
 
 The backend reads the existing ASHK archive written by the hours sync, reads Rate Cards and Evidence, calculates gross/reconciliation with the existing payroll domain modules, writes Payroll Runtime, performs readback verification, then lets downstream sheets consume the verified runtime values.
 
-No new API route or Serverless Function is added. The existing `api/nightly-finance-orchestrator.js` gains a payroll stage after successful hours sync and before downstream finance/decision processing.
+No new API route or Serverless Function is added. The existing `api/nightly-finance-orchestrator.js` gains a payroll stage after successful hours and payments sync and before downstream finance/decision processing.
 
 ## Data flow
 
 Nightly sequence:
 
-`ASHK MasterWorkReportDetails -> sync-hours -> verified ASHK archive -> Payroll Rate Cards + Payroll Evidence -> payroll runtime calculation -> Payroll Runtime -> Фонд вождения / Обязательства / Прогноз 30 дней / Панель собственника -> decisions`
+`ASHK MasterWorkReportDetails -> sync-hours -> verified ASHK archive -> sync-payments -> Payroll Rate Cards + Payroll Evidence -> payroll runtime calculation -> Payroll Runtime -> Фонд вождения / Обязательства / Прогноз 30 дней / Панель собственника -> receivables -> decisions`
 
 The payroll stage must not fetch the one-off workbook `АВГУСТ 2026 г.`. That workbook was useful as a source for migrating initial rate cards/evidence, but it contains stale/manual template values and is not a safe runtime dependency.
 
@@ -197,23 +197,16 @@ The fund sheet must not add unconfirmed OPEN_REVIEW deductions to personal net.
 
 Extend the existing orchestrator rather than add a route.
 
-Desired sequence:
-1. hours
-2. payroll
-3. payments (existing behavior may remain before/after payroll only if payroll evidence is sheet-backed and deterministic for the period)
-4. receivables
-5. decisions
-
-Preferred final order for consistency is:
+Authoritative stage order:
 1. hours
 2. payments
 3. payroll
 4. receivables
 5. decisions
 
-Reason: payroll should see the freshest payment/evidence inputs when they are sourced from the nightly payment staging. If Payroll Evidence remains curated and independent from payment sync, hours -> payroll is still valid; implementation tests will lock the selected dependency order.
+Reason: payroll must run only after the nightly hours archive and payment staging have refreshed. This keeps the payroll run tied to one coherent nightly snapshot and leaves room for confirmed payment-derived evidence without a second cron or route.
 
-A payroll failure must skip downstream decisions that would depend on refreshed payroll values. Receivables may remain independent, but the orchestrator response must make stage status explicit.
+A payroll hard failure skips receivables and decisions in the first implementation so the finance snapshot remains clearly incomplete rather than mixing fresh downstream decisions with stale payroll. Soft `VERIFIED_WITH_OPEN_REVIEW` is considered a successful payroll stage and the nightly chain continues.
 
 ## Vercel / cost constraints
 
@@ -249,7 +242,7 @@ TDD coverage must include:
 - OPEN_REVIEW returns `VERIFIED_WITH_OPEN_REVIEW` and does not change personal net;
 - hard blocker preserves last-known-good runtime;
 - runtime write/readback mismatch fails the stage;
-- orchestrator stage order and skip behavior;
+- orchestrator stage order `hours -> payments -> payroll -> receivables -> decisions` and skip behavior;
 - no additional API route or cron required.
 
 ## Non-goals
