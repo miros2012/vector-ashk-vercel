@@ -8,9 +8,12 @@ const planValues = [
 ];
 
 const paymentValues = [
-  ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit'],
-  [11,'2026-09-01 10:00:00',999,1,1,'Доплата',2700,2700],
-  [12,'2026-09-01 11:00:00',301,2,1,'Доплата',1500,1500]
+  [
+    'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
+    'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
+  ],
+  [11,'2026-09-01 10:00:00',999,1,1,'Доплата',2700,2700,'Кассир','Менеджер А','OK_SALE_EMPLOYEE'],
+  [12,'2026-09-01 11:00:00',301,2,1,'Доплата',1500,1500,'Кассир','Менеджер А','OK_SALE_EMPLOYEE']
 ];
 
 test('ROP workbook emits auditable unmatched-payment rows with distinct root-cause codes', () => {
