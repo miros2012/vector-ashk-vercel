@@ -28,12 +28,15 @@ const CONTRACTS = new Map([
 ]);
 
 const PAYMENT_VALUES = [
-  ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit'],
-  [1,'2026-09-01 10:00:00',101,1,1,'Курс',30000,10000],
-  [2,'2026-09-01 11:00:00',102,2,1,'Курс',50000,50000],
-  [3,'2026-09-01 12:00:00',201,3,1,'Курс',60000,30000],
-  [4,'2026-09-01 13:00:00',202,4,1,'Курс',40000,20000],
-  [5,'2026-09-02 09:00:00',201,3,1,'Курс',60000,10000]
+  [
+    'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
+    'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
+  ],
+  [1,'2026-09-01 10:00:00',101,1,1,'Курс',30000,10000,'Кассир','','SALE_EMPLOYEE_EMPTY'],
+  [2,'2026-09-01 11:00:00',102,2,1,'Курс',50000,50000,'Кассир','Менеджер А','OK_SALE_EMPLOYEE'],
+  [3,'2026-09-01 12:00:00',201,3,1,'Курс',60000,30000,'Кассир','Менеджер Б','OK_SALE_EMPLOYEE'],
+  [4,'2026-09-01 13:00:00',202,4,1,'Курс',40000,20000,'Кассир','','SALE_EMPLOYEE_EMPTY'],
+  [5,'2026-09-02 09:00:00',201,3,1,'Курс',60000,10000,'Кассир','Менеджер Б','OK_SALE_EMPLOYEE']
 ];
 
 test('ROP workbook reconstructs day-by-day branch and manager performance from current-month ASHK data', () => {
@@ -83,7 +86,7 @@ test('ROP workbook exposes unmatched payment amount instead of silently assignin
     planValues: PLAN_VALUES,
     groups: GROUPS,
     contractsByGroup: CONTRACTS,
-    paymentValues: [...PAYMENT_VALUES, [6,'2026-09-01 14:00:00',999,9,1,'Курс',10000,7000]],
+    paymentValues: [...PAYMENT_VALUES, [6,'2026-09-01 14:00:00',999,9,1,'Курс',10000,7000,'Кассир','','SALE_NOT_FOUND']],
     month: '2026-09',
     asOfDate: '2026-09-02'
   });
@@ -95,7 +98,7 @@ test('ROP workbook exposes unmatched payment amount instead of silently assignin
 test('ROP workbook uses targeted student details only as fallback when current snapshot misses a StudentId', () => {
   const paymentValues = [
     ...PAYMENT_VALUES,
-    [6,'2026-09-01 14:00:00',999,9,1,'Дополнительное вождение',2700,2700]
+    [6,'2026-09-01 14:00:00',999,9,1,'Дополнительное вождение',2700,2700,'Кассир','Менеджер В','OK_SALE_EMPLOYEE']
   ];
   const fallbackStudents = [{
     Id: 999,
@@ -148,7 +151,7 @@ test('ROP workbook uses targeted student details only as fallback when current s
   assert.equal(liveBSep1[idx('Факт филиала за день')], 50000);
 });
 
-test('personal fact follows the active ASHK owner even when the contract belongs to another branch', () => {
+test('personal fact follows the ASHK seller even when the contract belongs to another branch', () => {
   const planValues = [
     ...PLAN_VALUES,
     ['Кумаритова','Республики','Республика',300000,300000,'5/2','Да','']
@@ -169,9 +172,12 @@ test('personal fact follows the active ASHK owner even when the contract belongs
     ]]
   ]);
   const paymentValues = [
-    ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit'],
-    [10,'2026-09-02 10:00:00',301,10,1,'Курс',50000,5000],
-    [11,'2026-09-02 11:00:00',302,11,1,'Курс',70000,7000]
+    [
+      'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
+      'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
+    ],
+    [10,'2026-09-02 10:00:00',301,10,1,'Курс',50000,5000,'Кассир','Кумаритова Алина','OK_SALE_EMPLOYEE'],
+    [11,'2026-09-02 11:00:00',302,11,1,'Курс',70000,7000,'Кассир','Менеджер А','OK_SALE_EMPLOYEE']
   ];
 
   const workbook = buildRopDailyControlWorkbook({
@@ -195,22 +201,27 @@ test('personal fact follows the active ASHK owner even when the contract belongs
   assert.equal(row('Кумаритова')[idx('Личный факт за день')], 5000);
 
   assert.deepEqual(workbook.paymentAttributionValues, [
-    ['ID оплаты','Дата','StudentId','Сумма','Филиал','Филиал АШК','Менеджер АШК','Сотрудник оплаты АШК','Зачтён менеджеру','Статус привязки'],
-    ['10','2026-09-02',301,5000,'Зарека','Зарека','Кумаритова Алина','','Кумаритова','LEGACY_OWNER_FALLBACK'],
-    ['11','2026-09-02',302,7000,'Герцена','Сити-Центр','Менеджер А','','Менеджер А','LEGACY_OWNER_FALLBACK']
+    ['ID оплаты','Дата','StudentId','SaleId','Сумма','Филиал','Филиал АШК','Менеджер АШК','Сотрудник кассовой операции','Сотрудник продажи АШК','Зачтён менеджеру','Статус привязки'],
+    ['10','2026-09-02',301,'10',5000,'Зарека','Зарека','Кумаритова Алина','Кассир','Кумаритова Алина','Кумаритова','OK_SALE_EMPLOYEE'],
+    ['11','2026-09-02',302,'11',7000,'Герцена','Сити-Центр','Менеджер А','Кассир','Менеджер А','Менеджер А','OK_SALE_EMPLOYEE']
   ]);
 });
 
-test('personal fact follows the ASHK employee who issued the payment instead of the contract owner', () => {
+test('personal fact follows only the ASHK sale employee, not owner or cashbox employee', () => {
   const planValues = [
     ['Менеджер','Филиал','Филиал АШК','План филиала','План менеджера','График','Активен','Примечание'],
     ['Менеджер А','Зарека','Зарека',300000,150000,'5/2','Да',''],
     ['Менеджер Б','Зарека','Зарека',300000,150000,'5/2','Да','']
   ];
   const paymentValues = [
-    ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit','PaymentEmployeeName'],
-    [501,'2026-09-02 10:00:00',101,10,1,'Курс',50000,7000,'Менеджер Б'],
-    [502,'2026-09-02 11:00:00',101,10,1,'Курс',50000,3000,'']
+    [
+      'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
+      'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
+    ],
+    [501,'2026-09-02 10:00:00',101,10,1,'Курс',50000,7000,
+      'Кассир','Менеджер Б','OK_SALE_EMPLOYEE'],
+    [502,'2026-09-02 11:00:00',101,11,1,'Курс',50000,3000,
+      'Менеджер Б','','SALE_EMPLOYEE_EMPTY']
   ];
   const workbook = buildRopDailyControlWorkbook({
     planValues,
@@ -239,6 +250,8 @@ test('personal fact follows the ASHK employee who issued the payment instead of 
   assert.equal(row('Менеджер Б')[idx('Личный факт за день')], 7000);
   assert.equal(row('Менеджер А')[idx('Факт филиала за день')], 10000);
   assert.equal(row('Менеджер Б')[idx('Статус личный')], 'КРАСНЫЙ');
+  assert.match(JSON.stringify(workbook.paymentAttributionValues), /SALE_EMPLOYEE_EMPTY/);
+  assert.doesNotMatch(JSON.stringify(workbook.paymentAttributionValues), /LEGACY_OWNER_FALLBACK/);
 });
 
 test('ROP workbook uses the full receivables snapshot for branch debt without double-counting live contracts', () => {
@@ -318,7 +331,10 @@ test('ROP workbook deduplicates overlapping receivables and current-month stagin
     groups: [],
     contractsByGroup: {},
     fallbackStudents,
-    paymentValues: [],
+    paymentValues: [[
+      'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
+      'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
+    ]],
     month: '2026-09',
     asOfDate: '2026-09-01'
   });
