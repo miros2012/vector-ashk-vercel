@@ -39,3 +39,26 @@ test('first day can expose only the current live snapshot', () => {
   assert.equal(dashboard.reportDate, '2026-09-01');
   assert.equal(dashboard.liveDate, '2026-09-01');
 });
+
+test('city totals include current-month contracts owned by managers outside the active branch roster', () => {
+  const currentMonthContractsValues = [
+    ['StudentId','Дата договора','Филиал','Филиал АШК','Менеджер АШК','Продажи','Оплачено','Долг','Статус','Договор'],
+    [201,'2026-09-01','Герцена','Сити-Центр','Менеджер Б',60000,30000,30000,'DRV','A'],
+    [202,'2026-09-01','Герцена','Сити-Центр','Менеджер В',40000,40000,0,'DRV','B'],
+    [203,'2026-09-01','Герцена','Сити-Центр','Старый Центр',50000,50000,0,'DRV','C']
+  ];
+
+  const dashboard = buildRopMorningDashboard({
+    controlValues: CONTROL_VALUES,
+    currentMonthContractsValues,
+    asOfDate: '2026-09-02'
+  });
+  const headers = dashboard.values[0];
+  const idx = name => headers.indexOf(name);
+  const closedCity = dashboard.values.slice(1).find(row =>
+    row[idx('Срез')] === 'ВЧЕРА — ЗАКРЫТО' && row[idx('Уровень')] === 'ГОРОД'
+  );
+
+  assert.equal(closedCity[idx('Новых договоров')], 3);
+  assert.equal(closedCity[idx('100% оплат новых договоров')], 2);
+});

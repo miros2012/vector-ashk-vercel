@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRopDailyControlWorkbook } from '../lib/rop-daily-control.js';
+import * as ropDaily from '../lib/rop-daily-control.js';
+
+const { buildRopDailyControlWorkbook } = ropDaily;
 
 const PLAN_VALUES = [
   ['Менеджер','Филиал','Филиал АШК','План филиала','Контрольный план менеджера','График','Активен','Примечание'],
@@ -144,4 +146,93 @@ test('ROP workbook uses targeted student details only as fallback when current s
   const liveRows = liveWins.controlValues.slice(1);
   const liveBSep1 = liveRows.find(r => r[idx('Дата')] === '2026-09-01' && r[idx('Менеджер')] === 'Менеджер Б');
   assert.equal(liveBSep1[idx('Факт филиала за день')], 50000);
+});
+
+test('ROP workbook uses the full receivables snapshot for branch debt without double-counting live contracts', () => {
+  const fallbackStudents = [
+    {
+      Id: 201,
+      StudyGroupId: 20,
+      TrainingRoomName: 'Сити-Центр',
+      OwnerName: 'Менеджер Б',
+      ContractDate: '2026-09-01',
+      SalesSum: 60000,
+      DebitSum: 30000,
+      Debt: 30000,
+      State: 'DRV',
+      ContractName: 'A'
+    },
+    {
+      Id: 203,
+      StudyGroupId: 20,
+      TrainingRoomName: 'Сити-Центр',
+      OwnerName: 'Старый Центр',
+      ContractDate: '2026-08-10',
+      SalesSum: 50000,
+      DebitSum: 10000,
+      Debt: 40000,
+      State: 'DRV',
+      ContractName: 'C'
+    }
+  ];
+  const workbook = buildRopDailyControlWorkbook({
+    planValues: PLAN_VALUES,
+    groups: GROUPS,
+    contractsByGroup: CONTRACTS,
+    fallbackStudents,
+    paymentValues: PAYMENT_VALUES,
+    month: '2026-09',
+    asOfDate: '2026-09-02'
+  });
+  const headers = workbook.controlValues[0];
+  const idx = name => headers.indexOf(name);
+  const bSep2 = workbook.controlValues.slice(1).find(row =>
+    row[idx('Дата')] === '2026-09-02' && row[idx('Менеджер')] === 'Менеджер Б'
+  );
+
+  assert.equal(bSep2[idx('Текущая ДЗ филиала')], 110000);
+  assert.equal(workbook.currentMonthContractsValues.slice(1).filter(row => row[0] === 201).length, 1);
+});
+
+test('receivables rows convert to ASHK students for full intraday debt reconstruction', () => {
+  assert.equal(typeof ropDaily.receivablesValuesToStudents, 'function');
+  const values = [
+    ['StudentId','GroupId','Филиал','Менеджер','Договор','Дата договора','Статус','Продажи','Оплачено','Долг','Долг основной услуги','Основная услуга','Последняя оплата'],
+    [101,20,'Сити-Центр','Менеджер Б','A','2026-09-01','DRV',60000,30000,30000,30000,'Курс','2026-09-01']
+  ];
+
+  assert.deepEqual(ropDaily.receivablesValuesToStudents(values), [{
+    Id: 101,
+    StudyGroupId: 20,
+    TrainingRoomName: 'Сити-Центр',
+    OwnerName: 'Менеджер Б',
+    ContractDate: '2026-09-01',
+    SalesSum: 60000,
+    DebitSum: 30000,
+    Debt: 30000,
+    State: 'DRV',
+    ContractName: 'A'
+  }]);
+});
+
+test('ROP workbook deduplicates overlapping receivables and current-month staging fallbacks', () => {
+  const fallbackStudents = [
+    { Id: 101, StudyGroupId: 10, TrainingRoomName: 'Зарека', OwnerName: 'Менеджер А', ContractDate: '2026-09-01', SalesSum: 50000, DebitSum: 20000, Debt: 30000, State: 'DRV', ContractName: 'A' },
+    { Id: 101, StudyGroupId: 10, TrainingRoomName: 'Зарека', OwnerName: 'Менеджер А', ContractDate: '2026-09-01', SalesSum: 50000, DebitSum: 50000, Debt: 0, State: 'DRV', ContractName: 'A' }
+  ];
+  const workbook = buildRopDailyControlWorkbook({
+    planValues: PLAN_VALUES,
+    groups: [],
+    contractsByGroup: {},
+    fallbackStudents,
+    paymentValues: [],
+    month: '2026-09',
+    asOfDate: '2026-09-01'
+  });
+
+  assert.equal(workbook.currentMonthContractsValues.length, 2);
+  const headers = workbook.controlValues[0];
+  const idx = name => headers.indexOf(name);
+  const row = workbook.controlValues.slice(1).find(item => item[idx('Менеджер')] === 'Менеджер А');
+  assert.equal(row[idx('Текущая ДЗ филиала')], 0);
 });

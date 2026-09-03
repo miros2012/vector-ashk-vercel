@@ -8,9 +8,9 @@ import { createIntradayRopOrchestrator } from '../lib/rop-intraday-orchestrator.
 import { syncRopSourceThenPublishTarget } from '../lib/rop-publisher.js';
 import { createAshkReceivablesSource } from '../lib/ashk-receivables-source.js';
 import { createReceivablesSyncHandler } from '../lib/receivables-sync-handler.js';
-import { buildRopDailyControlWorkbook } from '../lib/rop-daily-control.js';
+import { buildRopDailyControlWorkbook, receivablesValuesToStudents } from '../lib/rop-daily-control.js';
 import { buildRopMorningDashboard } from '../lib/rop-morning-dashboard.js';
-import { buildRopTasksToday } from '../lib/rop-tasks-today.js';
+import { buildRopDebtorPriority, buildRopTasksToday } from '../lib/rop-tasks-today.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const RECEIVABLES_DETAIL_SHEET = 'АШК_Дебиторка__vercel';
@@ -20,6 +20,7 @@ const ROP_PLAN_SHEET = 'РОП_План_Сентябрь';
 const ROP_CONTROL_SHEET = 'РОП_Контроль_Дня';
 const ROP_MORNING_SHEET = 'РОП_Штаб_Утро';
 const ROP_TASKS_SHEET = 'РОП_Задачи_Сегодня';
+const ROP_DEBTOR_PRIORITY_SHEET = 'РОП_Дебиторка_Приоритет';
 const ROP_UNMATCHED_SHEET = 'РОП_Неопознанные_Оплаты__diag';
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
@@ -173,14 +174,31 @@ async function fetchFallbackStudents(studentIds) {
   return { students: details.filter(Boolean), failures };
 }
 
-async function persistRopOutputs({ workbook, date, month, writeContracts = true, fallbackRequested = 0, fallbackResolved = 0, fallbackLookupFailures = 0 }) {
+async function persistRopOutputs({
+  workbook,
+  planValues,
+  receivablesValues,
+  date,
+  month,
+  writeContracts = true,
+  fallbackRequested = 0,
+  fallbackResolved = 0,
+  fallbackLookupFailures = 0
+}) {
   const morningDashboard = buildRopMorningDashboard({
     controlValues: workbook.controlValues,
+    currentMonthContractsValues: workbook.currentMonthContractsValues,
     asOfDate: date
   });
   const tasksToday = buildRopTasksToday({
     morningValues: morningDashboard.values,
     taskDate: date
+  });
+  const debtorPriority = buildRopDebtorPriority({
+    receivablesValues,
+    taskValues: tasksToday.values,
+    planValues,
+    limitPerBranch: 5
   });
 
   if (writeContracts) {
@@ -189,6 +207,7 @@ async function persistRopOutputs({ workbook, date, month, writeContracts = true,
   await writeValues(ROP_CONTROL_SHEET, 'A:S', workbook.controlValues, 19);
   await writeValues(ROP_MORNING_SHEET, 'A:V', morningDashboard.values, 22);
   await writeValues(ROP_TASKS_SHEET, 'A:P', tasksToday.values, 16);
+  await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N', debtorPriority.values, 14);
   await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
 
   const reads = await Promise.all([
@@ -196,9 +215,10 @@ async function persistRopOutputs({ workbook, date, month, writeContracts = true,
     readValues(ROP_CONTROL_SHEET, 'A:S'),
     readValues(ROP_MORNING_SHEET, 'A:V'),
     readValues(ROP_TASKS_SHEET, 'A:P'),
+    readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:N'),
     readValues(ROP_UNMATCHED_SHEET, 'A:G')
   ]);
-  const [contractsReadback, controlReadback, morningReadback, tasksReadback, unmatchedReadback] = reads;
+  const [contractsReadback, controlReadback, morningReadback, tasksReadback, debtorPriorityReadback, unmatchedReadback] = reads;
   const contractsVerified = !writeContracts || (
     contractsReadback.length === workbook.currentMonthContractsValues.length
     && String(contractsReadback?.[0]?.[0] || '') === 'StudentId'
@@ -209,9 +229,11 @@ async function persistRopOutputs({ workbook, date, month, writeContracts = true,
     && String(morningReadback?.[0]?.[0] || '') === 'Срез';
   const tasksVerified = tasksReadback.length === tasksToday.values.length
     && String(tasksReadback?.[0]?.[0] || '') === 'Дата задачи';
+  const debtorPriorityVerified = debtorPriorityReadback.length === debtorPriority.values.length
+    && String(debtorPriorityReadback?.[0]?.[5] || '') === 'StudentId';
   const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length
     && String(unmatchedReadback?.[0]?.[0] || '') === 'ID оплаты';
-  if (!contractsVerified || !controlVerified || !morningVerified || !tasksVerified || !unmatchedVerified) {
+  if (!contractsVerified || !controlVerified || !morningVerified || !tasksVerified || !debtorPriorityVerified || !unmatchedVerified) {
     throw new Error('ROP daily control readback verification failed');
   }
 
@@ -225,6 +247,8 @@ async function persistRopOutputs({ workbook, date, month, writeContracts = true,
     morningPriorityCount: morningDashboard.metrics.todayPriority,
     tasksTodayCount: tasksToday.metrics.tasks,
     tasksTodayDeficit: tasksToday.metrics.totalDeficit,
+    debtorPriorityRows: debtorPriority.metrics.rows,
+    debtorPriorityDebt: debtorPriority.metrics.prioritizedDebt,
     currentMonthContracts: workbook.metrics.currentMonthContracts,
     fallbackRequested,
     fallbackResolved,
@@ -239,27 +263,31 @@ async function persistRopOutputs({ workbook, date, month, writeContracts = true,
 
 async function syncRopDailyControl({ groups, contractsByGroup }) {
   const { date, month } = tyumenToday();
-  const [planValues, paymentValues] = await Promise.all([
+  const [planValues, paymentValues, receivablesValues] = await Promise.all([
     readValues(ROP_PLAN_SHEET, 'A:H'),
-    readValues(PAYMENTS_STAGING_SHEET, 'A:H')
+    readValues(PAYMENTS_STAGING_SHEET, 'A:H'),
+    readValues(RECEIVABLES_DETAIL_SHEET, 'A:M')
   ]);
+  let fallbackStudents = receivablesValuesToStudents(receivablesValues);
 
   let workbook = buildRopDailyControlWorkbook({
     planValues,
     groups,
     contractsByGroup,
+    fallbackStudents,
     paymentValues,
     month,
     asOfDate: date
   });
   const ids = missingStudentIds(workbook);
-  let fallbackStudents = [];
   let fallbackLookupFailures = 0;
+  let resolved = [];
   if (ids.length) {
     const fallback = await fetchFallbackStudents(ids);
-    fallbackStudents = fallback.students;
+    resolved = fallback.students;
+    fallbackStudents = [...fallbackStudents, ...resolved];
     fallbackLookupFailures = fallback.failures;
-    if (fallbackStudents.length) {
+    if (resolved.length) {
       workbook = buildRopDailyControlWorkbook({
         planValues,
         groups,
@@ -274,26 +302,29 @@ async function syncRopDailyControl({ groups, contractsByGroup }) {
 
   return persistRopOutputs({
     workbook,
+    planValues,
+    receivablesValues,
     date,
     month,
     writeContracts: true,
     fallbackRequested: ids.length,
-    fallbackResolved: fallbackStudents.length,
+    fallbackResolved: resolved.length,
     fallbackLookupFailures
   });
 }
 
 async function refreshRopFromStaging() {
   const { date, month } = tyumenToday();
-  const [planValues, paymentValues, currentContractsValues] = await Promise.all([
+  const [planValues, paymentValues, currentContractsValues, receivablesValues] = await Promise.all([
     readValues(ROP_PLAN_SHEET, 'A:H'),
     readValues(PAYMENTS_STAGING_SHEET, 'A:H'),
-    readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J')
+    readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
+    readValues(RECEIVABLES_DETAIL_SHEET, 'A:M')
   ]);
   const baseStudents = persistedContractsToStudents(currentContractsValues);
   if (!baseStudents.length) throw new Error('Current-month ROP contract staging is empty');
 
-  let fallbackStudents = baseStudents;
+  let fallbackStudents = [...receivablesValuesToStudents(receivablesValues), ...baseStudents];
   let workbook = buildRopDailyControlWorkbook({
     planValues,
     groups: [],
@@ -311,7 +342,7 @@ async function refreshRopFromStaging() {
     resolved = fallback.students;
     fallbackLookupFailures = fallback.failures;
     if (resolved.length) {
-      fallbackStudents = [...baseStudents, ...resolved];
+      fallbackStudents = [...fallbackStudents, ...resolved];
       workbook = buildRopDailyControlWorkbook({
         planValues,
         groups: [],
@@ -326,6 +357,8 @@ async function refreshRopFromStaging() {
 
   return persistRopOutputs({
     workbook,
+    planValues,
+    receivablesValues,
     date,
     month,
     writeContracts: false,
