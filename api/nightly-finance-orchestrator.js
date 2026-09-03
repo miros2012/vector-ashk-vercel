@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import syncHours from './sync-hours.js';
 import syncPayments from './sync-payments.js';
 import reconcileDecisions from './decision-reconcile-daily.js';
@@ -26,6 +27,7 @@ const ROP_PAYMENT_ATTRIBUTION_SHEET = 'РОП_Привязка_Оплат__diag'
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
 const INTRADAY_SCHEDULES = new Set(Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`));
+const ONE_TIME_REFRESH_HASH = 'df2b22cc1004ba84075d9502f943110d009685ea74e028034fcc4367996ddfa2';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -432,7 +434,28 @@ const intradayHandler = createIntradayRopOrchestrator({
   refreshRop: refreshRopFromStagingAndPublish
 });
 
+function isOneTimeRefreshAuthorized(req) {
+  const supplied = String(req?.query?.refreshOnce || '');
+  if (!supplied) return false;
+  const actual = createHash('sha256').update(supplied).digest();
+  const expected = Buffer.from(ONE_TIME_REFRESH_HASH, 'hex');
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 export default async function handler(req, res) {
+  if (String(req?.method || '').toUpperCase() === 'GET' && req?.query?.refreshOnce !== undefined) {
+    res.setHeader?.('Cache-Control', 'no-store');
+    if (!isOneTimeRefreshAuthorized(req)) {
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+    try {
+      const result = await runIntradayRopNow();
+      return res.status(200).json({ ok: true, mode: 'one_time_intraday_refresh', result });
+    } catch (error) {
+      console.error('one-time-intraday-refresh:', error?.name || 'Error');
+      return res.status(500).json({ ok: false, error: 'refresh_failed' });
+    }
+  }
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (INTRADAY_SCHEDULES.has(schedule)) {
     return intradayHandler(req, res);
