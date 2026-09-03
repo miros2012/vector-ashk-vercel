@@ -195,10 +195,50 @@ test('personal fact follows the active ASHK owner even when the contract belongs
   assert.equal(row('Кумаритова')[idx('Личный факт за день')], 5000);
 
   assert.deepEqual(workbook.paymentAttributionValues, [
-    ['ID оплаты','Дата','StudentId','Сумма','Филиал','Филиал АШК','Менеджер АШК','Зачтён менеджеру','Статус привязки'],
-    ['10','2026-09-02',301,5000,'Зарека','Зарека','Кумаритова Алина','Кумаритова','OK_ACTIVE_MANAGER'],
-    ['11','2026-09-02',302,7000,'Герцена','Сити-Центр','Менеджер А','Менеджер А','OK_ACTIVE_MANAGER']
+    ['ID оплаты','Дата','StudentId','Сумма','Филиал','Филиал АШК','Менеджер АШК','Сотрудник оплаты АШК','Зачтён менеджеру','Статус привязки'],
+    ['10','2026-09-02',301,5000,'Зарека','Зарека','Кумаритова Алина','','Кумаритова','LEGACY_OWNER_FALLBACK'],
+    ['11','2026-09-02',302,7000,'Герцена','Сити-Центр','Менеджер А','','Менеджер А','LEGACY_OWNER_FALLBACK']
   ]);
+});
+
+test('personal fact follows the ASHK employee who issued the payment instead of the contract owner', () => {
+  const planValues = [
+    ['Менеджер','Филиал','Филиал АШК','План филиала','План менеджера','График','Активен','Примечание'],
+    ['Менеджер А','Зарека','Зарека',300000,150000,'5/2','Да',''],
+    ['Менеджер Б','Зарека','Зарека',300000,150000,'5/2','Да','']
+  ];
+  const paymentValues = [
+    ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit','PaymentEmployeeName'],
+    [501,'2026-09-02 10:00:00',101,10,1,'Курс',50000,7000,'Менеджер Б'],
+    [502,'2026-09-02 11:00:00',101,10,1,'Курс',50000,3000,'']
+  ];
+  const workbook = buildRopDailyControlWorkbook({
+    planValues,
+    groups: [{ Id: 10, TrainingRoomName: 'Зарека' }],
+    contractsByGroup: new Map([[10, [{
+      Id: 101,
+      StudyGroupId: 10,
+      OwnerName: 'Менеджер А',
+      ContractDate: '2026-09-01',
+      SalesSum: 50000,
+      DebitSum: 10000,
+      Debt: 40000
+    }]]]),
+    paymentValues,
+    month: '2026-09',
+    asOfDate: '2026-09-02'
+  });
+
+  const headers = workbook.controlValues[0];
+  const idx = name => headers.indexOf(name);
+  const row = manager => workbook.controlValues.slice(1).find(item =>
+    item[idx('Дата')] === '2026-09-02' && item[idx('Менеджер')] === manager
+  );
+
+  assert.equal(row('Менеджер А')[idx('Личный факт за день')], 0);
+  assert.equal(row('Менеджер Б')[idx('Личный факт за день')], 7000);
+  assert.equal(row('Менеджер А')[idx('Факт филиала за день')], 10000);
+  assert.equal(row('Менеджер Б')[idx('Статус личный')], 'КРАСНЫЙ');
 });
 
 test('ROP workbook uses the full receivables snapshot for branch debt without double-counting live contracts', () => {

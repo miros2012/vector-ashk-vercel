@@ -5,7 +5,7 @@ const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 const PUBLISH_SCHEDULES = new Set(['35 21 * * *']);
 const RANGES = {
-  'РОП_Штаб_Утро': 'A:V',
+  'РОП_Штаб_Утро': 'A:X',
   'РОП_Задачи_Сегодня': 'A:P',
   'РОП_Контроль_Дня': 'A:S',
   'РОП_План_Сентябрь': 'A:H',

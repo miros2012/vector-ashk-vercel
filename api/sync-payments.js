@@ -45,29 +45,33 @@ async function ensureSheet(sheets, title) {
   });
   return r.data.replies?.[0]?.addSheet?.properties?.sheetId;
 }
-async function fetchAshkMonth() {
+function ashkHeaders() {
   const apiKey = process.env.ASHK_API_KEY;
   if (!apiKey) throw new Error('ASHK_API_KEY missing');
+  return {
+    'api_key': apiKey,
+    'X-Requested-With': 'XMLHttpRequest',
+    'Content-Type': 'application/json'
+  };
+}
+async function fetchAshkData(path) {
+  const r = await fetch(`${ASHK_BASE_URL}${path}`, { headers: ashkHeaders() });
+  const responseText = await r.text();
+  if (!r.ok) throw new Error(`АШК HTTP ${r.status}: ${responseText.slice(0, 500)}`);
+  let json;
+  try { json = JSON.parse(responseText); } catch { throw new Error(`АШК вернул не JSON: ${responseText.slice(0, 500)}`); }
+  if (json?.success === false) throw new Error(`АШК success=false: ${JSON.stringify(json.data || json).slice(0, 500)}`);
+  return Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
+}
+async function fetchAshkMonth() {
   const { year, month, day } = tyumenParts();
   const all = [];
   for (let startDay = 1; startDay <= day; startDay += 7) {
     const endDay = Math.min(startDay + 6, day);
     const startDate = `${year}-${pad2(month)}-${pad2(startDay)}T00:00:00`;
     const endDate = `${year}-${pad2(month)}-${pad2(endDay)}T23:59:59`;
-    const url = `${ASHK_BASE_URL}/api/PaymentRecordExternalDebitList?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`;
-    const r = await fetch(url, {
-      headers: {
-        'api_key': apiKey,
-        'X-Requested-With': 'XMLHttpRequest',
-        'Content-Type': 'application/json'
-      }
-    });
-    const responseText = await r.text();
-    if (!r.ok) throw new Error(`АШК HTTP ${r.status}: ${responseText.slice(0, 500)}`);
-    let json;
-    try { json = JSON.parse(responseText); } catch { throw new Error(`АШК вернул не JSON: ${responseText.slice(0, 500)}`); }
-    if (json?.success === false) throw new Error(`АШК success=false: ${JSON.stringify(json.data || json).slice(0, 500)}`);
-    const data = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : [];
+    const path = `/api/PaymentRecordExternalDebitList?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`;
+    const data = await fetchAshkData(path);
     all.push(...data);
     await new Promise(resolve => setTimeout(resolve, 1100));
   }
@@ -79,94 +83,59 @@ async function fetchAshkMonth() {
   return [...byId.values()].sort((a, b) => String(a.PayDate ?? '').localeCompare(String(b.PayDate ?? '')));
 }
 
-function valueType(value) {
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return 'array';
-  return typeof value;
+async function fetchAshkCashboxOperations() {
+  const { year, month, day } = tyumenParts();
+  const startDate = `${year}-${pad2(month)}-01T00:00:00`;
+  const endDate = `${year}-${pad2(month)}-${pad2(day)}T23:59:59`;
+  const path = `/api/CashboxOperationList?StartDate=${encodeURIComponent(startDate)}&EndDate=${encodeURIComponent(endDate)}`;
+  return fetchAshkData(path);
 }
 
-function safeSchemaSample(value) {
-  if (value === null || value === undefined || value === '') return '';
-  if (typeof value === 'object') return `[object:${Object.keys(value).sort().join(',')}]`;
-  return String(value);
+function dateTimeKey(value) {
+  const match = String(value ?? '').trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+  return match ? `${match[1]}T${match[2]}` : '';
 }
 
-export function summarizePaymentSchema(items) {
-  const fields = new Map();
-  for (const item of Array.isArray(items) ? items : []) {
-    for (const [field, value] of Object.entries(item || {})) {
-      const current = fields.get(field) || { types: new Set(), samples: new Set() };
-      current.types.add(valueType(value));
-      const sample = safeSchemaSample(value);
-      if (sample && current.samples.size < 5) current.samples.add(sample);
-      fields.set(field, current);
+function moneyKey(value) {
+  return String(Math.round(toNumber(value) * 100));
+}
+
+function operationMatchKey(date, amount) {
+  const timestamp = dateTimeKey(date);
+  return timestamp ? `${timestamp}\u0000${moneyKey(amount)}` : '';
+}
+
+export function attributePaymentsToCashboxOperations(payments, operations) {
+  const operationsByKey = new Map();
+  for (const operation of Array.isArray(operations) ? operations : []) {
+    const key = operationMatchKey(operation?.Created, operation?.Amount);
+    if (!key) continue;
+    const list = operationsByKey.get(key) || [];
+    list.push(operation);
+    operationsByKey.set(key, list);
+  }
+
+  const metrics = { total: 0, attributed: 0, noMatch: 0, ambiguous: 0, employeeEmpty: 0 };
+  const items = (Array.isArray(payments) ? payments : []).map(payment => {
+    metrics.total += 1;
+    const candidates = operationsByKey.get(operationMatchKey(payment?.PayDate, payment?.Debit)) || [];
+    if (!candidates.length) {
+      metrics.noMatch += 1;
+      return { ...payment, PaymentEmployeeName: '' };
     }
-  }
-  const staffPattern = /employee|staff|worker|manager|owner|user|author|creator|createdby|cashier|operator|сотрудник/i;
-  const sorted = [...fields.entries()].sort(([a], [b]) => a.localeCompare(b));
-  return {
-    fields: sorted.map(([field, meta]) => ({ field, types: [...meta.types].sort() })),
-    staffCandidates: sorted
-      .filter(([field]) => staffPattern.test(field))
-      .map(([field, meta]) => ({ field, types: [...meta.types].sort(), samples: [...meta.samples] }))
-  };
-}
-
-export async function inspectAshkPaymentSchema() {
-  return summarizePaymentSchema(await fetchAshkMonth());
-}
-
-function schemaPaths(value, prefix = '', depth = 0, result = new Map()) {
-  if (depth > 4 || value === null || value === undefined) return result;
-  if (Array.isArray(value)) {
-    result.set(prefix || '[]', 'array');
-    for (const item of value.slice(0, 3)) schemaPaths(item, `${prefix}[]`, depth + 1, result);
-    return result;
-  }
-  if (typeof value !== 'object') {
-    if (prefix) result.set(prefix, typeof value);
-    return result;
-  }
-  for (const [key, child] of Object.entries(value)) {
-    const path = prefix ? `${prefix}.${key}` : key;
-    result.set(path, valueType(child));
-    schemaPaths(child, path, depth + 1, result);
-  }
-  return result;
-}
-
-async function inspectRelatedPaymentEndpoints(sample) {
-  const apiKey = process.env.ASHK_API_KEY;
-  const candidates = [
-    `/api/PaymentRecordExternalGet?param=${encodeURIComponent(sample.Id ?? '')}`,
-    `/api/PaymentRecordGet?param=${encodeURIComponent(sample.Id ?? '')}`,
-    `/api/SaleExternalGet?param=${encodeURIComponent(sample.SaleId ?? '')}`,
-    `/api/SaleGet?param=${encodeURIComponent(sample.SaleId ?? '')}`,
-    `/api/CashboxExternalGet?param=${encodeURIComponent(sample.CashboxId ?? '')}`,
-    `/api/CashboxGet?param=${encodeURIComponent(sample.CashboxId ?? '')}`,
-    '/api/CashboxList'
-  ];
-  const results = [];
-  for (const path of candidates) {
-    const response = await fetch(`${ASHK_BASE_URL}${path}`, {
-      headers: {
-        'api_key': apiKey,
-        'X-Requested-With': 'XMLHttpRequest',
-        'Content-Type': 'application/json'
-      }
-    });
-    const body = await response.text();
-    let payload = null;
-    try { payload = JSON.parse(body); } catch { /* schema-only diagnostic */ }
-    results.push({
-      endpoint: path.replace(/=[^&]+/g, '=…'),
-      status: response.status,
-      success: payload?.success,
-      schema: payload ? [...schemaPaths(payload).entries()].map(([field, type]) => ({ field, type })) : []
-    });
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
-  return results;
+    const employees = [...new Set(candidates.map(item => String(item?.EmployeeName ?? '').trim()).filter(Boolean))];
+    if (!employees.length) {
+      metrics.employeeEmpty += 1;
+      return { ...payment, PaymentEmployeeName: '' };
+    }
+    if (employees.length > 1) {
+      metrics.ambiguous += 1;
+      return { ...payment, PaymentEmployeeName: '' };
+    }
+    metrics.attributed += 1;
+    return { ...payment, PaymentEmployeeName: employees[0] };
+  });
+  return { items, metrics };
 }
 async function readMetrics(sheets, sheetName) {
   const r = await sheets.spreadsheets.values.get({
@@ -185,16 +154,20 @@ export default async function handler(req, res) {
     if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
       throw new Error('Google service account secrets missing');
     }
-    const [items, sheets] = await Promise.all([fetchAshkMonth(), sheetsClient()]);
+    const [rawItems, sheets] = await Promise.all([fetchAshkMonth(), sheetsClient()]);
+    const operations = await fetchAshkCashboxOperations();
+    const attribution = attributePaymentsToCashboxOperations(rawItems, operations);
+    const items = attribution.items;
     await ensureSheet(sheets, STAGING_SHEET);
-    const headers = [['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit']];
+    const headers = [['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit','PaymentEmployeeName']];
     const rows = items.map(item => [
       item.Id ?? '', item.PayDate ?? '', item.StudentId ?? '', item.SaleId ?? '',
-      item.ProductId ?? '', item.ProductName ?? '', toNumber(item.SaleSum), toNumber(item.Debit)
+      item.ProductId ?? '', item.ProductName ?? '', toNumber(item.SaleSum), toNumber(item.Debit),
+      item.PaymentEmployeeName ?? ''
     ]);
     await sheets.spreadsheets.values.clear({
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${STAGING_SHEET}'!A:H`
+      range: `'${STAGING_SHEET}'!A:I`
     });
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
@@ -217,18 +190,13 @@ export default async function handler(req, res) {
       sameRows: stagingExpected.rows === live.rows,
       sameDebit: Math.abs(stagingExpected.debitTotal - live.debitTotal) < 0.01
     };
-    const paymentSchema = summarizePaymentSchema(items);
-    const relatedPaymentEndpoints = req.query?.inspectDetails === '1' && items[0]
-      ? await inspectRelatedPaymentEndpoints(items[0])
-      : undefined;
     console.log(JSON.stringify({
       event: 'sync-payments-staging',
       staging: stagingExpected,
       verified: true,
       live,
       comparison,
-      paymentFields: paymentSchema.fields,
-      relatedPaymentEndpoints
+      employeeAttribution: attribution.metrics
     }));
     return res.status(200).json({
       ok: true,
@@ -240,6 +208,7 @@ export default async function handler(req, res) {
       staging: stagingExpected,
       live,
       comparison,
+      employeeAttribution: attribution.metrics,
       note: 'Рабочий лист не изменён.'
     });
   } catch (error) {
