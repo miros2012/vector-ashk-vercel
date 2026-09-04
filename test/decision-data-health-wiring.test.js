@@ -13,4 +13,5 @@ test('decision reconciliation exposes Data Health pre-flight on the existing han
   assert.match(source, /Data Health Snapshot/);
   assert.match(source, /evaluateDataHealthSnapshot/);
   assert.match(source, /handler\.dataHealth/);
+  assert.match(source, /Data Health Snapshot'!A1:H40/);
 });
