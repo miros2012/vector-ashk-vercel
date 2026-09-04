@@ -4,7 +4,7 @@ import { evaluateDataHealthSnapshot, parseDataHealthSnapshot } from '../lib/data
 
 const HEADER = ['Контур', 'Метрика', 'Значение', 'Статус', 'Источник', 'Дата источника', 'Комментарий'];
 
-function operationalRows({ bankAge = 0.13 } = {}) {
+function operationalRows({ bankAge = 0.13, transactionsAge = 0.20 } = {}) {
   return [
     ['DATA HEALTH — КОНТРОЛЬ СВЕЖЕСТИ ИСТОЧНИКОВ', 'Контроль', 'Последний маркер', 'Возраст / отклонение, ч'],
     ['Источник', 'Что проверяем', 'Последний маркер', 'Возраст, ч'],
@@ -23,7 +23,8 @@ function operationalRows({ bankAge = 0.13 } = {}) {
     ['Система', 'Общий статус', 'RISK', 'RISK'],
     ['Касса', 'Самый старый факт филиала', 46251, 'RISK'],
     ['Касса', 'Устаревшие филиалы', 'Герцена, Мельникайте, Монтажников', 'RISK'],
-    ['Касса', 'Филиалы с расхождением / проверкой', 'Сити-молл', 'REVIEW']
+    ['Касса', 'Филиалы с расхождением / проверкой', 'Сити-молл', 'REVIEW'],
+    ['Точка операции', 'последняя загрузка Точка_API', 46269.57, transactionsAge]
   ];
 }
 
@@ -86,13 +87,14 @@ test('parses the current operational Data Health sheet layout and source freshne
     payments: { ageHours: 0, marker: '2026-09-04 15:32:50' },
     hours: { ageHours: 12.8, marker: 46269.05 },
     receivables: { ageHours: 0, marker: '2026-09-04' },
-    forecast: { ageHours: 0, marker: 46270 }
+    forecast: { ageHours: 0, marker: 46270 },
+    transactions: { ageHours: 0.20, marker: 46269.57 }
   });
   assert.equal(snapshot.cash.staleBranches, 'Герцена, Мельникайте, Монтажников');
   assert.equal(snapshot.cash.reviewBranches, 'Сити-молл');
 });
 
-test('financial RISK and stale manual cash stay warnings while fresh core sources pass the gate', () => {
+test('financial RISK and stale manual cash stay warnings while coherent core sources pass the gate', () => {
   const health = evaluateDataHealthSnapshot(parseDataHealthSnapshot(operationalRows()));
 
   assert.equal(health.ok, true);
@@ -105,11 +107,20 @@ test('financial RISK and stale manual cash stay warnings while fresh core source
 });
 
 test('stale core bank source blocks downstream financial decisions', () => {
-  const health = evaluateDataHealthSnapshot(parseDataHealthSnapshot(operationalRows({ bankAge: 2.5 })));
+  const health = evaluateDataHealthSnapshot(parseDataHealthSnapshot(operationalRows({ bankAge: 2.5, transactionsAge: 2.6 })));
 
   assert.equal(health.ok, false);
   assert.equal(health.status, 'BLOCKED');
-  assert.deepEqual(health.staleCoreSources, ['bank']);
+  assert.ok(health.staleCoreSources.includes('bank'));
+});
+
+test('bank transaction journal lagging live balances by more than 15 minutes blocks decisions', () => {
+  const health = evaluateDataHealthSnapshot(parseDataHealthSnapshot(operationalRows({ bankAge: 0.02, transactionsAge: 0.55 })));
+
+  assert.equal(health.ok, false);
+  assert.equal(health.status, 'BLOCKED');
+  assert.ok(health.staleCoreSources.includes('transactions'));
+  assert.ok(health.consistencyErrors.includes('bank transaction journal lags live balance'));
 });
 
 test('marks cash freshness totals invalid when branch counts do not reconcile', () => {
