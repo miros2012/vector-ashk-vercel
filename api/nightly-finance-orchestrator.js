@@ -15,6 +15,7 @@ import { buildRopMorningDashboard } from '../lib/rop-morning-dashboard.js';
 import { buildRopDebtorPriority, buildRopTasksToday } from '../lib/rop-tasks-today.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import { consumeOneTimeFinanceRunToken } from '../lib/one-time-finance-run-token.js';
+import { createTochkaDdsImportHandler, syncCurrentDayTochkaDds } from '../lib/tochka-dds-import.js';
 import {
   createManualFinanceRunHandler,
   hasManualFinanceRunToken
@@ -453,14 +454,28 @@ const syncReceivables = createReceivablesSyncHandler({
   afterVerified: syncRopDailyControlAndPublish
 });
 
+const tochkaDdsHandler = createTochkaDdsImportHandler({
+  cronSecret: process.env.CRON_SECRET || '',
+  runImport: async () => {
+    const { date } = tyumenToday();
+    return syncCurrentDayTochkaDds({
+      sheets: await getSheets(),
+      spreadsheetId: SPREADSHEET_ID,
+      businessDate: date
+    });
+  }
+});
+
 export const runReceivablesNow = syncReceivables;
 export const runIntradayRopNow = refreshRopFromStagingAndPublish;
+export const runTochkaDdsNow = tochkaDdsHandler;
 
 const nightlyHandler = createNightlyFinanceOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runHours: syncHours,
   runPayments: syncPayments,
   runReceivables: syncReceivables,
+  runTochkaDds: tochkaDdsHandler,
   runBalances: refreshBalancesMirrorOnly,
   runDecisions: reconcileDecisions
 });
@@ -469,6 +484,7 @@ const intradayHandler = createIntradayRopOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runPayments: syncPayments,
   refreshRop: refreshRopFromStagingAndPublish,
+  runTochkaDds: tochkaDdsHandler,
   runBalances: refreshBalancesMirrorOnly
 });
 
