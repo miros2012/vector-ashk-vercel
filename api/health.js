@@ -1,6 +1,10 @@
 import { google } from 'googleapis';
 import { createRopPublisher } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
+import {
+  evaluateTochkaOperationAck,
+  normalizeExpectedOperationIdentifiers
+} from '../lib/tochka-operation-ack.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
@@ -133,7 +137,66 @@ function isAuthorizedCron(req) {
   return Boolean(expected) && actual === `Bearer ${expected}`;
 }
 
+function requestBody(req) {
+  if (req?.body && typeof req.body === 'object') return req.body;
+  if (typeof req?.body === 'string' && req.body.trim()) {
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+async function handleTochkaOperationAck(req, res, body) {
+  if (String(req?.headers?.['x-vector-refresh'] || '').trim() !== 'tochka-webhook') {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
+  }
+
+  const expected = normalizeExpectedOperationIdentifiers(body);
+  if (!expected.transactionIds.length && !expected.paymentIds.length) {
+    return res.status(400).json({ ok: false, error: 'At least one Tochka operation identifier is required' });
+  }
+
+  try {
+    const sheets = await getSheets();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SOURCE_SPREADSHEET_ID,
+      range: `'Точка_API'!M2:N`,
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    });
+    const result = evaluateTochkaOperationAck({
+      rows: response.data.values || [],
+      ...expected
+    });
+
+    if (!result.ok) {
+      return res.status(409).json({
+        ok: false,
+        mode: 'operation_ack_pending',
+        ...result
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      mode: 'operation_acknowledged',
+      ...result
+    });
+  } catch (error) {
+    console.error('tochka-operation-ack:', error?.name || 'Error');
+    return res.status(500).json({ ok: false, error: 'Tochka operation acknowledgement failed' });
+  }
+}
+
 export default async function handler(req, res) {
+  const body = requestBody(req);
+  if (String(req?.method || '').toUpperCase() === 'POST' && String(body?.mode || '') === 'operation_ack') {
+    res.setHeader?.('Cache-Control', 'no-store');
+    return handleTochkaOperationAck(req, res, body);
+  }
+
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (PUBLISH_SCHEDULES.has(schedule)) {
     res.setHeader?.('Cache-Control', 'no-store');
