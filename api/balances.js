@@ -249,9 +249,52 @@ export async function refreshBalancesMirrorOnly(req, res) {
   }
 }
 
+export async function refreshBalancesFromTochkaWebhook(req, res) {
+  res.setHeader?.('Cache-Control', 'no-store');
+  if (String(req?.method || '').toUpperCase() !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'Use POST' });
+  }
+  if (String(req?.headers?.['x-vector-refresh'] || '').trim() !== 'tochka-webhook') {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
+  }
+
+  try {
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      throw new Error('Google service account secrets missing');
+    }
+    const sheets = await sheetsClient();
+    const raw = await fetchLiveBalances();
+    const normalized = normalizeBalances(raw);
+    const mirror = await mirrorToGoogleSheet(normalized, sheets);
+    console.log(JSON.stringify({
+      event: 'tochka-webhook-balance-mirror-only',
+      liveCount: normalized.summary.liveCount,
+      mirroredAt: mirror.mirroredAt
+    }));
+    return res.status(200).json({
+      ok: true,
+      source: 'tochka_live',
+      refreshed: true,
+      liveCount: normalized.summary.liveCount,
+      lastUpdated: mirror.mirroredAt,
+      mode: 'mirror_only'
+    });
+  } catch (error) {
+    console.error('tochka-webhook-balance-mirror-only:', error?.name || 'Error');
+    return res.status(500).json({ ok: false, error: 'Balance mirror refresh failed' });
+  }
+}
+
 export default async function handler(req, res) {
   if (!['GET', 'POST'].includes(req.method)) {
     return res.status(405).json({ ok: false, error: 'Use GET or POST' });
+  }
+
+  if (
+    String(req?.method || '').toUpperCase() === 'POST' &&
+    String(req?.headers?.['x-vector-refresh'] || '').trim() === 'tochka-webhook'
+  ) {
+    return refreshBalancesFromTochkaWebhook(req, res);
   }
 
   try {
