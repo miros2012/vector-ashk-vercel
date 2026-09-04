@@ -14,13 +14,13 @@ const ROW = [
   'cbs-tb;2480513383;1'
 ];
 
-test('DDS append is anchored to the canonical A:M table body', async () => {
+test('DDS writer uses an exact empty A:M row after both canonical and shifted artifacts', async () => {
   const calls = [];
   const ddsComments = [];
   const journal = [];
   let leaseState = 'IDLE';
   const values = {
-    batchGet: async ({ ranges }) => ({
+    batchGet: async () => ({
       data: { valueRanges: [
         { values: [HEADER, ROW] },
         { values: ddsComments },
@@ -29,15 +29,25 @@ test('DDS append is anchored to the canonical A:M table body', async () => {
     }),
     append: async payload => {
       calls.push(['append', payload.range]);
-      if (payload.range.includes('ДДС: месяц')) ddsComments.push([ROW[12]]);
       if (payload.range.includes('Журнал Точка → ДДС')) journal.push(...payload.requestBody.values);
+      return {};
+    },
+    update: async payload => {
+      calls.push(['update', payload.range]);
+      if (payload.range.includes('ДДС: месяц')) ddsComments.push(...payload.requestBody.values.map(row => [row[12]]));
       return {};
     },
     get: async ({ range }) => {
       if (range.includes('__vercel_control')) {
         return { data: { values: [['tochka_dds_import_lock', leaseState]] } };
       }
-      if (range.includes('ДДС: месяц')) return { data: { values: ddsComments } };
+      if (range.includes("'ДДС: месяц'!A5:A30000")) {
+        return { data: { values: [['old'], ['old'], ['old']] } }; // last canonical row = 7
+      }
+      if (range.includes("'ДДС: месяц'!S5:S30000")) {
+        return { data: { values: [[''], [''], [''], [''], ['shifted']] } }; // last shifted row = 9
+      }
+      if (range.includes("'ДДС: месяц'!M5:M30000")) return { data: { values: ddsComments } };
       if (range.includes('Журнал Точка → ДДС')) return { data: { values: journal } };
       throw new Error(`unexpected get ${range}`);
     }
@@ -64,7 +74,8 @@ test('DDS append is anchored to the canonical A:M table body', async () => {
     now: () => new Date('2026-09-04T15:00:00.000Z')
   });
 
-  assert.deepEqual(calls[0], ['append', "'ДДС: месяц'!A5:M30000"]);
+  assert.deepEqual(calls[0], ['update', "'ДДС: месяц'!A10:M10"]);
   assert.deepEqual(calls[1], ['append', "'Журнал Точка → ДДС'!A:E"]);
+  assert.equal(calls.some(([method, range]) => method === 'append' && range.includes('ДДС: месяц')), false);
   assert.equal(leaseState, 'IDLE');
 });
