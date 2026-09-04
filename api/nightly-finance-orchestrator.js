@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import syncHours from './sync-hours.js';
 import syncPayments from './sync-payments.js';
 import reconcileDecisions from './decision-reconcile-daily.js';
+import { refreshBalancesMirrorOnly } from './balances.js';
 import { publishRopNow } from './health.js';
 import { createNightlyFinanceOrchestrator } from '../lib/nightly-finance-orchestrator.js';
 import { createIntradayRopOrchestrator } from '../lib/rop-intraday-orchestrator.js';
@@ -79,7 +80,7 @@ async function ensureSheet(sheets, title, rowCount, columnCount) {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
-        requests: [{ addSheet: { properties: { title, gridProperties: { rowCount, columnCount } } } }]
+        requests: [{ addSheet: { properties: { title, gridProperties: { rowCount, columnCount } } }]
       }
     });
     return;
@@ -427,13 +428,15 @@ const nightlyHandler = createNightlyFinanceOrchestrator({
   runHours: syncHours,
   runPayments: syncPayments,
   runReceivables: syncReceivables,
+  runBalances: refreshBalancesMirrorOnly,
   runDecisions: reconcileDecisions
 });
 
 const intradayHandler = createIntradayRopOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runPayments: syncPayments,
-  refreshRop: refreshRopFromStagingAndPublish
+  refreshRop: refreshRopFromStagingAndPublish,
+  runBalances: refreshBalancesMirrorOnly
 });
 
 export default async function handler(req, res) {
