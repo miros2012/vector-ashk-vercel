@@ -48,6 +48,10 @@ function sheetsMock({ ddsCount = 1, journalCount = 1 } = {}) {
           calls.push(['append', payload.range]);
           return {};
         },
+        update: async payload => {
+          calls.push(['update', payload.range]);
+          return {};
+        },
         get: async ({ range }) => {
           if (range.includes('__vercel_control')) {
             return { data: { values: [['tochka_dds_import_lock', leaseState]] } };
@@ -65,7 +69,7 @@ function sheetsMock({ ddsCount = 1, journalCount = 1 } = {}) {
         const op = requestBody.requests[0].findReplace;
         const changed = leaseState === op.find ? 1 : 0;
         if (changed) leaseState = op.replacement;
-        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] } };
+        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] };
       }
     }
   };
