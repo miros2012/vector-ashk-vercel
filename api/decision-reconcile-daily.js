@@ -5,12 +5,20 @@ import { createDecisionReconciler } from '../lib/decision-reconciliation.js';
 import { createDecisionDailyReconciliationHandler } from '../lib/decision-daily-reconciliation-handler.js';
 import { createDecisionReconciliationAudit } from '../lib/decision-reconciliation-audit.js';
 import { createDecisionReconciliationAuditAppender } from '../lib/decision-reconciliation-audit-sheet.js';
+import { evaluateDataHealthSnapshot, parseDataHealthSnapshot } from '../lib/data-health-snapshot.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const DECISION_AUDIT_SHEET = 'Rule Engine Audit';
+const DATA_HEALTH_SHEET = 'Data Health Snapshot';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+}
+
+function requestBearer(req) {
+  const authorization = String(req?.headers?.authorization || '');
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || '';
 }
 
 async function sheetsClient() {
@@ -24,6 +32,41 @@ async function sheetsClient() {
   });
   await auth.authorize();
   return google.sheets({ version: 'v4', auth });
+}
+
+async function runDataHealth(req, res) {
+  res.setHeader?.('Cache-Control', 'no-store');
+  if (String(req?.method || '').toUpperCase() !== 'GET') {
+    return res.status(405).json({ ok: false, error: 'Use GET' });
+  }
+  const cronSecret = String(process.env.CRON_SECRET || '').trim();
+  if (!cronSecret || requestBearer(req) !== cronSecret) {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
+  }
+
+  try {
+    const sheets = await sheetsClient();
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${DATA_HEALTH_SHEET}'!A1:D40`,
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    });
+    const snapshot = parseDataHealthSnapshot(result.data.values || []);
+    const health = evaluateDataHealthSnapshot(snapshot);
+    const body = {
+      ok: health.ok,
+      status: health.status,
+      staleCoreSources: health.staleCoreSources,
+      missingCoreSources: health.missingCoreSources,
+      warnings: health.warnings,
+      consistencyErrors: health.consistencyErrors
+    };
+    console.log(JSON.stringify({ event: 'finance-data-health', ...body }));
+    return res.status(health.ok ? 200 : 503).json(body);
+  } catch (error) {
+    console.error('finance-data-health:', error?.name || 'Error');
+    return res.status(503).json({ ok: false, error: 'Finance data health check failed' });
+  }
 }
 
 let reconcilePromise;
@@ -60,5 +103,7 @@ const handler = createDecisionDailyReconciliationHandler({
     return reconcile(input);
   }
 });
+
+handler.dataHealth = runDataHealth;
 
 export default handler;
