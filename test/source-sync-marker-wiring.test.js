@@ -19,10 +19,21 @@ test('verified payment sync records a real last-success marker on the existing r
   );
 });
 
-test('verified receivables sync records a last-success marker inside the existing finance route', () => {
+test('verified receivables and ROP publish record a last-success marker on the existing finance route', () => {
   const source = fs.readFileSync(financeRoutePath, 'utf8');
   assert.match(source, /google-sheets-sync-marker\.js/);
   assert.match(source, /writeControlMarker/);
   assert.match(source, /receivables_last_success_utc/);
   assert.match(source, /afterVerified/);
+
+  const functionStart = source.indexOf('async function syncRopDailyControlAndPublish');
+  const publishComplete = source.indexOf('const result = await syncRopSourceThenPublishTarget', functionStart);
+  const markerWrite = source.indexOf("key: 'receivables_last_success_utc'", functionStart);
+  const functionEnd = source.indexOf('\n}', markerWrite);
+
+  assert.ok(functionStart >= 0 && publishComplete >= 0 && markerWrite >= 0 && functionEnd >= 0);
+  assert.ok(
+    markerWrite > publishComplete,
+    'receivables/ROP marker must be written only after the full publish cycle succeeds'
+  );
 });
