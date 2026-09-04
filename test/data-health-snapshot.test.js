@@ -48,6 +48,48 @@ test('parses finance data health metrics without relying on fixed row numbers', 
   assert.equal(snapshot.systemStatus, 'RISK');
 });
 
+test('parses the current operational Data Health sheet layout and source freshness', () => {
+  const rows = [
+    ['DATA HEALTH — КОНТРОЛЬ СВЕЖЕСТИ ИСТОЧНИКОВ', 'Контроль', 'Последний маркер', 'Возраст / отклонение, ч'],
+    ['Источник', 'Что проверяем', 'Последний маркер', 'Возраст, ч'],
+    ['Точка API', 'timestamp LIVE-остатков', 46269.58, 0.13],
+    ['АШК оплаты', 'последняя операция в staging', '2026-09-04 15:32:50', 0],
+    ['АШК часы', 'LoadedAt текущего табеля', 46269.05, 12.8],
+    ['АШК дебиторка / РОП', 'сегодняшний live-срез города', '2026-09-04', 0],
+    ['Прогноз 30 дней', 'старт прогноза = завтра', 46270, 0],
+    ['ИТОГО', 'общий статус системы', 46269.58, 5],
+    ['Банк', 'Рабочий баланс, ₽', 1675758.2, 'INFO'],
+    ['Обязательства', 'Неподтверждённых', 0, 'OK'],
+    ['Прогноз', 'Кассовый разрыв 30 дней, ₽', 672190.3275, 'RISK'],
+    ['Продажи', 'РОП — дефицит к плану на дату, ₽', 648048.47, 'RISK'],
+    ['Дебиторка', 'Текущая дебиторка, ₽', 3069255, 'INFO'],
+    ['Фонд вождения', 'Дефицит фонда, ₽', 1327825.72, 'REVIEW'],
+    ['Система', 'Общий статус', 'RISK', 'RISK'],
+    ['Касса', 'Самый старый факт филиала', 46251, 'RISK'],
+    ['Касса', 'Устаревшие филиалы', 'Герцена, Мельникайте, Монтажников', 'RISK'],
+    ['Касса', 'Филиалы с расхождением / проверкой', 'Сити-молл', 'REVIEW']
+  ];
+
+  const snapshot = parseDataHealthSnapshot(rows);
+
+  assert.equal(snapshot.valid, true);
+  assert.equal(snapshot.bank.workingBalance, 1675758.2);
+  assert.equal(snapshot.forecast.cashGap30d, 672190.3275);
+  assert.equal(snapshot.sales.ropDeficitToDate, 648048.47);
+  assert.equal(snapshot.receivables.current, 3069255);
+  assert.equal(snapshot.drivingFund.deficit, 1327825.72);
+  assert.equal(snapshot.systemStatus, 'RISK');
+  assert.deepEqual(snapshot.sources, {
+    bank: { ageHours: 0.13, marker: 46269.58 },
+    payments: { ageHours: 0, marker: '2026-09-04 15:32:50' },
+    hours: { ageHours: 12.8, marker: 46269.05 },
+    receivables: { ageHours: 0, marker: '2026-09-04' },
+    forecast: { ageHours: 0, marker: 46270 }
+  });
+  assert.equal(snapshot.cash.staleBranches, 'Герцена, Мельникайте, Монтажников');
+  assert.equal(snapshot.cash.reviewBranches, 'Сити-молл');
+});
+
 test('marks cash freshness totals invalid when branch counts do not reconcile', () => {
   const snapshot = parseDataHealthSnapshot([
     HEADER,
