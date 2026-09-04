@@ -22,6 +22,12 @@ function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 }
 
+function requestBearer(req) {
+  const authorization = String(req?.headers?.authorization || '');
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || '';
+}
+
 async function sheetsClient() {
   const auth = new google.auth.JWT({
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -107,6 +113,28 @@ async function mirrorToGoogleSheet(normalized, sheets) {
   return { mirroredAt: now };
 }
 
+async function ensureBalanceMirror(sheets) {
+  const before = await readMirrorStatus(sheets);
+  if (isFresh(before)) {
+    return {
+      source: 'cached_live',
+      refreshed: false,
+      liveCount: before.liveCount,
+      lastUpdated: before.lastUpdated
+    };
+  }
+
+  const raw = await fetchLiveBalances();
+  const normalized = normalizeBalances(raw);
+  const mirror = await mirrorToGoogleSheet(normalized, sheets);
+  return {
+    source: 'tochka_live',
+    refreshed: true,
+    liveCount: normalized.summary.liveCount,
+    lastUpdated: mirror.mirroredAt
+  };
+}
+
 async function reconcileDecisionState(sheets) {
   const shadow = createDecisionShadowSheetAdapter({
     sheets,
@@ -189,6 +217,36 @@ async function processOwnerActionQueue(sheets) {
 
 function failedOwnerActionQueueStatus() {
   return { ok: false, staged: 0, ready: 0, succeeded: 0, failed: 0 };
+}
+
+export async function refreshBalancesMirrorOnly(req, res) {
+  res.setHeader?.('Cache-Control', 'no-store');
+  if (String(req?.method || '').toUpperCase() !== 'GET') {
+    return res.status(405).json({ ok: false, error: 'Use GET' });
+  }
+  const secret = String(process.env.CRON_SECRET || '').trim();
+  if (!secret || requestBearer(req) !== secret) {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
+  }
+
+  try {
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      throw new Error('Google service account secrets missing');
+    }
+    const sheets = await sheetsClient();
+    const result = await ensureBalanceMirror(sheets);
+    console.log(JSON.stringify({
+      event: 'tochka-balances-mirror-only',
+      source: result.source,
+      refreshed: result.refreshed,
+      liveCount: result.liveCount,
+      lastUpdated: result.lastUpdated
+    }));
+    return res.status(200).json({ ok: true, ...result });
+  } catch (error) {
+    console.error('balances-mirror-only:', error?.name || 'Error');
+    return res.status(500).json({ ok: false, error: 'Balance mirror refresh failed' });
+  }
 }
 
 export default async function handler(req, res) {
