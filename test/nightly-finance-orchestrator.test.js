@@ -123,3 +123,48 @@ test('nightly orchestrator skips decisions when receivables fails', async () => 
     }
   });
 });
+
+test('nightly orchestrator runs Data Health after refreshed sources and before decisions', async () => {
+  const calls = [];
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret-value',
+    runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runPayments: handlerReturning(200, { ok: true }, calls, 'payments'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
+    runDataHealth: handlerReturning(200, { ok: true, status: 'WARNING' }, calls, 'dataHealth'),
+    runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls.map(item => item.name), ['hours', 'payments', 'receivables', 'dataHealth', 'decisions']);
+  assert.deepEqual(res.body.stages.dataHealth, { ok: true, statusCode: 200 });
+});
+
+test('nightly orchestrator blocks decisions when Data Health rejects stale core sources', async () => {
+  const calls = [];
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret-value',
+    runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
+    runDataHealth: handlerReturning(503, { ok: false, error: 'Finance data health check failed' }, calls, 'dataHealth'),
+    runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.deepEqual(calls.map(item => item.name), ['hours', 'receivables', 'dataHealth']);
+  assert.deepEqual(res.body, {
+    ok: false,
+    stages: {
+      hours: { ok: true, statusCode: 200 },
+      receivables: { ok: true, statusCode: 200 },
+      dataHealth: { ok: false, statusCode: 503 },
+      decisions: { ok: false, statusCode: null, skipped: true }
+    }
+  });
+});
