@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const routePath = path.join(here, '..', 'api', 'nightly-finance-orchestrator.js');
 
-test('nightly finance route composes HOURS, receivables, decisions, and runtime CRON_SECRET', () => {
+test('nightly finance route composes refreshed sources, Data Health gate, decisions, and runtime CRON_SECRET', () => {
   const source = fs.readFileSync(routePath, 'utf8');
   assert.match(source, /sync-hours\.js/);
   assert.match(source, /ashk-receivables-source\.js/);
@@ -15,6 +15,9 @@ test('nightly finance route composes HOURS, receivables, decisions, and runtime 
   assert.match(source, /АШК_Дебиторка__vercel/);
   assert.match(source, /АШК_Дебиторка_Свод__vercel/);
   assert.match(source, /runReceivables/);
+  assert.match(source, /data-health-snapshot\.js/);
+  assert.match(source, /Data Health Snapshot/);
+  assert.match(source, /runDataHealth/);
   assert.match(source, /decision-reconcile-daily\.js/);
   assert.match(source, /createNightlyFinanceOrchestrator/);
   assert.match(source, /process\.env\.CRON_SECRET/);
