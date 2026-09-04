@@ -102,7 +102,7 @@ async function readTochkaWebhookReadiness(sheets) {
       valueRenderOption: 'UNFORMATTED_VALUE'
     });
     readiness = evaluateTochkaWebhookReadiness(response.data.values || []);
-    if (readiness.ok) return readiness;
+    if (readiness.mirrorReady) return readiness;
     if (attempt + 1 < TOCHKA_READINESS_ATTEMPTS) {
       await delay(TOCHKA_READINESS_DELAY_MS);
     }
@@ -289,19 +289,21 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
     }
     const sheets = await sheetsClient();
     const readiness = await readTochkaWebhookReadiness(sheets);
-    if (!readiness.ok) {
+    if (!readiness.mirrorReady) {
       console.warn(JSON.stringify({
         event: 'tochka-webhook-balance-mirror-blocked',
         operationStatus: readiness.operationStatus,
         missingDdsCount: readiness.missingDdsCount,
+        accountingReady: readiness.accountingReady,
         reasons: readiness.reasons
       }));
       return res.status(409).json({
         ok: false,
-        error: 'Tochka operations not ready for balance mirror',
+        error: 'Tochka operation journal not ready for balance mirror',
         mode: 'mirror_blocked',
         operationStatus: readiness.operationStatus,
-        missingDdsCount: readiness.missingDdsCount
+        missingDdsCount: readiness.missingDdsCount,
+        accountingReady: readiness.accountingReady
       });
     }
     const raw = await fetchLiveBalances();
@@ -310,7 +312,9 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
     console.log(JSON.stringify({
       event: 'tochka-webhook-balance-mirror-only',
       liveCount: normalized.summary.liveCount,
-      mirroredAt: mirror.mirroredAt
+      mirroredAt: mirror.mirroredAt,
+      accountingReady: readiness.accountingReady,
+      missingDdsCount: readiness.missingDdsCount
     }));
     return res.status(200).json({
       ok: true,
@@ -318,7 +322,9 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
       refreshed: true,
       liveCount: normalized.summary.liveCount,
       lastUpdated: mirror.mirroredAt,
-      mode: 'mirror_only'
+      mode: 'mirror_only',
+      accountingReady: readiness.accountingReady,
+      missingDdsCount: readiness.missingDdsCount
     });
   } catch (error) {
     console.error('tochka-webhook-balance-mirror-only:', error?.name || 'Error');
