@@ -44,6 +44,7 @@ function responseRecorder() {
 
 function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsReadbackFails = false } = {}) {
   const calls = [];
+  let leaseState = 'IDLE';
   const state = {
     ddsComments: ddsComments.map(row => [...row]),
     journalValues: journalValues.map(row => [...row])
@@ -76,6 +77,9 @@ function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsRead
           return {};
         },
         get: async ({ range }) => {
+          if (range.includes('__vercel_control')) {
+            return { data: { values: [['tochka_dds_import_lock', leaseState]] } };
+          }
           calls.push(['get', range]);
           if (range.includes('ДДС: месяц')) {
             return { data: { values: state.ddsComments.map(row => [...row]) } };
@@ -85,10 +89,19 @@ function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsRead
           }
           throw new Error(`Unexpected get range: ${range}`);
         }
+      },
+      get: async () => ({
+        data: { sheets: [{ properties: { sheetId: 17, title: '__vercel_control' } }] }
+      }),
+      batchUpdate: async ({ requestBody }) => {
+        const op = requestBody.requests[0].findReplace;
+        const changed = leaseState === op.find ? 1 : 0;
+        if (changed) leaseState = op.replacement;
+        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] } };
       }
     }
   };
-  return { sheets, calls, state };
+  return { sheets, calls, state, get leaseState() { return leaseState; } };
 }
 
 test('plan imports only the current Tyumen business date and ignores malformed old backlog', () => {
@@ -153,12 +166,12 @@ test('sync appends DDS first, verifies it, then appends and verifies the journal
     category: 'Банковские комиссии',
     flow: 'Выбытие'
   });
-  const { sheets, calls, state } = sheetsMock({
+  const mock = sheetsMock({
     readyValues: [HEADER, readyRow(), debit]
   });
 
   const result = await syncCurrentDayTochkaDds({
-    sheets,
+    sheets: mock.sheets,
     spreadsheetId: 'sheet-id',
     businessDate: BUSINESS_DATE,
     now: () => NOW
@@ -172,26 +185,27 @@ test('sync appends DDS first, verifies it, then appends and verifies the journal
     journalAppended: 2,
     verified: true
   });
-  assert.deepEqual(calls.map(call => call[0]), [
+  assert.deepEqual(mock.calls.map(call => call[0]), [
     'batchGet', 'append', 'get', 'get', 'append', 'get'
   ]);
-  assert.equal(calls[1][1], "'ДДС: месяц'!A5:M30000");
-  assert.equal(calls[1][2][0].length, 13);
-  assert.match(calls[4][1], /'Журнал Точка → ДДС'!A:E/);
-  assert.equal(calls[4][2][0].length, 5);
-  assert.deepEqual(state.ddsComments, [[`Точка API | ${K1}`], [`Точка API | ${K2}`]]);
-  assert.deepEqual(state.journalValues.map(row => row[0]), [K1, K2]);
+  assert.equal(mock.calls[1][1], "'ДДС: месяц'!A5:M30000");
+  assert.equal(mock.calls[1][2][0].length, 13);
+  assert.match(mock.calls[4][1], /'Журнал Точка → ДДС'!A:E/);
+  assert.equal(mock.calls[4][2][0].length, 5);
+  assert.deepEqual(mock.state.ddsComments, [[`Точка API | ${K1}`], [`Точка API | ${K2}`]]);
+  assert.deepEqual(mock.state.journalValues.map(row => row[0]), [K1, K2]);
+  assert.equal(mock.leaseState, 'IDLE');
 });
 
 test('sync recovers after DDS was written but journal was not', async () => {
-  const { sheets, calls, state } = sheetsMock({
+  const mock = sheetsMock({
     readyValues: [HEADER, readyRow()],
     ddsComments: [[`Точка API | ${K1}`]],
     journalValues: []
   });
 
   const result = await syncCurrentDayTochkaDds({
-    sheets,
+    sheets: mock.sheets,
     spreadsheetId: 'sheet-id',
     businessDate: BUSINESS_DATE,
     now: () => NOW
@@ -199,24 +213,26 @@ test('sync recovers after DDS was written but journal was not', async () => {
 
   assert.equal(result.ddsAppended, 0);
   assert.equal(result.journalAppended, 1);
-  assert.equal(calls.filter(call => call[0] === 'append' && call[1].includes('ДДС: месяц')).length, 0);
-  assert.deepEqual(state.journalValues.map(row => row[0]), [K1]);
+  assert.equal(mock.calls.filter(call => call[0] === 'append' && call[1].includes('ДДС: месяц')).length, 0);
+  assert.deepEqual(mock.state.journalValues.map(row => row[0]), [K1]);
+  assert.equal(mock.leaseState, 'IDLE');
 });
 
 test('sync never writes the journal when DDS readback does not contain the imported key', async () => {
-  const { sheets, calls } = sheetsMock({
+  const mock = sheetsMock({
     readyValues: [HEADER, readyRow()],
     ddsReadbackFails: true
   });
 
   await assert.rejects(() => syncCurrentDayTochkaDds({
-    sheets,
+    sheets: mock.sheets,
     spreadsheetId: 'sheet-id',
     businessDate: BUSINESS_DATE,
     now: () => NOW
   }), /DDS readback verification failed/i);
 
-  assert.equal(calls.filter(call => call[0] === 'append' && call[1].includes('Журнал Точка → ДДС')).length, 0);
+  assert.equal(mock.calls.filter(call => call[0] === 'append' && call[1].includes('Журнал Точка → ДДС')).length, 0);
+  assert.equal(mock.leaseState, 'IDLE');
 });
 
 test('protected internal handler exposes aggregate counts only', async () => {
