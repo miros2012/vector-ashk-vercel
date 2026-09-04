@@ -203,14 +203,7 @@ async function persistRopOutputs({
     morningValues: morningDashboard.values,
     taskDate: date
   });
-  const debtorPriority = buildRopDebtorPriority({
-    receivablesValues,
-    taskValues: tasksToday.values,
-    planValues,
-    limitPerBranch: 5
-  });
   const existingDebtorValues = await readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:V');
-  debtorPriority.values = mergeDebtorManualFields(debtorPriority.values, existingDebtorValues);
 
   if (writeContracts) {
     await writeValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J', workbook.currentMonthContractsValues, 10);
@@ -218,6 +211,30 @@ async function persistRopOutputs({
   await writeValues(ROP_CONTROL_SHEET, 'A:S', workbook.controlValues, 19);
   await writeValues(ROP_MORNING_SHEET, 'A:X', morningDashboard.values, 24);
   await writeValues(ROP_TASKS_SHEET, 'A:P', tasksToday.values, 16);
+
+  const tasksFinanceRange = `A1:X${tasksToday.values.length}`;
+  const tasksWithFinanceTargets = await readValues(ROP_TASKS_SHEET, tasksFinanceRange);
+  const taskTargetsVerified = tasksWithFinanceTargets.length === tasksToday.values.length
+    && String(tasksWithFinanceTargets?.[0]?.[0] || '') === 'Дата задачи'
+    && String(tasksWithFinanceTargets?.[0]?.[16] || '') === 'План сбора ДЗ, ₽'
+    && String(tasksWithFinanceTargets?.[0]?.[23] || '') === 'Готовность к сбору'
+    && tasksWithFinanceTargets.slice(1).every(row => {
+      const target = row?.[16];
+      return target !== '' && target !== null && target !== undefined
+        && Number.isFinite(Number(target)) && Number(target) >= 0;
+    });
+  if (!taskTargetsVerified) {
+    throw new Error('ROP task finance target readback verification failed');
+  }
+
+  const debtorPriority = buildRopDebtorPriority({
+    receivablesValues,
+    taskValues: tasksWithFinanceTargets,
+    planValues,
+    limitPerBranch: 5
+  });
+  debtorPriority.values = mergeDebtorManualFields(debtorPriority.values, existingDebtorValues);
+
   await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:V', debtorPriority.values, 22);
   await formatDebtorPrioritySheet({ sheets: await getSheets(), spreadsheetId: SPREADSHEET_ID });
   await writeValues(ROP_UNMATCHED_SHEET, 'A:G', workbook.unmatchedPaymentValues, 7);
@@ -227,7 +244,7 @@ async function persistRopOutputs({
     writeContracts ? readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J') : Promise.resolve(null),
     readValues(ROP_CONTROL_SHEET, 'A:S'),
     readValues(ROP_MORNING_SHEET, 'A:X'),
-    readValues(ROP_TASKS_SHEET, 'A:P'),
+    readValues(ROP_TASKS_SHEET, tasksFinanceRange),
     readValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:V'),
     readValues(ROP_UNMATCHED_SHEET, 'A:G'),
     readValues(ROP_PAYMENT_ATTRIBUTION_SHEET, 'A:L')
@@ -250,7 +267,9 @@ async function persistRopOutputs({
   const morningVerified = morningReadback.length === morningDashboard.values.length
     && String(morningReadback?.[0]?.[0] || '') === 'Срез';
   const tasksVerified = tasksReadback.length === tasksToday.values.length
-    && String(tasksReadback?.[0]?.[0] || '') === 'Дата задачи';
+    && String(tasksReadback?.[0]?.[0] || '') === 'Дата задачи'
+    && String(tasksReadback?.[0]?.[16] || '') === 'План сбора ДЗ, ₽'
+    && String(tasksReadback?.[0]?.[23] || '') === 'Готовность к сбору';
   const debtorPriorityVerified = debtorPriorityReadback.length === debtorPriority.values.length
     && String(debtorPriorityReadback?.[0]?.[5] || '') === 'StudentId';
   const unmatchedVerified = unmatchedReadback.length === workbook.unmatchedPaymentValues.length

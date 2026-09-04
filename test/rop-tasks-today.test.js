@@ -100,3 +100,69 @@ test('debtor priority lists the largest debtors for problem branches and flags s
   assert.equal(rows[0][idx('Обещанная дата')], '');
   assert.equal(rows[0][idx('Комментарий')], '');
 });
+
+test('debtor priority adds lower-ranked debtors until the branch collection plan is covered', () => {
+  const receivablesValues = [
+    ['StudentId','Курсант','GroupId','Филиал','Менеджер','Договор','Дата договора','Статус','Продажи','Оплачено','Долг','Долг основной услуги','Основная услуга','Последняя оплата'],
+    [101,'Иванов Иван',1,'Фармана Салманова','Кумаритова Алина','A','2026-08-01','DRV',50000,5000,45000,45000,'Курс','2026-08-01'],
+    [102,'Петров Пётр',1,'Фармана Салманова','Кумаритова Алина','B','2026-07-01','DRV',40000,0,40000,40000,'Курс','2026-08-01'],
+    [103,'Сидоров Семён',1,'Фармана Салманова','Кумаритова Алина','C','2026-08-02','DRV',30000,5000,25000,25000,'Курс','2026-08-02']
+  ];
+  const planValues = [
+    ['Менеджер','Филиал','Филиал АШК','План филиала','Контрольный план менеджера','График','Активен','Примечание'],
+    ['Кумаритова Алина','Салмана','Фармана Салманова',800000,800000,'5/2','Да','']
+  ];
+  const taskValues = [
+    ['Дата задачи','Дата отчёта','Приоритет','Филиал','Ответственные','План месяца','План к дате','Факт сегодня','Факт с начала месяца','Дефицит, ₽','Прогноз месяца','Текущая ДЗ','Задача','Срок','Статус исполнения','Примечание','План сбора ДЗ, ₽'],
+    ['2026-09-04','2026-09-04','СЕГОДНЯ','Салмана','Кумаритова Алина',800000,100000,0,5000,95000,40000,110000,'Добрать','2026-09-04 20:30','К РАБОТЕ','',90000]
+  ];
+
+  const result = ropTasks.buildRopDebtorPriority({
+    receivablesValues,
+    taskValues,
+    planValues,
+    limitPerBranch: 2
+  });
+  const headers = result.values[0];
+  const idx = name => headers.indexOf(name);
+  const rows = result.values.slice(1);
+
+  assert.deepEqual(rows.map(row => row[idx('StudentId')]), [101, 102, 103]);
+  assert.equal(rows.reduce((sum, row) => sum + row[idx('Долг')], 0), 110000);
+  assert.equal(result.metrics.rows, 3);
+  assert.equal(result.metrics.prioritizedDebt, 110000);
+});
+
+test('debtor priority includes every available debtor when total branch debt cannot cover the collection plan', () => {
+  const receivablesValues = [
+    ['StudentId','Курсант','GroupId','Филиал','Менеджер','Договор','Дата договора','Статус','Продажи','Оплачено','Долг','Долг основной услуги','Основная услуга','Последняя оплата'],
+    [101,'Иванов Иван',1,'Фармана Салманова','Кумаритова Алина','A','2026-08-01','DRV',50000,5000,45000,45000,'Курс','2026-08-01'],
+    [102,'Петров Пётр',1,'Фармана Салманова','Кумаритова Алина','B','2026-07-01','DRV',40000,0,40000,40000,'Курс','2026-08-01'],
+    [103,'Сидоров Семён',1,'Фармана Салманова','Кумаритова Алина','C','2026-08-02','DRV',30000,5000,25000,25000,'Курс','2026-08-02']
+  ];
+  const planValues = [
+    ['Менеджер','Филиал','Филиал АШК','План филиала','Контрольный план менеджера','График','Активен','Примечание'],
+    ['Кумаритова Алина','Салмана','Фармана Салманова',800000,800000,'5/2','Да','']
+  ];
+  const taskValues = [
+    ['Дата задачи','Дата отчёта','Приоритет','Филиал','Ответственные','План месяца','План к дате','Факт сегодня','Факт с начала месяца','Дефицит, ₽','Прогноз месяца','Текущая ДЗ','Задача','Срок','Статус исполнения','Примечание','План сбора ДЗ, ₽'],
+    ['2026-09-04','2026-09-04','СЕГОДНЯ','Салмана','Кумаритова Алина',800000,100000,0,5000,95000,40000,110000,'Добрать','2026-09-04 20:30','К РАБОТЕ','',120000]
+  ];
+
+  const result = ropTasks.buildRopDebtorPriority({
+    receivablesValues,
+    taskValues,
+    planValues,
+    limitPerBranch: 2
+  });
+  const headers = result.values[0];
+  const idx = name => headers.indexOf(name);
+  const rows = result.values.slice(1);
+  const prioritizedDebt = rows.reduce((sum, row) => sum + row[idx('Долг')], 0);
+
+  assert.deepEqual(rows.map(row => row[idx('StudentId')]), [101, 102, 103]);
+  assert.equal(prioritizedDebt, 110000);
+  assert.ok(prioritizedDebt < 120000, 'the real collection shortfall must remain visible to Q:X formulas');
+  assert.equal(result.metrics.rows, 3);
+  assert.equal(result.metrics.prioritizedDebt, 110000);
+});
