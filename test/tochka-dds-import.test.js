@@ -46,6 +46,7 @@ function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsRead
   const calls = [];
   const state = {
     ddsComments: ddsComments.map(row => [...row]),
+    ddsAnchorValues: ddsComments.map(() => ['occupied']),
     journalValues: journalValues.map(row => [...row])
   };
   const sheets = {
@@ -58,17 +59,26 @@ function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsRead
               valueRanges: [
                 { values: readyValues.map(row => [...row]) },
                 { values: state.ddsComments.map(row => [...row]) },
-                { values: state.journalValues.map(row => [...row]) }
+                { values: state.journalValues.map(row => [...row]) },
+                { values: state.ddsAnchorValues.map(row => [...row]) }
               ]
             }
           };
         },
+        update: async payload => {
+          const values = payload.requestBody.values.map(row => [...row]);
+          calls.push(['update', payload.range, values]);
+          if (!payload.range.includes('ДДС: месяц')) {
+            throw new Error(`Unexpected update range: ${payload.range}`);
+          }
+          state.ddsAnchorValues.push(...values.map(() => ['occupied']));
+          if (!ddsReadbackFails) state.ddsComments.push(...values.map(row => [row[12]]));
+          return {};
+        },
         append: async payload => {
           const values = payload.requestBody.values.map(row => [...row]);
           calls.push(['append', payload.range, values]);
-          if (payload.range.includes('ДДС: месяц')) {
-            if (!ddsReadbackFails) state.ddsComments.push(...values.map(row => [row[12]]));
-          } else if (payload.range.includes('Журнал Точка → ДДС')) {
+          if (payload.range.includes('Журнал Точка → ДДС')) {
             state.journalValues.push(...values);
           } else {
             throw new Error(`Unexpected append range: ${payload.range}`);
@@ -77,6 +87,9 @@ function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsRead
         },
         get: async ({ range }) => {
           calls.push(['get', range]);
+          if (range.includes('ДДС: месяц') && /!A\d+:S\d+$/.test(range)) {
+            return { data: { values: [] } };
+          }
           if (range.includes('ДДС: месяц')) {
             return { data: { values: state.ddsComments.map(row => [...row]) } };
           }
@@ -145,7 +158,7 @@ test('plan fails closed on a malformed or duplicate current-day ready row', () =
   }), /duplicate Tochka key/i);
 });
 
-test('sync appends DDS first, verifies it, then appends and verifies the journal', async () => {
+test('sync writes DDS to an exact range, verifies it, then appends and verifies the journal', async () => {
   const debit = readyRow({
     amount: -9.2,
     key: K2,
@@ -173,12 +186,14 @@ test('sync appends DDS first, verifies it, then appends and verifies the journal
     verified: true
   });
   assert.deepEqual(calls.map(call => call[0]), [
-    'batchGet', 'append', 'get', 'get', 'append', 'get'
+    'batchGet', 'get', 'update', 'get', 'get', 'append', 'get'
   ]);
-  assert.match(calls[1][1], /'ДДС: месяц'!A:M/);
-  assert.equal(calls[1][2][0].length, 13);
-  assert.match(calls[4][1], /'Журнал Точка → ДДС'!A:E/);
-  assert.equal(calls[4][2][0].length, 5);
+  assert.match(calls[1][1], /'ДДС: месяц'!A5:S6/);
+  assert.match(calls[2][1], /'ДДС: месяц'!A5:M6/);
+  assert.equal(calls[2][2][0].length, 13);
+  assert.match(calls[5][1], /'Журнал Точка → ДДС'!A:E/);
+  assert.equal(calls[5][2][0].length, 5);
+  assert.equal(calls.filter(call => call[0] === 'append' && call[1].includes('ДДС: месяц')).length, 0);
   assert.deepEqual(state.ddsComments, [[`Точка API | ${K1}`], [`Точка API | ${K2}`]]);
   assert.deepEqual(state.journalValues.map(row => row[0]), [K1, K2]);
 });
@@ -199,7 +214,7 @@ test('sync recovers after DDS was written but journal was not', async () => {
 
   assert.equal(result.ddsAppended, 0);
   assert.equal(result.journalAppended, 1);
-  assert.equal(calls.filter(call => call[0] === 'append' && call[1].includes('ДДС: месяц')).length, 0);
+  assert.equal(calls.filter(call => call[0] === 'update' && call[1].includes('ДДС: месяц')).length, 0);
   assert.deepEqual(state.journalValues.map(row => row[0]), [K1]);
 });
 
