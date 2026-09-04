@@ -175,7 +175,7 @@ test('sync appends DDS first, verifies it, then appends and verifies the journal
   assert.deepEqual(calls.map(call => call[0]), [
     'batchGet', 'append', 'get', 'get', 'append', 'get'
   ]);
-  assert.match(calls[1][1], /'ДДС: месяц'!A:M/);
+  assert.equal(calls[1][1], "'ДДС: месяц'!A5:M30000");
   assert.equal(calls[1][2][0].length, 13);
   assert.match(calls[4][1], /'Журнал Точка → ДДС'!A:E/);
   assert.equal(calls[4][2][0].length, 5);
