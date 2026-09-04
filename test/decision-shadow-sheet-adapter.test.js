@@ -58,7 +58,7 @@ test('sheet adapter includes aggregate receivables in the live snapshot without 
                 { values: [
                   decisionRow('DEC-CASH-GAP', '', 'Неактивно', 0, ''),
                   decisionRow('DEC-EST-ADJ', 46266, 'Активно', 857000, 'MASTERS-2026-08'),
-                  decisionRow('DEC-UNCONF-OBL', 46266, 'Активно', '', 'TAX-RESERVE'),
+                  decisionRow('DEC-UNCONF-OBL', 46266, 'Активно', 500000, 'ADMIN-2026-08; TAX-RESERVE'),
                   decisionRow('DEC-CRIT-DUE', 46268, 'Активно', 1179607.46625, 'ROYALTY-2026-08')
                 ] }
               ]
