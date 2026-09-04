@@ -14,29 +14,43 @@ const ROW = [
   'cbs-tb;2480513383;1'
 ];
 
-test('DDS append is anchored to the canonical A:M table body', async () => {
+test('DDS write is deterministic and anchored to an exact A:M target range', async () => {
   const calls = [];
   const ddsComments = [];
   const journal = [];
   let leaseState = 'IDLE';
   const values = {
-    batchGet: async ({ ranges }) => ({
-      data: { valueRanges: [
-        { values: [HEADER, ROW] },
-        { values: ddsComments },
-        { values: journal }
-      ] }
-    }),
+    batchGet: async ({ ranges }) => {
+      calls.push(['batchGet', ranges]);
+      return {
+        data: { valueRanges: [
+          { values: [HEADER, ROW] },
+          { values: ddsComments },
+          { values: journal },
+          { values: [] }
+        ] }
+      };
+    },
+    update: async payload => {
+      calls.push(['update', payload.range]);
+      assert.equal(payload.range, "'ДДС: месяц'!A5:M5");
+      assert.equal(payload.valueInputOption, 'RAW');
+      assert.deepEqual(payload.requestBody.values, [ROW.slice(0, 13)]);
+      ddsComments.push([ROW[12]]);
+      return {};
+    },
     append: async payload => {
       calls.push(['append', payload.range]);
-      if (payload.range.includes('ДДС: месяц')) ddsComments.push([ROW[12]]);
-      if (payload.range.includes('Журнал Точка → ДДС')) journal.push(...payload.requestBody.values);
+      assert.equal(payload.range, "'Журнал Точка → ДДС'!A:E");
+      journal.push(...payload.requestBody.values);
       return {};
     },
     get: async ({ range }) => {
       if (range.includes('__vercel_control')) {
         return { data: { values: [['tochka_dds_import_lock', leaseState]] } };
       }
+      calls.push(['get', range]);
+      if (range === "'ДДС: месяц'!A5:S5") return { data: { values: [] } };
       if (range.includes('ДДС: месяц')) return { data: { values: ddsComments } };
       if (range.includes('Журнал Точка → ДДС')) return { data: { values: journal } };
       throw new Error(`unexpected get ${range}`);
@@ -64,7 +78,9 @@ test('DDS append is anchored to the canonical A:M table body', async () => {
     now: () => new Date('2026-09-04T15:00:00.000Z')
   });
 
-  assert.deepEqual(calls[0], ['append', "'ДДС: месяц'!A5:M30000"]);
-  assert.deepEqual(calls[1], ['append', "'Журнал Точка → ДДС'!A:E"]);
+  assert.deepEqual(calls.map(call => call[0]), [
+    'batchGet', 'get', 'update', 'get', 'get', 'append', 'get'
+  ]);
+  assert.equal(calls.some(call => call[0] === 'append' && call[1].includes('ДДС: месяц')), false);
   assert.equal(leaseState, 'IDLE');
 });
