@@ -10,13 +10,17 @@ import { createDecisionEventApi } from '../lib/decision-event-api.js';
 import { createOwnerActionControlSheetAdapter } from '../lib/owner-action-control-sheet-adapter.js';
 import { createOwnerActionQueueApi } from '../lib/owner-action-queue-api.js';
 import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sheet-adapter.js';
+import { evaluateTochkaWebhookReadiness } from '../lib/tochka-webhook-readiness.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const BALANCES_SHEET = 'Точка_Остатки';
+const DATA_HEALTH_SHEET = 'Data Health Snapshot';
 const DECISION_AUDIT_SHEET = 'Rule Engine Audit';
 const DEFAULT_BRIDGE_URL = 'https://tochka-realtime-bridge.onrender.com';
 const FRESH_MS = 30000;
 const INTERNAL_OWNER_ACTION_KEY = 'owner-action-internal-only';
+const TOCHKA_READINESS_ATTEMPTS = 4;
+const TOCHKA_READINESS_DELAY_MS = 750;
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -83,6 +87,27 @@ async function readMirrorStatus(sheets) {
 
 function isFresh(status) {
   return status.liveCount === 5 && status.lastMs > 0 && (Date.now() - status.lastMs) < FRESH_MS;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readTochkaWebhookReadiness(sheets) {
+  let readiness = evaluateTochkaWebhookReadiness([]);
+  for (let attempt = 0; attempt < TOCHKA_READINESS_ATTEMPTS; attempt += 1) {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${DATA_HEALTH_SHEET}'!A1:H50`,
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    });
+    readiness = evaluateTochkaWebhookReadiness(response.data.values || []);
+    if (readiness.ok) return readiness;
+    if (attempt + 1 < TOCHKA_READINESS_ATTEMPTS) {
+      await delay(TOCHKA_READINESS_DELAY_MS);
+    }
+  }
+  return readiness;
 }
 
 async function mirrorToGoogleSheet(normalized, sheets) {
@@ -263,6 +288,22 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
       throw new Error('Google service account secrets missing');
     }
     const sheets = await sheetsClient();
+    const readiness = await readTochkaWebhookReadiness(sheets);
+    if (!readiness.ok) {
+      console.warn(JSON.stringify({
+        event: 'tochka-webhook-balance-mirror-blocked',
+        operationStatus: readiness.operationStatus,
+        missingDdsCount: readiness.missingDdsCount,
+        reasons: readiness.reasons
+      }));
+      return res.status(409).json({
+        ok: false,
+        error: 'Tochka operations not ready for balance mirror',
+        mode: 'mirror_blocked',
+        operationStatus: readiness.operationStatus,
+        missingDdsCount: readiness.missingDdsCount
+      });
+    }
     const raw = await fetchLiveBalances();
     const normalized = normalizeBalances(raw);
     const mirror = await mirrorToGoogleSheet(normalized, sheets);
