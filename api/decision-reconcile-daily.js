@@ -66,7 +66,7 @@ async function runDataHealth(req, res) {
     const result = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: SPREADSHEET_ID,
       ranges: [
-        `'${DATA_HEALTH_SHEET}'!A1:D40`,
+        `'${DATA_HEALTH_SHEET}'!A1:H40`,
         `'Точка_API'!A2:P`,
         `'ДДС: месяц'!M5:M30000`
       ],
