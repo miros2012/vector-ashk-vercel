@@ -5,6 +5,7 @@ import {
   attributePaymentsToSales,
   createAshkSaleSource
 } from '../lib/ashk-sale-attribution.js';
+import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
@@ -255,6 +256,14 @@ export default async function handler(req, res) {
       return res.status(502).json({ ok: false, error: 'Payment or sale staging verification failed' });
     }
 
+    const paymentsLastSuccessUtc = new Date().toISOString();
+    await writeControlMarker({
+      sheets,
+      spreadsheetId: SPREADSHEET_ID,
+      key: 'payments_last_success_utc',
+      value: paymentsLastSuccessUtc
+    });
+
     const live = await readMetrics(sheets, LIVE_SHEET);
     const comparison = {
       rowDiff: stagingExpected.rows - live.rows,
@@ -266,6 +275,7 @@ export default async function handler(req, res) {
       event: 'sync-payments-staging',
       staging: stagingExpected,
       verified: true,
+      sourceLastSuccessUtc: paymentsLastSuccessUtc,
       live,
       comparison,
       saleSource: saleResult.metrics,
@@ -277,6 +287,7 @@ export default async function handler(req, res) {
       ok: true,
       mode: 'staging_only',
       verified: true,
+      sourceLastSuccessUtc: paymentsLastSuccessUtc,
       spreadsheetId: SPREADSHEET_ID,
       stagingSheet: STAGING_SHEET,
       salesStagingSheet: SALES_STAGING_SHEET,

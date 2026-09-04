@@ -13,6 +13,7 @@ import { createReceivablesSyncHandler } from '../lib/receivables-sync-handler.js
 import { buildRopDailyControlWorkbook, receivablesValuesToStudents } from '../lib/rop-daily-control.js';
 import { buildRopMorningDashboard } from '../lib/rop-morning-dashboard.js';
 import { buildRopDebtorPriority, buildRopTasksToday } from '../lib/rop-tasks-today.js';
+import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const RECEIVABLES_DETAIL_SHEET = 'АШК_Дебиторка__vercel';
@@ -391,10 +392,18 @@ async function refreshRopFromStaging() {
 }
 
 async function syncRopDailyControlAndPublish(payload) {
-  return syncRopSourceThenPublishTarget({
+  const result = await syncRopSourceThenPublishTarget({
     refreshSource: () => syncRopDailyControl(payload),
     publishTarget: publishRopNow
   });
+  const receivablesLastSuccessUtc = new Date().toISOString();
+  await writeControlMarker({
+    sheets: await getSheets(),
+    spreadsheetId: SPREADSHEET_ID,
+    key: 'receivables_last_success_utc',
+    value: receivablesLastSuccessUtc
+  });
+  return { ...result, sourceLastSuccessUtc: receivablesLastSuccessUtc };
 }
 
 async function refreshRopFromStagingAndPublish() {
