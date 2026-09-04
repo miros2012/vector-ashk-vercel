@@ -29,7 +29,8 @@ test('ordinary live balance refresh uses full Data Health before Decision Engine
   assert.ok(healthGuardAt > healthAt, 'Decision Engine must have an explicit fail-closed Data Health guard');
   assert.ok(reconcileAt > healthGuardAt, 'reconciliation must run only after Data Health gate');
   assert.ok(ownerActionAt > healthGuardAt, 'Owner Action transport must run only after Data Health gate');
-  assert.match(handlerSource, /mode:\s*'blocked_data_health'/);
+  assert.match(handlerSource, /mode:\s*'decisions_blocked'/);
+  assert.match(source, /mode:\s*'blocked_data_health'/);
 });
 
 test('balance decision gate reuses canonical Data Health parser and evaluator', () => {
