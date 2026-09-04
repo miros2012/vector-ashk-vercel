@@ -18,6 +18,7 @@ test('DDS append is anchored to the canonical A:M table body', async () => {
   const calls = [];
   const ddsComments = [];
   const journal = [];
+  let leaseState = 'IDLE';
   const values = {
     batchGet: async ({ ranges }) => ({
       data: { valueRanges: [
@@ -33,14 +34,31 @@ test('DDS append is anchored to the canonical A:M table body', async () => {
       return {};
     },
     get: async ({ range }) => {
+      if (range.includes('__vercel_control')) {
+        return { data: { values: [['tochka_dds_import_lock', leaseState]] } };
+      }
       if (range.includes('ДДС: месяц')) return { data: { values: ddsComments } };
       if (range.includes('Журнал Точка → ДДС')) return { data: { values: journal } };
       throw new Error(`unexpected get ${range}`);
     }
   };
+  const sheets = {
+    spreadsheets: {
+      values,
+      get: async () => ({
+        data: { sheets: [{ properties: { sheetId: 17, title: '__vercel_control' } }] }
+      }),
+      batchUpdate: async ({ requestBody }) => {
+        const op = requestBody.requests[0].findReplace;
+        const changed = leaseState === op.find ? 1 : 0;
+        if (changed) leaseState = op.replacement;
+        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] } };
+      }
+    }
+  };
 
   await syncCurrentDayTochkaDds({
-    sheets: { spreadsheets: { values } },
+    sheets,
     spreadsheetId: 'sheet-id',
     businessDate: '2026-09-04',
     now: () => new Date('2026-09-04T15:00:00.000Z')
@@ -48,4 +66,5 @@ test('DDS append is anchored to the canonical A:M table body', async () => {
 
   assert.deepEqual(calls[0], ['append', "'ДДС: месяц'!A5:M30000"]);
   assert.deepEqual(calls[1], ['append', "'Журнал Точка → ДДС'!A:E"]);
+  assert.equal(leaseState, 'IDLE');
 });
