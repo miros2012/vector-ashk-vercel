@@ -7,13 +7,13 @@ const HEADER = ['Контур', 'Метрика', 'Значение', 'Стат�
 function operationalRows({ bankAge = 0.13, transactionsAge = 0.20 } = {}) {
   return [
     ['DATA HEALTH — КОНТРОЛЬ СВЕЖЕСТИ ИСТОЧНИКОВ', 'Контроль', 'Последний маркер', 'Возраст / отклонение, ч'],
-    ['Источник', 'Что проверяем', 'Последний маркер', 'Возраст, ч'],
-    ['Точка API', 'timestamp LIVE-остатков', 46269.58, bankAge],
-    ['АШК оплаты', 'последняя операция в staging', '2026-09-04 15:32:50', 0],
-    ['АШК часы', 'LoadedAt текущего табеля', 46269.05, 12.8],
-    ['АШК дебиторка / РОП', 'сегодняшний live-срез города', '2026-09-04', 0],
-    ['Прогноз 30 дней', 'старт прогноза = завтра', 46270, 0],
-    ['ИТОГО', 'общий статус системы', 46269.58, 5],
+    ['Источник', 'Что проверяем', 'Последний маркер', 'Возраст, ч', 'WARN, ч', 'ERROR, ч', 'Статус'],
+    ['Точка API', 'timestamp LIVE-остатков', 46269.58, bankAge, 2, 4, 'OK'],
+    ['АШК оплаты', 'последняя успешная синхронизация', '2026-09-04 15:32:50', 0, 2, 26, 'OK'],
+    ['АШК часы', 'LoadedAt текущего табеля', 46269.05, 12.8, 30, 54, 'OK'],
+    ['АШК дебиторка / РОП', 'последняя успешная синхронизация', '2026-09-04', 0, 30, 54, 'OK'],
+    ['Прогноз 30 дней', 'старт прогноза = завтра', 46270, 0, 1, 24, 'OK'],
+    ['ИТОГО', 'свежесть пяти ключевых источников', 46269.58, 5, 5, 0, 'OK'],
     ['Банк', 'Рабочий баланс, ₽', 1675758.2, 'INFO'],
     ['Обязательства', 'Неподтверждённых', 0, 'OK'],
     ['Прогноз', 'Кассовый разрыв 30 дней, ₽', 672190.3275, 'RISK'],
@@ -24,7 +24,7 @@ function operationalRows({ bankAge = 0.13, transactionsAge = 0.20 } = {}) {
     ['Касса', 'Самый старый факт филиала', 46251, 'RISK'],
     ['Касса', 'Устаревшие филиалы', 'Герцена, Мельникайте, Монтажников', 'RISK'],
     ['Касса', 'Филиалы с расхождением / проверкой', 'Сити-молл', 'REVIEW'],
-    ['Точка операции', 'последняя загрузка Точка_API', 46269.57, transactionsAge]
+    ['Точка операции', 'последняя загрузка Точка_API', 46269.57, transactionsAge, 0.25, 2, 'OK']
   ];
 }
 
@@ -83,12 +83,12 @@ test('parses the current operational Data Health sheet layout and source freshne
   assert.equal(snapshot.drivingFund.deficit, 1327825.72);
   assert.equal(snapshot.systemStatus, 'RISK');
   assert.deepEqual(snapshot.sources, {
-    bank: { ageHours: 0.13, marker: 46269.58 },
-    payments: { ageHours: 0, marker: '2026-09-04 15:32:50' },
-    hours: { ageHours: 12.8, marker: 46269.05 },
-    receivables: { ageHours: 0, marker: '2026-09-04' },
-    forecast: { ageHours: 0, marker: 46270 },
-    transactions: { ageHours: 0.20, marker: 46269.57 }
+    bank: { ageHours: 0.13, marker: 46269.58, warnAfterHours: 2, errorAfterHours: 4, status: 'OK' },
+    payments: { ageHours: 0, marker: '2026-09-04 15:32:50', warnAfterHours: 2, errorAfterHours: 26, status: 'OK' },
+    hours: { ageHours: 12.8, marker: 46269.05, warnAfterHours: 30, errorAfterHours: 54, status: 'OK' },
+    receivables: { ageHours: 0, marker: '2026-09-04', warnAfterHours: 30, errorAfterHours: 54, status: 'OK' },
+    forecast: { ageHours: 0, marker: 46270, warnAfterHours: 1, errorAfterHours: 24, status: 'OK' },
+    transactions: { ageHours: 0.20, marker: 46269.57, warnAfterHours: 0.25, errorAfterHours: 2, status: 'OK' }
   });
   assert.equal(snapshot.cash.staleBranches, 'Герцена, Мельникайте, Монтажников');
   assert.equal(snapshot.cash.reviewBranches, 'Сити-молл');
@@ -106,8 +106,8 @@ test('financial RISK and stale manual cash stay warnings while coherent core sou
   assert.ok(health.warnings.includes('cash-review'));
 });
 
-test('stale core bank source blocks downstream financial decisions', () => {
-  const health = evaluateDataHealthSnapshot(parseDataHealthSnapshot(operationalRows({ bankAge: 2.5, transactionsAge: 2.6 })));
+test('source beyond its error threshold blocks downstream financial decisions', () => {
+  const health = evaluateDataHealthSnapshot(parseDataHealthSnapshot(operationalRows({ bankAge: 4.5, transactionsAge: 4.6 })));
 
   assert.equal(health.ok, false);
   assert.equal(health.status, 'BLOCKED');
