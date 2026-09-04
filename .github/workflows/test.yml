@@ -22,5 +22,7 @@ jobs:
           node-version: 20
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Check API entrypoint syntax
+        run: node --check api/nightly-finance-orchestrator.js
       - name: Run full test suite
         run: npm test
