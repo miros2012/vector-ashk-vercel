@@ -12,7 +12,7 @@ function responseRecorder() {
   };
 }
 
-test('consumes the one-time token before running the existing nightly handler', async () => {
+test('consumes and strips the one-time token before running the existing nightly handler', async () => {
   const events = [];
   const handler = createManualFinanceRunHandler({
     cronSecret: 'cron-secret',
@@ -24,13 +24,17 @@ test('consumes the one-time token before running the existing nightly handler', 
       events.push('nightly');
       assert.equal(req.headers.authorization, 'Bearer cron-secret');
       assert.deepEqual(req.query, { source: 'manual' });
+      assert.equal(req.url, '/api/nightly-finance-orchestrator?source=manual');
+      assert.equal(req.originalUrl, '/api/nightly-finance-orchestrator?source=manual');
       return res.status(200).json({ ok: true });
     }
   });
   const req = {
     method: 'GET',
-    headers: { 'user-agent': 'test' },
-    query: { finance_run_token: 'single-use', source: 'manual' }
+    headers: { 'user-agent': 'test', authorization: 'Bearer untrusted-caller-value' },
+    query: { finance_run_token: 'single-use', source: 'manual' },
+    url: '/api/nightly-finance-orchestrator?finance_run_token=single-use&source=manual',
+    originalUrl: '/api/nightly-finance-orchestrator?finance_run_token=single-use&source=manual'
   };
   const res = responseRecorder();
 
@@ -40,6 +44,8 @@ test('consumes the one-time token before running the existing nightly handler', 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body, { ok: true });
   assert.equal(req.query.finance_run_token, 'single-use', 'original request must not be mutated');
+  assert.equal(req.headers.authorization, 'Bearer untrusted-caller-value');
+  assert.match(req.url, /finance_run_token=single-use/);
 });
 
 test('rejects wrong, expired or replayed tokens without invoking finance stages', async () => {
