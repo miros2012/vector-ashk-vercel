@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { getVercelOidcToken } from '@vercel/oidc';
 import { normalizeBalances } from '../lib/tochka-balances.js';
+import { evaluateDataHealthSnapshot, parseDataHealthSnapshot } from '../lib/data-health-snapshot.js';
 import { createDecisionShadowSheetAdapter } from '../lib/decision-shadow-sheet-adapter.js';
 import { createDecisionStateSynchronizer } from '../lib/decision-state-sync-service.js';
 import { createDecisionReconciler } from '../lib/decision-reconciliation.js';
@@ -113,6 +114,33 @@ async function readTochkaWebhookReadiness(sheets) {
   return readiness;
 }
 
+async function readDecisionDataHealth(sheets) {
+  let health = {
+    ok: false,
+    status: 'BLOCKED',
+    staleCoreSources: [],
+    missingCoreSources: [],
+    warnings: [],
+    consistencyErrors: ['data health unavailable']
+  };
+
+  for (let attempt = 0; attempt < TOCHKA_READINESS_ATTEMPTS; attempt += 1) {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${DATA_HEALTH_SHEET}'!A1:H50`,
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    });
+    const snapshot = parseDataHealthSnapshot(response.data.values || []);
+    health = evaluateDataHealthSnapshot(snapshot);
+    if (health.ok) return health;
+    if (attempt + 1 < TOCHKA_READINESS_ATTEMPTS) {
+      await delay(TOCHKA_READINESS_DELAY_MS);
+    }
+  }
+
+  return health;
+}
+
 async function mirrorToGoogleSheet(normalized, sheets) {
   const now = new Date().toISOString();
   const rows = normalized.funds;
@@ -200,6 +228,14 @@ function failedReconciliationStatus() {
   };
 }
 
+function blockedReconciliationStatus(dataHealth) {
+  return {
+    ...failedReconciliationStatus(),
+    mode: 'blocked_data_health',
+    dataHealthStatus: dataHealth?.status || 'BLOCKED'
+  };
+}
+
 function internalDecisionCommand(decisionApi, configuredKey) {
   return async (command) => {
     const response = {
@@ -245,6 +281,14 @@ async function processOwnerActionQueue(sheets) {
 
 function failedOwnerActionQueueStatus() {
   return { ok: false, staged: 0, ready: 0, succeeded: 0, failed: 0 };
+}
+
+function blockedOwnerActionQueueStatus(dataHealth) {
+  return {
+    ...failedOwnerActionQueueStatus(),
+    mode: 'blocked_data_health',
+    dataHealthStatus: dataHealth?.status || 'BLOCKED'
+  };
 }
 
 export async function refreshBalancesMirrorOnly(req, res) {
@@ -478,7 +522,78 @@ export default async function handler(req, res) {
 
     const raw = await fetchLiveBalances();
     const normalized = normalizeBalances(raw);
+    const readiness = await readTochkaWebhookReadiness(sheets);
+    if (!readiness.mirrorReady) {
+      console.warn(JSON.stringify({
+        event: 'tochka-balances-refresh-blocked',
+        operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
+        missingDdsCount: readiness.missingDdsCount,
+        accountingReady: readiness.accountingReady,
+        reasons: readiness.reasons
+      }));
+      return res.status(409).json({
+        ok: false,
+        error: 'Tochka operation journal not ready for balance mirror',
+        mode: 'mirror_blocked',
+        operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
+        missingDdsCount: readiness.missingDdsCount,
+        accountingReady: readiness.accountingReady
+      });
+    }
+
+    const candidateReadiness = evaluateCandidateBalanceReadiness({ readiness, normalized });
+    if (!candidateReadiness.ok) {
+      console.warn(JSON.stringify({
+        event: 'tochka-balances-refresh-candidate-blocked',
+        operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
+        candidateTimestamp: candidateReadiness.candidateTimestamp,
+        skewMinutes: candidateReadiness.skewMinutes,
+        reason: candidateReadiness.reason
+      }));
+      return res.status(409).json({
+        ok: false,
+        error: 'Tochka candidate balance is ahead of operation journal',
+        mode: 'candidate_balance_blocked',
+        operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
+        candidateTimestamp: candidateReadiness.candidateTimestamp,
+        skewMinutes: candidateReadiness.skewMinutes,
+        reason: candidateReadiness.reason,
+        accountingReady: readiness.accountingReady,
+        missingDdsCount: readiness.missingDdsCount
+      });
+    }
+
     const mirror = await mirrorToGoogleSheet(normalized, sheets);
+    const dataHealth = await readDecisionDataHealth(sheets);
+
+    if (!dataHealth.ok) {
+      const decisionReconciliation = blockedReconciliationStatus(dataHealth);
+      const ownerActionQueue = blockedOwnerActionQueueStatus(dataHealth);
+      console.warn(JSON.stringify({
+        event: 'tochka-balances-decisions-blocked',
+        liveCount: normalized.summary.liveCount,
+        mirroredAt: mirror.mirroredAt,
+        dataHealthStatus: dataHealth.status,
+        staleCoreSources: dataHealth.staleCoreSources,
+        missingCoreSources: dataHealth.missingCoreSources,
+        consistencyErrors: dataHealth.consistencyErrors
+      }));
+      return res.status(200).json({
+        ok: true,
+        source: 'tochka_live',
+        refreshed: true,
+        liveCount: normalized.summary.liveCount,
+        lastUpdated: mirror.mirroredAt,
+        mode: 'decisions_blocked',
+        dataHealth,
+        decisionReconciliation,
+        ownerActionQueue
+      });
+    }
 
     let decisionReconciliation;
     try {
@@ -501,6 +616,7 @@ export default async function handler(req, res) {
       liveCount: normalized.summary.liveCount,
       mirroredAt: mirror.mirroredAt,
       trigger: req.method === 'POST' ? String(req.headers?.['x-vector-refresh'] || 'post') : 'get',
+      dataHealthStatus: dataHealth.status,
       decisionReconciliationOk: decisionReconciliation.ok,
       decisionReconciliationMode: decisionReconciliation.mode,
       ownerActionQueueOk: ownerActionQueue.ok,
@@ -513,6 +629,7 @@ export default async function handler(req, res) {
       refreshed: true,
       liveCount: normalized.summary.liveCount,
       lastUpdated: mirror.mirroredAt,
+      dataHealth,
       decisionReconciliation,
       ownerActionQueue
     });
