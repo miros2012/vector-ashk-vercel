@@ -113,8 +113,8 @@ test('writes current-day DDS rows to an exact A:M range and never appends to DDS
   assert.equal(mock.leaseState, 'IDLE');
 });
 
-test('fails closed and releases the import lease when target A:S is occupied', async () => {
-  const mock = leaseAwareSheets({ targetValues: [['','','','','','','occupied']] });
+test('fails closed and releases the import lease when canonical target A:S is occupied', async () => {
+  const mock = leaseAwareSheets({ targetValues: [['occupied']] });
 
   await assert.rejects(() => syncCurrentDayTochkaDds({
     sheets: mock.sheets,
