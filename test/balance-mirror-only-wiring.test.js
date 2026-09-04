@@ -7,28 +7,36 @@ const financeRouteSource = await readFile(new URL('../api/nightly-finance-orches
 
 test('balances API exports a cron-authenticated mirror-only refresh path', () => {
   assert.match(balancesSource, /export\s+async\s+function\s+refreshBalancesMirrorOnly/);
-  assert.match(balancesSource, /function\s+ensureBalanceMirror|async\s+function\s+ensureBalanceMirror/);
 
   const start = balancesSource.indexOf('export async function refreshBalancesMirrorOnly');
   const end = balancesSource.indexOf('\nexport async function refreshBalancesFromTochkaWebhook', start);
   const mirrorOnlySource = balancesSource.slice(start, end > start ? end : undefined);
-  assert.match(mirrorOnlySource, /ensureBalanceMirror/);
+  assert.match(mirrorOnlySource, /readMirrorStatus/);
+  assert.match(mirrorOnlySource, /fetchLiveBalances/);
+  assert.match(mirrorOnlySource, /mirrorToGoogleSheet/);
   assert.doesNotMatch(mirrorOnlySource, /reconcileDecisionState/);
   assert.doesNotMatch(mirrorOnlySource, /processOwnerActionQueue/);
 });
 
-test('mirror-only balance refresh checks fresh Tochka operation detail before advancing the live balance marker', () => {
+test('mirror-only refresh validates the fetched balance against operation freshness before advancing live marker', () => {
   const start = balancesSource.indexOf('export async function refreshBalancesMirrorOnly');
   const end = balancesSource.indexOf('\nexport async function refreshBalancesFromTochkaWebhook', start);
   const mirrorOnlySource = balancesSource.slice(start, end > start ? end : undefined);
 
+  const statusAt = mirrorOnlySource.indexOf('readMirrorStatus');
+  const fetchAt = mirrorOnlySource.indexOf('fetchLiveBalances');
   const readinessAt = mirrorOnlySource.indexOf('readTochkaWebhookReadiness');
-  const gateAt = mirrorOnlySource.indexOf('!readiness.mirrorReady');
-  const mirrorAt = mirrorOnlySource.indexOf('ensureBalanceMirror');
+  const candidateGateAt = mirrorOnlySource.indexOf('evaluateCandidateBalanceReadiness');
+  const mirrorAt = mirrorOnlySource.indexOf('mirrorToGoogleSheet');
 
-  assert.ok(readinessAt >= 0, 'mirror-only path must read Tochka operation readiness');
-  assert.ok(gateAt > readinessAt, 'mirror-only path must fail closed when operation detail is stale');
-  assert.ok(mirrorAt > gateAt, 'balance mirror must run only after the operation-readiness gate');
+  assert.ok(statusAt >= 0, 'mirror-only path must check whether the current mirror is already fresh');
+  assert.ok(fetchAt > statusAt, 'stale mirror must fetch the candidate live balance');
+  assert.ok(readinessAt > fetchAt, 'operation readiness must be evaluated after fetching the candidate');
+  assert.ok(candidateGateAt > readinessAt, 'candidate balance skew must be checked after operation readiness');
+  assert.ok(mirrorAt > candidateGateAt, 'live marker must advance only after candidate skew check');
+  assert.match(mirrorOnlySource, /if \(!readiness\.mirrorReady\)/);
+  assert.match(mirrorOnlySource, /if \(!candidateReadiness\.ok\)/);
+  assert.match(mirrorOnlySource, /status\(409\).*candidate balance is ahead of operation journal/s);
 });
 
 test('finance route wires the mirror-only balance refresh into nightly and intraday orchestrators', () => {

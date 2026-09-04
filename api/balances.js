@@ -262,11 +262,15 @@ export async function refreshBalancesMirrorOnly(req, res) {
       throw new Error('Google service account secrets missing');
     }
     const sheets = await sheetsClient();
+    const before = await readMirrorStatus(sheets);
+    const raw = await fetchLiveBalances();
+    const normalized = normalizeBalances(raw);
     const readiness = await readTochkaWebhookReadiness(sheets);
     if (!readiness.mirrorReady) {
       console.warn(JSON.stringify({
         event: 'tochka-balances-mirror-only-blocked',
         operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
         missingDdsCount: readiness.missingDdsCount,
         accountingReady: readiness.accountingReady,
         reasons: readiness.reasons
@@ -276,23 +280,72 @@ export async function refreshBalancesMirrorOnly(req, res) {
         error: 'Tochka operation journal not ready for balance mirror',
         mode: 'mirror_blocked',
         operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
         missingDdsCount: readiness.missingDdsCount,
         accountingReady: readiness.accountingReady
       });
     }
-    const result = await ensureBalanceMirror(sheets);
+
+    const candidateReadiness = evaluateCandidateBalanceReadiness({ readiness, normalized });
+    if (!candidateReadiness.ok) {
+      console.warn(JSON.stringify({
+        event: 'tochka-balances-mirror-only-candidate-blocked',
+        operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
+        candidateTimestamp: candidateReadiness.candidateTimestamp,
+        skewMinutes: candidateReadiness.skewMinutes,
+        reason: candidateReadiness.reason
+      }));
+      return res.status(409).json({
+        ok: false,
+        error: 'Tochka candidate balance is ahead of operation journal',
+        mode: 'candidate_balance_blocked',
+        operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
+        candidateTimestamp: candidateReadiness.candidateTimestamp,
+        skewMinutes: candidateReadiness.skewMinutes,
+        reason: candidateReadiness.reason,
+        accountingReady: readiness.accountingReady,
+        missingDdsCount: readiness.missingDdsCount
+      });
+    }
+
+    let result;
+    if (isFresh(before)) {
+      result = {
+        source: 'cached_live',
+        refreshed: false,
+        liveCount: before.liveCount,
+        lastUpdated: before.lastUpdated
+      };
+    } else {
+      const mirror = await mirrorToGoogleSheet(normalized, sheets);
+      result = {
+        source: 'tochka_live',
+        refreshed: true,
+        liveCount: normalized.summary.liveCount,
+        lastUpdated: mirror.mirroredAt
+      };
+    }
+
     console.log(JSON.stringify({
       event: 'tochka-balances-mirror-only',
       source: result.source,
       refreshed: result.refreshed,
       liveCount: result.liveCount,
       lastUpdated: result.lastUpdated,
+      operationAgeHours: readiness.operationAgeHours,
+      candidateTimestamp: candidateReadiness.candidateTimestamp,
+      skewMinutes: candidateReadiness.skewMinutes,
       accountingReady: readiness.accountingReady,
       missingDdsCount: readiness.missingDdsCount
     }));
     return res.status(200).json({
       ok: true,
       ...result,
+      operationAgeHours: readiness.operationAgeHours,
+      candidateTimestamp: candidateReadiness.candidateTimestamp,
+      skewMinutes: candidateReadiness.skewMinutes,
       accountingReady: readiness.accountingReady,
       missingDdsCount: readiness.missingDdsCount
     });
