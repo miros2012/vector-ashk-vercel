@@ -27,6 +27,7 @@ function readyRow() {
 
 function sheetsMock({ ddsCount = 1, journalCount = 1 } = {}) {
   const calls = [];
+  let leaseState = 'IDLE';
   const dds = Array.from({ length: ddsCount }, () => [`Точка API | ${KEY}`]);
   const journal = Array.from({ length: journalCount }, () => [
     KEY, TRANSACTION_ID, '04.09.2026', '04.09.2026 20:00:00', 'Импортировано'
@@ -48,15 +49,27 @@ function sheetsMock({ ddsCount = 1, journalCount = 1 } = {}) {
           return {};
         },
         get: async ({ range }) => {
+          if (range.includes('__vercel_control')) {
+            return { data: { values: [['tochka_dds_import_lock', leaseState]] } };
+          }
           calls.push(['get', range]);
           if (range.includes('ДДС: месяц')) return { data: { values: dds.map(row => [...row]) } };
           if (range.includes('Журнал Точка → ДДС')) return { data: { values: journal.map(row => [...row]) } };
           throw new Error(`Unexpected range: ${range}`);
         }
+      },
+      get: async () => ({
+        data: { sheets: [{ properties: { sheetId: 17, title: '__vercel_control' } }] }
+      }),
+      batchUpdate: async ({ requestBody }) => {
+        const op = requestBody.requests[0].findReplace;
+        const changed = leaseState === op.find ? 1 : 0;
+        if (changed) leaseState = op.replacement;
+        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] } };
       }
     }
   };
-  return { sheets, calls };
+  return { sheets, calls, get leaseState() { return leaseState; } };
 }
 
 test('accepts the exact live API → DDS ready sheet header', () => {
@@ -74,36 +87,38 @@ test('accepts the exact live API → DDS ready sheet header', () => {
 });
 
 test('fails closed when an eligible key already exists more than once in DDS', async () => {
-  const { sheets, calls } = sheetsMock({ ddsCount: 2, journalCount: 1 });
+  const mock = sheetsMock({ ddsCount: 2, journalCount: 1 });
 
   await assert.rejects(() => syncCurrentDayTochkaDds({
-    sheets,
+    sheets: mock.sheets,
     spreadsheetId: 'sheet-id',
     businessDate: BUSINESS_DATE,
     now: () => NOW
   }), /DDS readback verification failed/i);
 
-  assert.equal(calls.some(call => call[0] === 'append'), false);
+  assert.equal(mock.calls.some(call => call[0] === 'append'), false);
+  assert.equal(mock.leaseState, 'IDLE');
 });
 
 test('fails closed when an eligible key already exists more than once in the journal', async () => {
-  const { sheets, calls } = sheetsMock({ ddsCount: 1, journalCount: 2 });
+  const mock = sheetsMock({ ddsCount: 1, journalCount: 2 });
 
   await assert.rejects(() => syncCurrentDayTochkaDds({
-    sheets,
+    sheets: mock.sheets,
     spreadsheetId: 'sheet-id',
     businessDate: BUSINESS_DATE,
     now: () => NOW
   }), /Journal readback verification failed/i);
 
-  assert.equal(calls.some(call => call[0] === 'append'), false);
+  assert.equal(mock.calls.some(call => call[0] === 'append'), false);
+  assert.equal(mock.leaseState, 'IDLE');
 });
 
 test('verified no-op succeeds when the eligible key exists exactly once in DDS and journal', async () => {
-  const { sheets, calls } = sheetsMock({ ddsCount: 1, journalCount: 1 });
+  const mock = sheetsMock({ ddsCount: 1, journalCount: 1 });
 
   const result = await syncCurrentDayTochkaDds({
-    sheets,
+    sheets: mock.sheets,
     spreadsheetId: 'sheet-id',
     businessDate: BUSINESS_DATE,
     now: () => NOW
@@ -117,5 +132,6 @@ test('verified no-op succeeds when the eligible key exists exactly once in DDS a
     journalAppended: 0,
     verified: true
   });
-  assert.equal(calls.some(call => call[0] === 'append'), false);
+  assert.equal(mock.calls.some(call => call[0] === 'append'), false);
+  assert.equal(mock.leaseState, 'IDLE');
 });
