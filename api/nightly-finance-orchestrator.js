@@ -14,6 +14,11 @@ import { buildRopDailyControlWorkbook, receivablesValuesToStudents } from '../li
 import { buildRopMorningDashboard } from '../lib/rop-morning-dashboard.js';
 import { buildRopDebtorPriority, buildRopTasksToday } from '../lib/rop-tasks-today.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
+import { consumeOneTimeFinanceRunToken } from '../lib/one-time-finance-run-token.js';
+import {
+  createManualFinanceRunHandler,
+  hasManualFinanceRunToken
+} from '../lib/manual-finance-run-handler.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const RECEIVABLES_DETAIL_SHEET = 'АШК_Дебиторка__vercel';
@@ -448,7 +453,20 @@ const intradayHandler = createIntradayRopOrchestrator({
   runBalances: refreshBalancesMirrorOnly
 });
 
+const manualFinanceRunHandler = createManualFinanceRunHandler({
+  cronSecret: process.env.CRON_SECRET || '',
+  consumeToken: async providedToken => consumeOneTimeFinanceRunToken({
+    sheets: await getSheets(),
+    spreadsheetId: SPREADSHEET_ID,
+    providedToken
+  }),
+  runNightly: nightlyHandler
+});
+
 export default async function handler(req, res) {
+  if (hasManualFinanceRunToken(req)) {
+    return manualFinanceRunHandler(req, res);
+  }
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (INTRADAY_SCHEDULES.has(schedule)) {
     return intradayHandler(req, res);
