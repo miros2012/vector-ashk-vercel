@@ -70,7 +70,7 @@ function sheetsMock() {
         const op = requestBody.requests[0].findReplace;
         const changed = leaseState === op.find ? 1 : 0;
         if (changed) leaseState = op.replacement;
-        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] } };
+        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] };
       }
     }
   };
@@ -89,8 +89,11 @@ test('DDS writer uses an explicit A:M update after the last occupied A:S row', a
   assert.equal(result.verified, true);
   assert.equal(result.ddsAppended, 1);
   assert.equal(mock.calls.some(call => call[0] === 'append' && call[1].includes('ДДС: месяц')), false);
-  const write = mock.calls.find(call => call[0] === 'update');
-  assert.ok(write, 'expected explicit values.update for DDS');
+  const bodyReadIndex = mock.calls.findIndex(call => call[0] === 'get' && call[1].includes("'ДДС: месяц'!A5:S30000"));
+  const writeIndex = mock.calls.findIndex(call => call[0] === 'update');
+  assert.ok(bodyReadIndex >= 0, 'expected bounded A:S occupancy read');
+  assert.ok(writeIndex > bodyReadIndex, 'explicit DDS write must follow occupancy read');
+  const write = mock.calls[writeIndex];
   assert.equal(write[1], "'ДДС: месяц'!A7:M7");
   assert.equal(write[2][0][12], `Точка API | ${KEY}`);
 });
