@@ -187,3 +187,44 @@ test('nightly orchestrator discovers Data Health attached to the existing decisi
   assert.deepEqual(calls.map(item => item.name), ['hours', 'receivables', 'dataHealth', 'decisions']);
   assert.deepEqual(res.body.stages.dataHealth, { ok: true, statusCode: 200 });
 });
+
+test('nightly orchestrator refreshes the balance mirror before Data Health and decisions', async () => {
+  const calls = [];
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret-value',
+    runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runPayments: handlerReturning(200, { ok: true }, calls, 'payments'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
+    runBalances: handlerReturning(200, { ok: true, source: 'tochka_live' }, calls, 'balances'),
+    runDataHealth: handlerReturning(200, { ok: true, status: 'WARNING' }, calls, 'dataHealth'),
+    runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls.map(item => item.name), ['hours', 'payments', 'receivables', 'balances', 'dataHealth', 'decisions']);
+  assert.deepEqual(res.body.stages.balances, { ok: true, statusCode: 200 });
+});
+
+test('nightly orchestrator fails closed before Data Health when balance refresh fails', async () => {
+  const calls = [];
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret-value',
+    runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
+    runBalances: handlerReturning(502, { ok: false, error: 'balance mirror failed' }, calls, 'balances'),
+    runDataHealth: handlerReturning(200, { ok: true }, calls, 'dataHealth'),
+    runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
+
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(calls.map(item => item.name), ['hours', 'receivables', 'balances']);
+  assert.deepEqual(res.body.stages.balances, { ok: false, statusCode: 502 });
+  assert.equal(res.body.stages.dataHealth.skipped, true);
+  assert.equal(res.body.stages.decisions.skipped, true);
+});
