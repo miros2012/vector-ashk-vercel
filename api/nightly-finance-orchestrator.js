@@ -392,16 +392,16 @@ async function refreshRopFromStaging() {
 }
 
 async function syncRopDailyControlAndPublish(payload) {
+  const result = await syncRopSourceThenPublishTarget({
+    refreshSource: () => syncRopDailyControl(payload),
+    publishTarget: publishRopNow
+  });
   const receivablesLastSuccessUtc = new Date().toISOString();
   await writeControlMarker({
     sheets: await getSheets(),
     spreadsheetId: SPREADSHEET_ID,
     key: 'receivables_last_success_utc',
     value: receivablesLastSuccessUtc
-  });
-  const result = await syncRopSourceThenPublishTarget({
-    refreshSource: () => syncRopDailyControl(payload),
-    publishTarget: publishRopNow
   });
   return { ...result, sourceLastSuccessUtc: receivablesLastSuccessUtc };
 }
