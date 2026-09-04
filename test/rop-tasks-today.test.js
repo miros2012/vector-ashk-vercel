@@ -53,6 +53,30 @@ test('tasks today carries CONTROL priority without escalating it to TODAY', () =
   assert.equal(row[idx('Статус исполнения')], 'КОНТРОЛЬ');
 });
 
+test('tasks today allocates daily finance collection target proportionally to branch receivables', () => {
+  const result = buildRopTasksToday({
+    morningValues: MORNING_VALUES,
+    taskDate: '2026-09-02',
+    financeCollectionTarget: 100000,
+    financeCashGap: 200000
+  });
+  const headers = result.values[0];
+  const idx = name => headers.indexOf(name);
+  const rows = result.values.slice(1);
+  const gondatti = rows.find(row => row[idx('Филиал')] === 'Гондатти');
+  const melnikayte = rows.find(row => row[idx('Филиал')] === 'Мельникайте');
+
+  assert.notEqual(idx('План сбора ДЗ, ₽'), -1);
+  assert.notEqual(idx('Доля ДЗ к сбору'), -1);
+  assert.notEqual(idx('Финансовая цель'), -1);
+  assert.equal(gondatti[idx('План сбора ДЗ, ₽')], 42215);
+  assert.equal(melnikayte[idx('План сбора ДЗ, ₽')], 57785);
+  assert.equal(rows.reduce((sum, row) => sum + row[idx('План сбора ДЗ, ₽')], 0), 100000);
+  assert.ok(Math.abs(gondatti[idx('Доля ДЗ к сбору')] - (100000 / 555017)) < 1e-12);
+  assert.match(gondatti[idx('Финансовая цель')], /200.?000.*100.?000/i);
+  assert.equal(result.metrics.financeCollectionTarget, 100000);
+});
+
 test('debtor priority lists the largest debtors for problem branches and flags stale ownership', () => {
   assert.equal(typeof ropTasks.buildRopDebtorPriority, 'function');
   const receivablesValues = [
