@@ -259,15 +259,40 @@ export async function refreshBalancesMirrorOnly(req, res) {
       throw new Error('Google service account secrets missing');
     }
     const sheets = await sheetsClient();
+    const readiness = await readTochkaWebhookReadiness(sheets);
+    if (!readiness.mirrorReady) {
+      console.warn(JSON.stringify({
+        event: 'tochka-balances-mirror-only-blocked',
+        operationStatus: readiness.operationStatus,
+        missingDdsCount: readiness.missingDdsCount,
+        accountingReady: readiness.accountingReady,
+        reasons: readiness.reasons
+      }));
+      return res.status(409).json({
+        ok: false,
+        error: 'Tochka operation journal not ready for balance mirror',
+        mode: 'mirror_blocked',
+        operationStatus: readiness.operationStatus,
+        missingDdsCount: readiness.missingDdsCount,
+        accountingReady: readiness.accountingReady
+      });
+    }
     const result = await ensureBalanceMirror(sheets);
     console.log(JSON.stringify({
       event: 'tochka-balances-mirror-only',
       source: result.source,
       refreshed: result.refreshed,
       liveCount: result.liveCount,
-      lastUpdated: result.lastUpdated
+      lastUpdated: result.lastUpdated,
+      accountingReady: readiness.accountingReady,
+      missingDdsCount: readiness.missingDdsCount
     }));
-    return res.status(200).json({ ok: true, ...result });
+    return res.status(200).json({
+      ok: true,
+      ...result,
+      accountingReady: readiness.accountingReady,
+      missingDdsCount: readiness.missingDdsCount
+    });
   } catch (error) {
     console.error('balances-mirror-only:', error?.name || 'Error');
     return res.status(500).json({ ok: false, error: 'Balance mirror refresh failed' });
