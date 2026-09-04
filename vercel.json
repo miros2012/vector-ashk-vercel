@@ -17,10 +17,13 @@
     "api/master-hours-diagnostic.js": { "maxDuration": 60 },
     "api/sync-hours.js": { "maxDuration": 60 },
     "api/sync-payments.js": { "maxDuration": 60 },
+    "api/tochka-operations-refresh.js": { "maxDuration": 60 },
     "api/nightly-finance-orchestrator.js": { "maxDuration": 180 }
   },
   "crons": [
+    { "path": "/api/tochka-operations-refresh", "schedule": "28 21 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "30 21 * * *" },
+    { "path": "/api/tochka-operations-refresh", "schedule": "58 3-14 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 4 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 5 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 6 * * *" },
