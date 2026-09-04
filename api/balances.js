@@ -10,7 +10,10 @@ import { createDecisionEventApi } from '../lib/decision-event-api.js';
 import { createOwnerActionControlSheetAdapter } from '../lib/owner-action-control-sheet-adapter.js';
 import { createOwnerActionQueueApi } from '../lib/owner-action-queue-api.js';
 import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sheet-adapter.js';
-import { evaluateTochkaWebhookReadiness } from '../lib/tochka-webhook-readiness.js';
+import {
+  evaluateTochkaWebhookReadiness,
+  evaluateCandidateBalanceReadiness
+} from '../lib/tochka-webhook-readiness.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const BALANCES_SHEET = 'Точка_Остатки';
@@ -313,11 +316,14 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
       throw new Error('Google service account secrets missing');
     }
     const sheets = await sheetsClient();
+    const raw = await fetchLiveBalances();
+    const normalized = normalizeBalances(raw);
     const readiness = await readTochkaWebhookReadiness(sheets);
     if (!readiness.mirrorReady) {
       console.warn(JSON.stringify({
         event: 'tochka-webhook-balance-mirror-blocked',
         operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
         missingDdsCount: readiness.missingDdsCount,
         accountingReady: readiness.accountingReady,
         reasons: readiness.reasons
@@ -327,17 +333,44 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
         error: 'Tochka operation journal not ready for balance mirror',
         mode: 'mirror_blocked',
         operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
         missingDdsCount: readiness.missingDdsCount,
         accountingReady: readiness.accountingReady
       });
     }
-    const raw = await fetchLiveBalances();
-    const normalized = normalizeBalances(raw);
+
+    const candidateReadiness = evaluateCandidateBalanceReadiness({ readiness, normalized });
+    if (!candidateReadiness.ok) {
+      console.warn(JSON.stringify({
+        event: 'tochka-webhook-candidate-balance-blocked',
+        operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
+        candidateTimestamp: candidateReadiness.candidateTimestamp,
+        skewMinutes: candidateReadiness.skewMinutes,
+        reason: candidateReadiness.reason
+      }));
+      return res.status(409).json({
+        ok: false,
+        error: 'Tochka candidate balance is ahead of operation journal',
+        mode: 'candidate_balance_blocked',
+        operationStatus: readiness.operationStatus,
+        operationAgeHours: readiness.operationAgeHours,
+        candidateTimestamp: candidateReadiness.candidateTimestamp,
+        skewMinutes: candidateReadiness.skewMinutes,
+        reason: candidateReadiness.reason,
+        accountingReady: readiness.accountingReady,
+        missingDdsCount: readiness.missingDdsCount
+      });
+    }
+
     const mirror = await mirrorToGoogleSheet(normalized, sheets);
     console.log(JSON.stringify({
       event: 'tochka-webhook-balance-mirror-only',
       liveCount: normalized.summary.liveCount,
       mirroredAt: mirror.mirroredAt,
+      operationAgeHours: readiness.operationAgeHours,
+      candidateTimestamp: candidateReadiness.candidateTimestamp,
+      skewMinutes: candidateReadiness.skewMinutes,
       accountingReady: readiness.accountingReady,
       missingDdsCount: readiness.missingDdsCount
     }));
@@ -348,6 +381,9 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
       liveCount: normalized.summary.liveCount,
       lastUpdated: mirror.mirroredAt,
       mode: 'mirror_only',
+      operationAgeHours: readiness.operationAgeHours,
+      candidateTimestamp: candidateReadiness.candidateTimestamp,
+      skewMinutes: candidateReadiness.skewMinutes,
       accountingReady: readiness.accountingReady,
       missingDdsCount: readiness.missingDdsCount
     });
