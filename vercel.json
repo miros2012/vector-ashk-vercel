@@ -32,7 +32,7 @@
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 12 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 13 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 14 * * *" },
-    { "path": "/api/nightly-finance-orchestrator", "schedule": "0 15 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "5 14 4 9 *" },
     { "path": "/api/health", "schedule": "35 21 * * *" }
   ]
 }
