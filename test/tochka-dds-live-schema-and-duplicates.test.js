@@ -69,7 +69,7 @@ function sheetsMock({ ddsCount = 1, journalCount = 1 } = {}) {
         const op = requestBody.requests[0].findReplace;
         const changed = leaseState === op.find ? 1 : 0;
         if (changed) leaseState = op.replacement;
-        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] };
+        return { data: { replies: [{ findReplace: { occurrencesChanged: changed } }] } };
       }
     }
   };
