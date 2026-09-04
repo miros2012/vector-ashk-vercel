@@ -168,3 +168,22 @@ test('nightly orchestrator blocks decisions when Data Health rejects stale core 
     }
   });
 });
+
+test('nightly orchestrator discovers Data Health attached to the existing decisions handler', async () => {
+  const calls = [];
+  const decisions = handlerReturning(200, { ok: true }, calls, 'decisions');
+  decisions.dataHealth = handlerReturning(200, { ok: true, status: 'WARNING' }, calls, 'dataHealth');
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret-value',
+    runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
+    runDecisions: decisions
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls.map(item => item.name), ['hours', 'receivables', 'dataHealth', 'decisions']);
+  assert.deepEqual(res.body.stages.dataHealth, { ok: true, statusCode: 200 });
+});
