@@ -5,6 +5,7 @@ import { evaluateTochkaWebhookReadiness } from '../lib/tochka-webhook-readiness.
 
 const balancesSource = await readFile(new URL('../api/balances.js', import.meta.url), 'utf8');
 
+// Regression: live bank visibility must not depend on accounting classification cadence.
 test('webhook readiness separates live balance mirror readiness from accounting readiness', () => {
   const ready = evaluateTochkaWebhookReadiness([
     ['Точка операции', 'последняя загрузка Точка_API', 46269.62, 0.1, 0.25, 2, 'OK'],
