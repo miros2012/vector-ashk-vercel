@@ -20,7 +20,7 @@ function mockSheets() {
   const calls = [];
   const shiftedArtifact = ['', '', '', '', '', '', 'Сентябрь', 9, 46269, -14000, 1, '', 'ООО "Банк Точка"', 'artifact'];
   const values = {
-    batchGet: async ({ ranges }) => ({ data: { valueRanges: [
+    batchGet: async () => ({ data: { valueRanges: [
       { values: [HEADER, ...rows] },
       { values: ddsComments },
       { values: journal },
@@ -31,6 +31,7 @@ function mockSheets() {
       calls.push(['get', range]);
       if (range === "'ДДС: месяц'!A7:S8") return { data: { values: [shiftedArtifact, shiftedArtifact] } };
       if (range === "'ДДС: месяц'!A7:S2006") return { data: { values: [shiftedArtifact, shiftedArtifact] } };
+      if (range === "'ДДС: месяц'!A9:S10") return { data: { values: [] } };
       if (range.includes("'ДДС: месяц'!M5:M30000")) return { data: { values: ddsComments } };
       if (range.includes("'Журнал Точка → ДДС'!A2:E3000")) return { data: { values: journal } };
       throw new Error(`Unexpected get range: ${range}`);
@@ -74,5 +75,6 @@ test('skips a shifted G:S artifact block and writes to the next contiguous empty
   assert.equal(result.verified, true);
   assert.equal(result.ddsAppended, 2);
   assert.equal(mock.calls.some(call => call[0] === 'get' && call[1] === "'ДДС: месяц'!A7:S2006"), true);
+  assert.equal(mock.calls.some(call => call[0] === 'get' && call[1] === "'ДДС: месяц'!A9:S10"), true);
   assert.equal(mock.calls.some(call => call[0] === 'update' && call[1] === "'ДДС: месяц'!A9:M10"), true);
 });
