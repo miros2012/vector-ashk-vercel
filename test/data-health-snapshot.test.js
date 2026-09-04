@@ -4,7 +4,7 @@ import { evaluateDataHealthSnapshot, parseDataHealthSnapshot } from '../lib/data
 
 const HEADER = ['Контур', 'Метрика', 'Значение', 'Статус', 'Источник', 'Дата источника', 'Комментарий'];
 
-function operationalRows({ bankAge = 0.13, transactionsAge = 0.20 } = {}) {
+function operationalRows({ bankAge = 0.13, transactionsAge = 0.20, missingDdsToday = 0 } = {}) {
   return [
     ['DATA HEALTH — КОНТРОЛЬ СВЕЖЕСТИ ИСТОЧНИКОВ', 'Контроль', 'Последний маркер', 'Возраст / отклонение, ч'],
     ['Источник', 'Что проверяем', 'Последний маркер', 'Возраст, ч', 'WARN, ч', 'ERROR, ч', 'Статус'],
@@ -24,7 +24,10 @@ function operationalRows({ bankAge = 0.13, transactionsAge = 0.20 } = {}) {
     ['Касса', 'Самый старый факт филиала', 46251, 'RISK'],
     ['Касса', 'Устаревшие филиалы', 'Герцена, Мельникайте, Монтажников', 'RISK'],
     ['Касса', 'Филиалы с расхождением / проверкой', 'Сити-молл', 'REVIEW'],
-    ['Точка операции', 'последняя загрузка Точка_API', 46269.57, transactionsAge, 0.25, 2, 'OK']
+    ['Точка операции', 'последняя загрузка Точка_API', 46269.57, transactionsAge, 0.25, 2, 'OK'],
+    ['Филиал', 'Последняя дата журнала', 'Факт наличных, ₽', 'Проверка остатка'],
+    ['Герцена', '01.09.2026', 124053, 'Сходится'],
+    ['Точка → ДДС', 'внешних операций сегодня не дошло', missingDdsToday, missingDdsToday ? 'RISK' : 'OK']
   ];
 }
 
@@ -69,6 +72,7 @@ test('parses finance data health metrics without relying on fixed row numbers', 
   assert.deepEqual(snapshot.sales, { ropDeficitToDate: 716348.47 });
   assert.deepEqual(snapshot.receivables, { current: 3069255 });
   assert.deepEqual(snapshot.drivingFund, { deficit: 1336658.02 });
+  assert.deepEqual(snapshot.tochkaDds, { missingToday: null });
   assert.equal(snapshot.systemStatus, 'RISK');
 });
 
@@ -92,6 +96,7 @@ test('parses the current operational Data Health sheet layout and source freshne
   });
   assert.equal(snapshot.cash.staleBranches, 'Герцена, Мельникайте, Монтажников');
   assert.equal(snapshot.cash.reviewBranches, 'Сити-молл');
+  assert.deepEqual(snapshot.tochkaDds, { missingToday: 0 });
 });
 
 test('financial RISK and stale manual cash stay warnings while coherent core sources pass the gate', () => {
@@ -104,6 +109,16 @@ test('financial RISK and stale manual cash stay warnings while coherent core sou
   assert.ok(health.warnings.includes('financial-risk'));
   assert.ok(health.warnings.includes('cash-stale'));
   assert.ok(health.warnings.includes('cash-review'));
+});
+
+test('incomplete Tochka to DDS coverage blocks decisions even when the coverage row is after the cash branch table', () => {
+  const snapshot = parseDataHealthSnapshot(operationalRows({ missingDdsToday: 8 }));
+  const health = evaluateDataHealthSnapshot(snapshot);
+
+  assert.deepEqual(snapshot.tochkaDds, { missingToday: 8 });
+  assert.equal(health.ok, false);
+  assert.equal(health.status, 'BLOCKED');
+  assert.ok(health.consistencyErrors.includes('tochka dds coverage incomplete'));
 });
 
 test('source beyond its error threshold blocks downstream financial decisions', () => {
