@@ -23,6 +23,6 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Check API entrypoint syntax
-        run: node --check api/nightly-finance-orchestrator.js
+        run: find api -type f -name '*.js' -print0 | xargs -0 -n1 node --check
       - name: Run full test suite
         run: npm test
