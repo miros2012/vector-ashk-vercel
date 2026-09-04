@@ -12,11 +12,11 @@ test('manual finance run is handled inside the existing nightly route', () => {
   const source = fs.readFileSync(routePath, 'utf8');
   assert.match(source, /one-time-finance-run-token\.js/);
   assert.match(source, /manual-finance-run-handler\.js/);
-  assert.match(source, /finance_run_token/);
   assert.match(source, /consumeOneTimeFinanceRunToken/);
   assert.match(source, /createManualFinanceRunHandler/);
+  assert.match(source, /hasManualFinanceRunToken\(req\)/);
 
-  const manualCheck = source.indexOf('finance_run_token');
+  const manualCheck = source.lastIndexOf('hasManualFinanceRunToken(req)');
   const intradayDispatch = source.indexOf('INTRADAY_SCHEDULES.has');
   assert.ok(manualCheck >= 0 && intradayDispatch >= 0 && manualCheck < intradayDispatch);
 });
