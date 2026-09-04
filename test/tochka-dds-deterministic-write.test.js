@@ -14,32 +14,20 @@ const ROW = [
   'cbs-tb;2480513383;1'
 ];
 
-test('DDS writer targets an explicit A:M row instead of table-relative append', async () => {
+test('DDS append is anchored to the canonical A:M table body', async () => {
   const calls = [];
-  const ddsComments = [['old-1'], ['old-2'], ['comment-only']];
+  const ddsComments = [];
   const journal = [];
   const values = {
     batchGet: async ({ ranges }) => ({
-      data: { valueRanges: ranges.map(range => {
-        if (range.includes('API → ДДС готово')) return { values: [HEADER, ROW] };
-        if (range.includes('ДДС: месяц') && range.includes('A5:A')) {
-          return { values: [['Август'], ['Сентябрь'], []] };
-        }
-        if (range.includes('ДДС: месяц') && range.includes('M5:M')) {
-          return { values: ddsComments };
-        }
-        if (range.includes('Журнал Точка → ДДС')) return { values: journal };
-        throw new Error(`unexpected range ${range}`);
-      }) }
+      data: { valueRanges: [
+        { values: [HEADER, ROW] },
+        { values: ddsComments },
+        { values: journal }
+      ] }
     }),
     append: async payload => {
       calls.push(['append', payload.range]);
-      if (payload.range.includes('ДДС: месяц')) ddsComments.push([ROW[12]]);
-      if (payload.range.includes('Журнал Точка → ДДС')) journal.push(...payload.requestBody.values);
-      return {};
-    },
-    update: async payload => {
-      calls.push(['update', payload.range]);
       if (payload.range.includes('ДДС: месяц')) ddsComments.push([ROW[12]]);
       if (payload.range.includes('Журнал Точка → ДДС')) journal.push(...payload.requestBody.values);
       return {};
@@ -58,7 +46,6 @@ test('DDS writer targets an explicit A:M row instead of table-relative append', 
     now: () => new Date('2026-09-04T15:00:00.000Z')
   });
 
-  assert.deepEqual(calls[0], ['update', "'ДДС: месяц'!A8:M8"]);
-  assert.equal(calls.some(([method]) => method === 'append'), false);
-  assert.deepEqual(calls[1], ['update', "'Журнал Точка → ДДС'!A2:E2"]);
+  assert.deepEqual(calls[0], ['append', "'ДДС: месяц'!A5:M30000"]);
+  assert.deepEqual(calls[1], ['append', "'Журнал Точка → ДДС'!A:E"]);
 });
