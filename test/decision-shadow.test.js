@@ -34,7 +34,7 @@ test('shadow mode reproduces all four current decision states from a standard fi
   const currentDecisions = [
     { ruleId: 'DEC-CASH-GAP', active: false, amount: 0, dueDate: null, linkedObjects: [] },
     { ruleId: 'DEC-EST-ADJ', active: true, amount: 857000, dueDate: null, linkedObjects: ['MASTERS-2026-08'] },
-    { ruleId: 'DEC-UNCONF-OBL', active: true, amount: null, dueDate: null, linkedObjects: ['TAX-RESERVE'] },
+    { ruleId: 'DEC-UNCONF-OBL', active: true, amount: 500000, dueDate: null, linkedObjects: ['ADMIN-2026-08', 'TAX-RESERVE'] },
     { ruleId: 'DEC-CRIT-DUE', active: true, amount: 1179607.46625, dueDate: '2026-09-03', linkedObjects: ['ROYALTY-2026-08'] }
   ];
 
@@ -46,7 +46,22 @@ test('shadow mode reproduces all four current decision states from a standard fi
   assert.equal(comparison.results.find((row) => row.ruleId === 'DEC-CRIT-DUE').shadow.amount, 1179607.46625);
   assert.equal(snapshot.obligations.estimatedAdjustments.count, 2);
   assert.equal(snapshot.obligations.estimatedAdjustments.amount, 857000);
-  assert.deepEqual(snapshot.obligations.unconfirmed.objectIds, ['TAX-RESERVE']);
+  assert.equal(snapshot.obligations.unconfirmed.count, 2);
+  assert.equal(snapshot.obligations.unconfirmed.amount, 500000);
+  assert.deepEqual(snapshot.obligations.unconfirmed.objectIds, ['ADMIN-2026-08', 'TAX-RESERVE']);
+});
+
+test('exact obligation estimate is treated as unconfirmed financial risk', () => {
+  const snapshot = buildDecisionFinancialSnapshot({
+    asOfDate: '2026-09-05',
+    obligationRows: [
+      { id: 'ADMIN-2026-08', dueDate: '2026-09-05', remaining: 500000, priority: 'Критический', status: 'Оценка' }
+    ]
+  });
+
+  assert.equal(snapshot.obligations.unconfirmed.count, 1);
+  assert.equal(snapshot.obligations.unconfirmed.amount, 500000);
+  assert.deepEqual(snapshot.obligations.unconfirmed.objectIds, ['ADMIN-2026-08']);
 });
 
 test('shadow comparison reports a precise mismatch instead of silently accepting drift', () => {
