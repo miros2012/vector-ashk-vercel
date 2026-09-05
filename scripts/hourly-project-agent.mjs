@@ -14,6 +14,7 @@ import {
 import {
   buildAgentBranchName,
   buildAgentRequestBody,
+  buildAgentRunKey,
   hasOpenAgentPull,
   verifyProposalChangeSet
 } from '../lib/hourly-project-agent-runner.js';
@@ -21,6 +22,7 @@ import {
 const REPOSITORY = String(process.env.GITHUB_REPOSITORY || '').trim();
 const GITHUB_TOKEN = String(process.env.GITHUB_TOKEN || '').trim();
 const RUN_ID = String(process.env.GITHUB_RUN_ID || '').trim();
+const RUN_ATTEMPT = String(process.env.GITHUB_RUN_ATTEMPT || '1').trim();
 const ENDPOINT = String(
   process.env.HOURLY_AGENT_ENDPOINT
     || 'https://vector-ashk-backend.vercel.app/api/health'
@@ -65,6 +67,21 @@ async function github(pathname, { method = 'GET', body, allow404 = false } = {})
   return response.json();
 }
 
+function runCommand(command, args, { allowFailure = false, timeout = 60_000 } = {}) {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    maxBuffer: 12 * 1024 * 1024,
+    env: process.env,
+    timeout
+  });
+  const output = sanitizeVerificationOutput(`${result.stdout || ''}${result.stderr || ''}`);
+  const ok = result.status === 0 && !result.error;
+  if (!allowFailure && !ok) {
+    throw new Error(`${command} failed\n${output || result.error?.message || ''}`);
+  }
+  return { ok, output, status: result.status, error: result.error || null };
+}
+
 async function listOpenIssues() {
   return github('/issues?state=open&per_page=100&sort=created&direction=asc');
 }
@@ -73,9 +90,11 @@ async function listOpenPulls() {
   return github('/pulls?state=open&per_page=100');
 }
 
-async function readMainBase() {
-  const reference = await github('/git/ref/heads/main');
-  const baseSha = required(reference?.object?.sha, 'main commit sha');
+function localHeadSha() {
+  return required(runCommand('git', ['rev-parse', 'HEAD']).output, 'checkout commit sha');
+}
+
+async function readMainBase(baseSha) {
   const commit = await github(`/git/commits/${baseSha}`);
   return {
     baseSha,
@@ -116,9 +135,9 @@ async function githubOidcToken() {
   return required(payload?.value, 'GitHub OIDC token');
 }
 
-async function generateProposal({ issue, files, attempt, testFailure = '' }) {
+async function generateProposal({ issue, files, runKey, attempt, testFailure = '' }) {
   const oidcToken = await githubOidcToken();
-  const request = buildAgentRequestBody({ issue, files, runId: RUN_ID, attempt, testFailure });
+  const request = buildAgentRequestBody({ issue, files, runId: runKey, attempt, testFailure });
   const response = await fetch(ENDPOINT, {
     method: 'POST',
     headers: {
@@ -175,21 +194,6 @@ function actualChangedPaths(baseFiles, allowedFiles) {
   return ensureOnlyAllowedChanges(changed, allowedFiles);
 }
 
-function runCommand(command, args, { allowFailure = false, timeout = 60_000 } = {}) {
-  const result = spawnSync(command, args, {
-    encoding: 'utf8',
-    maxBuffer: 12 * 1024 * 1024,
-    env: process.env,
-    timeout
-  });
-  const output = sanitizeVerificationOutput(`${result.stdout || ''}${result.stderr || ''}`);
-  const ok = result.status === 0 && !result.error;
-  if (!allowFailure && !ok) {
-    throw new Error(`${command} failed\n${output || result.error?.message || ''}`);
-  }
-  return { ok, output, status: result.status, error: result.error || null };
-}
-
 function assertCleanCheckout() {
   const result = runCommand('git', ['status', '--porcelain']);
   if (result.output.trim()) throw new Error('checkout is not clean before agent changes');
@@ -208,13 +212,15 @@ function copyVerificationWorkspace(destination) {
   });
 }
 
-function runVerification() {
+function runVerification(runKey) {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'vector-hourly-agent-'));
+  const containerName = `vector-hourly-agent-${runKey}`.replace(/[^A-Za-z0-9_.-]/g, '-').slice(0, 120);
   try {
     copyVerificationWorkspace(sandbox);
     const command = "find api lib test scripts -type f \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -r -n1 node --check && npm test";
     const result = runCommand('docker', [
       'run',
+      '--name', containerName,
       '--rm',
       '--network', 'none',
       '--cap-drop', 'ALL',
@@ -226,7 +232,7 @@ function runVerification() {
       '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m',
       '--env', 'CI=true',
       '--env', 'HOME=/tmp',
-      '--volume', `${sandbox}:/workspace:rw`,
+      '--volume', `${sandbox}:/workspace:ro`,
       '--volume', `${path.join(process.cwd(), 'node_modules')}:/workspace/node_modules:ro`,
       '--workdir', '/workspace',
       VERIFY_IMAGE,
@@ -237,6 +243,7 @@ function runVerification() {
       output: sanitizeVerificationOutput(result.output || result.error?.message || '').slice(-MAX_COMMAND_OUTPUT)
     };
   } finally {
+    runCommand('docker', ['rm', '-f', containerName], { allowFailure: true, timeout: 30_000 });
     fs.rmSync(sandbox, { recursive: true, force: true });
   }
 }
@@ -294,6 +301,18 @@ async function createAgentCommit({ baseSha, baseTreeSha, branch, issue, changedP
   return commit;
 }
 
+async function publishVerificationStatus(commitSha) {
+  return github(`/statuses/${commitSha}`, {
+    method: 'POST',
+    body: {
+      state: 'success',
+      context: 'hourly-agent/isolated-verification',
+      description: 'No-network syntax and full tests passed',
+      target_url: `https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}`
+    }
+  });
+}
+
 async function createPullRequest({ issue, branch, proposal, model, changedPaths }) {
   const body = [
     `Closes #${issue.number}.`,
@@ -329,16 +348,19 @@ async function main() {
   required(REPOSITORY, 'GITHUB_REPOSITORY');
   required(GITHUB_TOKEN, 'GITHUB_TOKEN');
   required(RUN_ID, 'GITHUB_RUN_ID');
+  required(RUN_ATTEMPT, 'GITHUB_RUN_ATTEMPT');
   if (REPOSITORY !== 'miros2012/vector-ashk-vercel') throw new Error('unexpected repository');
   if (!/^https:\/\/vector-ashk-backend\.vercel\.app\/api\/health$/.test(ENDPOINT)) {
     throw new Error('unexpected hourly agent endpoint');
   }
   assertCleanCheckout();
 
+  const runKey = buildAgentRunKey(RUN_ID, RUN_ATTEMPT);
+  const checkoutSha = localHeadSha();
   const [issues, pulls, base] = await Promise.all([
     listOpenIssues(),
     listOpenPulls(),
-    readMainBase()
+    readMainBase(checkoutSha)
   ]);
   if (hasOpenAgentPull(pulls)) {
     console.log('Hourly agent skipped: an agent pull request is already open.');
@@ -357,7 +379,7 @@ async function main() {
   await updateIssue(issue.number, { title: markIssueInProgressTitle(issue.title) });
 
   try {
-    let generation = await generateProposal({ issue, files: baseFiles, attempt: 1 });
+    let generation = await generateProposal({ issue, files: baseFiles, runKey, attempt: 1 });
     if (generation.proposal.needsHumanReview) {
       await markForReview(issue, generation.proposal.reviewReason || 'The proposal requested review.');
       return;
@@ -365,12 +387,13 @@ async function main() {
 
     writeProposal(generation.proposal, allowedFiles);
     let changedPaths = actualChangedPaths(baseFiles, allowedFiles);
-    let verification = runVerification();
+    let verification = runVerification(runKey);
 
     if (!verification.ok) {
       generation = await generateProposal({
         issue,
         files: currentAllowedFiles(allowedFiles),
+        runKey,
         attempt: 2,
         testFailure: verification.output
       });
@@ -380,7 +403,7 @@ async function main() {
       }
       writeProposal(generation.proposal, allowedFiles);
       changedPaths = actualChangedPaths(baseFiles, allowedFiles);
-      verification = runVerification();
+      verification = runVerification(runKey);
     }
 
     if (!verification.ok) {
@@ -390,14 +413,15 @@ async function main() {
     }
 
     changedPaths = actualChangedPaths(baseFiles, allowedFiles);
-    const branch = buildAgentBranchName(issue.number, RUN_ID);
-    await createAgentCommit({
+    const branch = buildAgentBranchName(issue.number, runKey);
+    const commit = await createAgentCommit({
       baseSha: base.baseSha,
       baseTreeSha: base.baseTreeSha,
       branch,
       issue,
       changedPaths
     });
+    await publishVerificationStatus(required(commit?.sha, 'agent commit sha'));
     const pull = await createPullRequest({
       issue,
       branch,
