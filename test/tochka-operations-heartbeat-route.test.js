@@ -13,7 +13,8 @@ test('health route records only an authorized Tochka operation refresh heartbeat
   assert.match(source, /timingSafeEqual/);
   assert.match(source, /\['x-vector-key'\]/);
   assert.match(source, /\['x-vector-refresh'\]/);
-  assert.match(source, /'__vercel_control'!A:B/);
+  assert.match(source, /CONTROL_SHEET = '__vercel_control'/);
+  assert.match(source, /range: `\'\$\{CONTROL_SHEET\}\'!A:B`/);
 
   const handlerAt = source.indexOf('async function handleTochkaOperationsRefreshSuccess');
   const sheetsAt = source.indexOf('const sheets = await getSheets()', handlerAt);
