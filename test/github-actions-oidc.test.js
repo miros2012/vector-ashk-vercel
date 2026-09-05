@@ -4,13 +4,14 @@ import { generateKeyPairSync, sign } from 'node:crypto';
 import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
 
 const nowSeconds = 1_800_000_000;
+const immutableSubject = 'repo:miros2012@46207692/vector-ashk-vercel@1350493825:ref:refs/heads/main';
 const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'test-key', alg: 'RS256', use: 'sig' };
 
 const baseClaims = {
   iss: 'https://token.actions.githubusercontent.com',
   aud: 'vector-hourly-agent-v1',
-  sub: 'repo:miros2012/vector-ashk-vercel:ref:refs/heads/main',
+  sub: immutableSubject,
   repository: 'miros2012/vector-ashk-vercel',
   repository_id: '1350493825',
   repository_owner_id: '46207692',
@@ -18,6 +19,8 @@ const baseClaims = {
   workflow_ref: 'miros2012/vector-ashk-vercel/.github/workflows/hourly-project-continuation.yml@refs/heads/main',
   event_name: 'schedule',
   actor_id: '46207692',
+  run_id: '33964889799',
+  run_attempt: '2',
   iat: nowSeconds - 5,
   nbf: nowSeconds - 5,
   exp: nowSeconds + 300,
@@ -44,6 +47,9 @@ test('verifies signature, issuer, audience, time and repository-bound claims', a
     now: () => nowSeconds * 1000
   });
   assert.equal(claims.repository, 'miros2012/vector-ashk-vercel');
+  assert.equal(claims.sub, immutableSubject);
+  assert.equal(claims.run_id, '33964889799');
+  assert.equal(claims.run_attempt, '2');
 });
 
 test('rejects a token signed by an untrusted key', async () => {
@@ -69,6 +75,21 @@ test('rejects a wrong audience before authorizing the workflow', async () => {
   await assert.rejects(
     verifyGitHubActionsOidcToken(token({ ...baseClaims, aud: 'other-service' }), { fetchImpl: fetchJwks, now: () => nowSeconds * 1000 }),
     /audience/i
+  );
+});
+
+test('requires run identity claims for request binding', async () => {
+  const withoutRunId = { ...baseClaims };
+  delete withoutRunId.run_id;
+  await assert.rejects(
+    verifyGitHubActionsOidcToken(token(withoutRunId), { fetchImpl: fetchJwks, now: () => nowSeconds * 1000 }),
+    /run_id/i
+  );
+  const withoutRunAttempt = { ...baseClaims };
+  delete withoutRunAttempt.run_attempt;
+  await assert.rejects(
+    verifyGitHubActionsOidcToken(token(withoutRunAttempt), { fetchImpl: fetchJwks, now: () => nowSeconds * 1000 }),
+    /run_attempt/i
   );
 });
 
