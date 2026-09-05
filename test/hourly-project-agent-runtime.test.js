@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildAgentBranchName,
   buildAgentRequestBody,
+  buildAgentRunKey,
   hasOpenAgentPull,
   verifyProposalChangeSet
 } from '../lib/hourly-project-agent-runner.js';
@@ -18,17 +19,22 @@ const files = [
   { path: 'test/range-capacity.test.js', content: '', exists: false }
 ];
 
-test('builds a deterministic isolated branch without ever targeting main', () => {
-  assert.equal(buildAgentBranchName(42, '33964889799'), 'agent/issue-42-run-33964889799');
-  assert.throws(() => buildAgentBranchName(0, '1'), /issue/i);
-  assert.throws(() => buildAgentBranchName(42, '../main'), /run/i);
+test('builds a retry-unique run key and deterministic isolated branch', () => {
+  assert.equal(buildAgentRunKey('33964889799', '2'), '33964889799-attempt-2');
+  assert.equal(
+    buildAgentBranchName(42, buildAgentRunKey('33964889799', '2')),
+    'agent/issue-42-run-33964889799-attempt-2'
+  );
+  assert.throws(() => buildAgentRunKey('../main', '1'), /run/i);
+  assert.throws(() => buildAgentRunKey('1', '0'), /attempt/i);
+  assert.throws(() => buildAgentBranchName(0, '1-attempt-1'), /issue/i);
 });
 
 test('builds a bounded request for one issue and one repair attempt', () => {
   const request = buildAgentRequestBody({
     issue,
     files,
-    runId: '33964889799',
+    runId: '33964889799-attempt-2',
     attempt: 2,
     testFailure: `failed\n${'x'.repeat(20_000)}`
   });
@@ -37,7 +43,7 @@ test('builds a bounded request for one issue and one repair attempt', () => {
   assert.equal(request.task.attempt, 2);
   assert.equal(request.task.files.length, 2);
   assert.ok(request.task.testFailure.length <= 12_000);
-  assert.match(request.requestId, /^gha-33964889799-42-2$/);
+  assert.match(request.requestId, /^gha-33964889799-attempt-2-42-2$/);
 });
 
 test('recognizes any existing agent pull request as a serialization gate', () => {
