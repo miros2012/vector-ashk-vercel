@@ -57,3 +57,17 @@ test('queue structure CHECK blocks even when a stale coverage formula reports ze
   assert.equal(health.status, 'BLOCKED');
   assert.ok(health.consistencyErrors.includes('tochka dds queue structure inconsistent'));
 });
+
+test('present queue structure row with a blank status also fails closed', () => {
+  const rows = queueMismatchRows();
+  rows.at(-1)[3] = '';
+
+  const snapshot = parseDataHealthSnapshot(rows);
+  const health = evaluateDataHealthSnapshot(snapshot);
+
+  assert.equal(Object.hasOwn(snapshot.tochkaDds, 'queueStructureStatus'), true);
+  assert.equal(snapshot.tochkaDds.queueStructureStatus, '');
+  assert.equal(health.ok, false);
+  assert.equal(health.status, 'BLOCKED');
+  assert.ok(health.consistencyErrors.includes('tochka dds queue structure inconsistent'));
+});
