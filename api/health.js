@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { getVercelOidcToken } from '@vercel/oidc';
 import { google } from 'googleapis';
 import { createRopPublisher } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
@@ -7,10 +8,13 @@ import {
   evaluateTochkaOperationAck,
   normalizeExpectedOperationIdentifiers
 } from '../lib/tochka-operation-ack.js';
+import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
+import { createHourlyProjectAgentService } from '../lib/hourly-project-agent.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 const PUBLISH_SCHEDULES = new Set(['35 21 * * *']);
+const HOURLY_AGENT_MODES = new Set(['hourly_agent_probe', 'hourly_agent_patch']);
 const CONTROL_SHEET = '__vercel_control';
 const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
 const TOCHKA_HEARTBEAT_KEY_HASH_MARKER = 'tochka_operations_heartbeat_key_sha256';
@@ -75,7 +79,7 @@ async function ensureTargetSheet(sheets, spreadsheetId, sheetName, rowCount, col
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
-        requests: [{ addSheet: { properties: { title: sheetName, gridProperties: { rowCount, columnCount, frozenRowCount: 1 } } } }]
+        requests: [{ addSheet: { properties: { title: sheetName, gridProperties: { rowCount, columnCount, frozenRowCount: 1 } } }]
       }
     });
     return;
@@ -136,6 +140,11 @@ export const publishRopNow = createRopPublisher({
   writeSheet: writeTargetSheet
 });
 
+const hourlyProjectAgentService = createHourlyProjectAgentService({
+  verifyToken: verifyGitHubActionsOidcToken,
+  getGatewayToken: getVercelOidcToken
+});
+
 function isAuthorizedCron(req) {
   const expected = String(process.env.CRON_SECRET || '').trim();
   const actual = String(req?.headers?.authorization || '');
@@ -186,6 +195,14 @@ function requestBody(req) {
     }
   }
   return {};
+}
+
+async function handleHourlyProjectAgent(req, res, body) {
+  const result = await hourlyProjectAgentService({
+    authorization: req?.headers?.authorization,
+    body
+  });
+  return res.status(result.status).json(result.body);
 }
 
 async function handleTochkaOperationsRefreshSuccess(req, res) {
@@ -257,11 +274,16 @@ async function handleTochkaOperationAck(req, res, body) {
 
 export default async function handler(req, res) {
   const body = requestBody(req);
-  if (String(req?.method || '').toUpperCase() === 'POST' && String(body?.mode || '') === 'operations_refresh_success') {
+  const method = String(req?.method || '').toUpperCase();
+  if (method === 'POST' && HOURLY_AGENT_MODES.has(String(body?.mode || ''))) {
+    res.setHeader?.('Cache-Control', 'no-store');
+    return handleHourlyProjectAgent(req, res, body);
+  }
+  if (method === 'POST' && String(body?.mode || '') === 'operations_refresh_success') {
     res.setHeader?.('Cache-Control', 'no-store');
     return handleTochkaOperationsRefreshSuccess(req, res);
   }
-  if (String(req?.method || '').toUpperCase() === 'POST' && String(body?.mode || '') === 'operation_ack') {
+  if (method === 'POST' && String(body?.mode || '') === 'operation_ack') {
     res.setHeader?.('Cache-Control', 'no-store');
     return handleTochkaOperationAck(req, res, body);
   }
@@ -269,7 +291,7 @@ export default async function handler(req, res) {
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (PUBLISH_SCHEDULES.has(schedule)) {
     res.setHeader?.('Cache-Control', 'no-store');
-    if (String(req?.method || '').toUpperCase() !== 'GET') {
+    if (method !== 'GET') {
       return res.status(405).json({ ok: false, error: 'Use GET' });
     }
     if (!isAuthorizedCron(req)) {
