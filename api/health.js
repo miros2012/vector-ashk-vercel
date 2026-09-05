@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { google } from 'googleapis';
 import { createRopPublisher } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
@@ -10,7 +11,9 @@ import {
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 const PUBLISH_SCHEDULES = new Set(['35 21 * * *']);
+const CONTROL_SHEET = '__vercel_control';
 const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
+const TOCHKA_HEARTBEAT_KEY_HASH_MARKER = 'tochka_operations_heartbeat_key_sha256';
 const RANGES = {
   'РОП_Штаб_Утро': 'A:X',
   'РОП_Задачи_Сегодня': 'A:P',
@@ -139,11 +142,38 @@ function isAuthorizedCron(req) {
   return Boolean(expected) && actual === `Bearer ${expected}`;
 }
 
-function isAuthorizedTochkaBridge(req) {
-  const expected = String(process.env.TOCHKA_BRIDGE_KEY || process.env.VECTOR_SYNC_KEY || '').trim();
-  const actual = String(req?.headers?.['x-vector-key'] || '').trim();
+function sha256Hex(value) {
+  return createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
+}
+
+function sameSha256Hex(actual, expected) {
+  const left = String(actual || '').trim().toLowerCase();
+  const right = String(expected || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(left) || !/^[0-9a-f]{64}$/.test(right)) return false;
+  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
+}
+
+async function readControlMarker(sheets, key) {
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: SOURCE_SPREADSHEET_ID,
+    range: `'${CONTROL_SHEET}'!A:B`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  });
+  const rows = response.data.values || [];
+  const row = rows.find(item => String(item?.[0] || '').trim() === key);
+  return String(row?.[1] || '').trim();
+}
+
+async function isAuthorizedTochkaBridge(req, sheets) {
   const source = String(req?.headers?.['x-vector-refresh'] || '').trim();
-  return Boolean(expected) && actual === expected && source === 'tochka-webhook';
+  const actual = String(req?.headers?.['x-vector-key'] || '').trim();
+  if (source !== 'tochka-webhook' || !actual) return false;
+
+  const configured = String(process.env.TOCHKA_BRIDGE_KEY || process.env.VECTOR_SYNC_KEY || '').trim();
+  if (configured && sameSha256Hex(sha256Hex(actual), sha256Hex(configured))) return true;
+
+  const expectedHash = await readControlMarker(sheets, TOCHKA_HEARTBEAT_KEY_HASH_MARKER);
+  return sameSha256Hex(sha256Hex(actual), expectedHash);
 }
 
 function requestBody(req) {
@@ -159,12 +189,12 @@ function requestBody(req) {
 }
 
 async function handleTochkaOperationsRefreshSuccess(req, res) {
-  if (!isAuthorizedTochkaBridge(req)) {
-    return res.status(403).json({ ok: false, error: 'forbidden' });
-  }
-
   try {
     const sheets = await getSheets();
+    if (!(await isAuthorizedTochkaBridge(req, sheets))) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
+
     const value = new Date().toISOString();
     await writeControlMarker({
       sheets,
