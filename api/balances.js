@@ -11,6 +11,7 @@ import { createDecisionEventApi } from '../lib/decision-event-api.js';
 import { createOwnerActionControlSheetAdapter } from '../lib/owner-action-control-sheet-adapter.js';
 import { createOwnerActionQueueApi } from '../lib/owner-action-queue-api.js';
 import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sheet-adapter.js';
+import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import {
   evaluateTochkaWebhookReadiness,
   evaluateCandidateBalanceReadiness
@@ -25,6 +26,7 @@ const FRESH_MS = 30000;
 const INTERNAL_OWNER_ACTION_KEY = 'owner-action-internal-only';
 const TOCHKA_READINESS_ATTEMPTS = 4;
 const TOCHKA_READINESS_DELAY_MS = 750;
+const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -60,11 +62,33 @@ async function fetchLiveBalances() {
   const text = await r.text();
   if (!r.ok) throw new Error(`Tochka bridge HTTP ${r.status}: ${text.slice(0, 500)}`);
 
+  const operationsRefreshedAt = String(r.headers.get('x-tochka-operations-refreshed-at') || '').trim();
+  if (!Number.isFinite(Date.parse(operationsRefreshedAt))) {
+    throw new Error('Tochka bridge did not return a verified operations refresh timestamp');
+  }
+
   try {
-    return JSON.parse(text);
+    return {
+      payload: JSON.parse(text),
+      operationsRefreshedAt
+    };
   } catch {
     throw new Error(`Tochka bridge returned non-JSON: ${text.slice(0, 500)}`);
   }
+}
+
+async function recordVerifiedOperationsRefresh(sheets, live) {
+  const value = String(live?.operationsRefreshedAt || '').trim();
+  if (!Number.isFinite(Date.parse(value))) {
+    throw new Error('Verified Tochka operations refresh timestamp is invalid');
+  }
+  await writeControlMarker({
+    sheets,
+    spreadsheetId: SPREADSHEET_ID,
+    key: TOCHKA_OPERATIONS_SUCCESS_MARKER,
+    value
+  });
+  return value;
 }
 
 async function readMirrorStatus(sheets) {
@@ -180,8 +204,9 @@ async function ensureBalanceMirror(sheets) {
     };
   }
 
-  const raw = await fetchLiveBalances();
-  const normalized = normalizeBalances(raw);
+  const live = await fetchLiveBalances();
+  await recordVerifiedOperationsRefresh(sheets, live);
+  const normalized = normalizeBalances(live.payload);
   const mirror = await mirrorToGoogleSheet(normalized, sheets);
   return {
     source: 'tochka_live',
@@ -307,8 +332,9 @@ export async function refreshBalancesMirrorOnly(req, res) {
     }
     const sheets = await sheetsClient();
     const before = await readMirrorStatus(sheets);
-    const raw = await fetchLiveBalances();
-    const normalized = normalizeBalances(raw);
+    const live = await fetchLiveBalances();
+    await recordVerifiedOperationsRefresh(sheets, live);
+    const normalized = normalizeBalances(live.payload);
     const readiness = await readTochkaWebhookReadiness(sheets);
     if (!readiness.mirrorReady) {
       console.warn(JSON.stringify({
@@ -413,8 +439,9 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
       throw new Error('Google service account secrets missing');
     }
     const sheets = await sheetsClient();
-    const raw = await fetchLiveBalances();
-    const normalized = normalizeBalances(raw);
+    const live = await fetchLiveBalances();
+    await recordVerifiedOperationsRefresh(sheets, live);
+    const normalized = normalizeBalances(live.payload);
     const readiness = await readTochkaWebhookReadiness(sheets);
     if (!readiness.mirrorReady) {
       console.warn(JSON.stringify({
@@ -520,8 +547,9 @@ export default async function handler(req, res) {
       });
     }
 
-    const raw = await fetchLiveBalances();
-    const normalized = normalizeBalances(raw);
+    const live = await fetchLiveBalances();
+    await recordVerifiedOperationsRefresh(sheets, live);
+    const normalized = normalizeBalances(live.payload);
     const readiness = await readTochkaWebhookReadiness(sheets);
     if (!readiness.mirrorReady) {
       console.warn(JSON.stringify({
