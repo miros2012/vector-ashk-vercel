@@ -39,6 +39,29 @@ test('mirror-only refresh validates the fetched balance against operation freshn
   assert.match(mirrorOnlySource, /status\(409\).*candidate balance is ahead of operation journal/s);
 });
 
+test('verified bridge refresh timestamp is persisted before operation readiness is evaluated', () => {
+  assert.match(balancesSource, /x-tochka-operations-refreshed-at/i);
+  assert.match(balancesSource, /writeControlMarker/);
+  assert.match(balancesSource, /tochka_operations_last_success_utc/);
+
+  for (const startMarker of [
+    'export async function refreshBalancesMirrorOnly',
+    'export async function refreshBalancesFromTochkaWebhook',
+    'export default async function handler'
+  ]) {
+    const start = balancesSource.indexOf(startMarker);
+    assert.ok(start >= 0, `${startMarker} must exist`);
+    const nextExport = balancesSource.indexOf('\nexport ', start + 1);
+    const source = balancesSource.slice(start, nextExport > start ? nextExport : undefined);
+    const fetchAt = source.indexOf('fetchLiveBalances');
+    const markerAt = source.indexOf('recordVerifiedOperationsRefresh');
+    const readinessAt = source.indexOf('readTochkaWebhookReadiness');
+    assert.ok(fetchAt >= 0, `${startMarker} must fetch bridge balances`);
+    assert.ok(markerAt > fetchAt, `${startMarker} must persist verified operation refresh after bridge fetch`);
+    assert.ok(readinessAt > markerAt, `${startMarker} must evaluate readiness only after marker persistence`);
+  }
+});
+
 test('finance route wires the mirror-only balance refresh into nightly and intraday orchestrators', () => {
   assert.match(financeRouteSource, /import\s+\{\s*refreshBalancesMirrorOnly\s*\}\s+from\s+'\.\/balances\.js'/);
   const balanceBindings = financeRouteSource.match(/runBalances:\s*refreshBalancesMirrorOnly/g) || [];
