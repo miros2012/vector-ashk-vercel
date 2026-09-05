@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
@@ -7,7 +8,8 @@ import {
   markIssueInProgressTitle,
   parseAgentIssueConfiguration,
   sanitizeVerificationOutput,
-  selectReadyIssue
+  selectReadyIssue,
+  validateSafePath
 } from '../lib/hourly-agent-runner-policy.js';
 import {
   buildAgentBranchName,
@@ -26,6 +28,7 @@ const ENDPOINT = String(
 const OWNER_ID = 46207692;
 const API_ROOT = 'https://api.github.com';
 const MAX_COMMAND_OUTPUT = 12_000;
+const VERIFY_IMAGE = 'node:24-bookworm-slim';
 
 function required(value, name) {
   const text = String(value ?? '').trim();
@@ -70,10 +73,20 @@ async function listOpenPulls() {
   return github('/pulls?state=open&per_page=100');
 }
 
-async function fetchAllowedFiles(paths) {
+async function readMainBase() {
+  const reference = await github('/git/ref/heads/main');
+  const baseSha = required(reference?.object?.sha, 'main commit sha');
+  const commit = await github(`/git/commits/${baseSha}`);
+  return {
+    baseSha,
+    baseTreeSha: required(commit?.tree?.sha, 'main tree sha')
+  };
+}
+
+async function fetchAllowedFiles(paths, baseSha) {
   const files = [];
   for (const filePath of paths) {
-    const payload = await github(`/contents/${repoPath(filePath)}?ref=main`, { allow404: true });
+    const payload = await github(`/contents/${repoPath(filePath)}?ref=${encodeURIComponent(baseSha)}`, { allow404: true });
     if (!payload) {
       files.push({ path: filePath, content: '', exists: false });
       continue;
@@ -123,53 +136,26 @@ async function generateProposal({ issue, files, attempt, testFailure = '' }) {
   return { proposal: payload.proposal, model: String(payload.model || ''), usage: payload.usage || {} };
 }
 
+function assertNoSymlinkPath(filePath) {
+  const segments = validateSafePath(filePath).split('/');
+  let current = '';
+  for (const segment of segments) {
+    current = current ? path.join(current, segment) : segment;
+    if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) {
+      throw new Error(`symbolic-link path is not allowed: ${filePath}`);
+    }
+  }
+}
+
 function writeProposal(proposal, allowedFiles) {
   const changedPaths = verifyProposalChangeSet(proposal.changes, allowedFiles);
   for (const change of proposal.changes) {
-    const filePath = String(change.path);
+    const filePath = validateSafePath(change.path);
+    assertNoSymlinkPath(filePath);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, String(change.content ?? ''), 'utf8');
   }
   return changedPaths;
-}
-
-function runCommand(command, args, { allowFailure = false } = {}) {
-  const result = spawnSync(command, args, {
-    encoding: 'utf8',
-    maxBuffer: 12 * 1024 * 1024,
-    env: process.env
-  });
-  const output = sanitizeVerificationOutput(`${result.stdout || ''}${result.stderr || ''}`);
-  if (!allowFailure && result.status !== 0) {
-    throw new Error(`${command} failed\n${output}`);
-  }
-  return { ok: result.status === 0, output, status: result.status };
-}
-
-function changedWorkingTreeFiles() {
-  const result = runCommand('git', ['status', '--porcelain'], { allowFailure: false });
-  return result.output
-    .split('\n')
-    .map((line) => line.slice(3).trim())
-    .filter(Boolean)
-    .map((name) => name.includes(' -> ') ? name.split(' -> ').pop() : name);
-}
-
-function verifyWorkingTree(allowedFiles) {
-  const changed = changedWorkingTreeFiles();
-  return ensureOnlyAllowedChanges(changed, allowedFiles);
-}
-
-function runVerification(changedPaths) {
-  const outputs = [];
-  for (const filePath of changedPaths.filter((name) => name.endsWith('.js') || name.endsWith('.mjs'))) {
-    const syntax = runCommand('node', ['--check', filePath], { allowFailure: true });
-    outputs.push(syntax.output);
-    if (!syntax.ok) return { ok: false, output: sanitizeVerificationOutput(outputs.join('\n')) };
-  }
-  const tests = runCommand('npm', ['test'], { allowFailure: true });
-  outputs.push(tests.output);
-  return { ok: tests.ok, output: sanitizeVerificationOutput(outputs.join('\n')).slice(-MAX_COMMAND_OUTPUT) };
 }
 
 function currentAllowedFiles(allowedFiles) {
@@ -178,6 +164,81 @@ function currentAllowedFiles(allowedFiles) {
     content: fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '',
     exists: fs.existsSync(filePath)
   }));
+}
+
+function actualChangedPaths(baseFiles, allowedFiles) {
+  const baseByPath = new Map(baseFiles.map((file) => [file.path, String(file.content ?? '')]));
+  const changed = allowedFiles.filter((filePath) => {
+    const current = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+    return current !== (baseByPath.get(filePath) ?? '');
+  });
+  return ensureOnlyAllowedChanges(changed, allowedFiles);
+}
+
+function runCommand(command, args, { allowFailure = false, timeout = 60_000 } = {}) {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    maxBuffer: 12 * 1024 * 1024,
+    env: process.env,
+    timeout
+  });
+  const output = sanitizeVerificationOutput(`${result.stdout || ''}${result.stderr || ''}`);
+  const ok = result.status === 0 && !result.error;
+  if (!allowFailure && !ok) {
+    throw new Error(`${command} failed\n${output || result.error?.message || ''}`);
+  }
+  return { ok, output, status: result.status, error: result.error || null };
+}
+
+function assertCleanCheckout() {
+  const result = runCommand('git', ['status', '--porcelain']);
+  if (result.output.trim()) throw new Error('checkout is not clean before agent changes');
+}
+
+function copyVerificationWorkspace(destination) {
+  const root = process.cwd();
+  fs.cpSync(root, destination, {
+    recursive: true,
+    filter(source) {
+      const relative = path.relative(root, source);
+      if (!relative) return true;
+      const first = relative.split(path.sep)[0];
+      return first !== '.git' && first !== 'node_modules';
+    }
+  });
+}
+
+function runVerification() {
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'vector-hourly-agent-'));
+  try {
+    copyVerificationWorkspace(sandbox);
+    const command = "find api lib test scripts -type f \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -r -n1 node --check && npm test";
+    const result = runCommand('docker', [
+      'run',
+      '--rm',
+      '--network', 'none',
+      '--cap-drop', 'ALL',
+      '--security-opt', 'no-new-privileges:true',
+      '--pids-limit', '256',
+      '--memory', '2g',
+      '--cpus', '2',
+      '--read-only',
+      '--tmpfs', '/tmp:rw,noexec,nosuid,size=64m',
+      '--env', 'CI=true',
+      '--env', 'HOME=/tmp',
+      '--volume', `${sandbox}:/workspace:rw`,
+      '--volume', `${path.join(process.cwd(), 'node_modules')}:/workspace/node_modules:ro`,
+      '--workdir', '/workspace',
+      VERIFY_IMAGE,
+      'sh', '-lc', command
+    ], { allowFailure: true, timeout: 8 * 60_000 });
+    return {
+      ok: result.ok,
+      output: sanitizeVerificationOutput(result.output || result.error?.message || '').slice(-MAX_COMMAND_OUTPUT)
+    };
+  } finally {
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  }
 }
 
 async function updateIssue(number, fields) {
@@ -194,6 +255,45 @@ async function markForReview(issue, reason) {
   await commentIssue(issue.number, `Hourly agent stopped safely and requires human review.\n\n\`\`\`text\n${safeReason}\n\`\`\``);
 }
 
+async function createAgentCommit({ baseSha, baseTreeSha, branch, issue, changedPaths }) {
+  const tree = [];
+  for (const filePath of changedPaths) {
+    const blob = await github('/git/blobs', {
+      method: 'POST',
+      body: {
+        content: fs.readFileSync(filePath, 'utf8'),
+        encoding: 'utf-8'
+      }
+    });
+    tree.push({
+      path: filePath,
+      mode: '100644',
+      type: 'blob',
+      sha: required(blob?.sha, `blob sha for ${filePath}`)
+    });
+  }
+  const createdTree = await github('/git/trees', {
+    method: 'POST',
+    body: { base_tree: baseTreeSha, tree }
+  });
+  const commit = await github('/git/commits', {
+    method: 'POST',
+    body: {
+      message: `agent: issue #${issue.number} ${titleWithoutPrefix(issue.title)}`,
+      tree: required(createdTree?.sha, 'created tree sha'),
+      parents: [baseSha]
+    }
+  });
+  await github('/git/refs', {
+    method: 'POST',
+    body: {
+      ref: `refs/heads/${branch}`,
+      sha: required(commit?.sha, 'created commit sha')
+    }
+  });
+  return commit;
+}
+
 async function createPullRequest({ issue, branch, proposal, model, changedPaths }) {
   const body = [
     `Closes #${issue.number}.`,
@@ -206,7 +306,8 @@ async function createPullRequest({ issue, branch, proposal, model, changedPaths 
     `**Confidence:** ${proposal.confidence || 'low'}`,
     '',
     '**Verification:**',
-    '- syntax checks for changed JavaScript files',
+    '- no-network isolated container',
+    '- syntax checks for repository JavaScript files',
     '- full `npm test` suite',
     '- exact changed-file allowlist check',
     '',
@@ -232,8 +333,13 @@ async function main() {
   if (!/^https:\/\/vector-ashk-backend\.vercel\.app\/api\/health$/.test(ENDPOINT)) {
     throw new Error('unexpected hourly agent endpoint');
   }
+  assertCleanCheckout();
 
-  const [issues, pulls] = await Promise.all([listOpenIssues(), listOpenPulls()]);
+  const [issues, pulls, base] = await Promise.all([
+    listOpenIssues(),
+    listOpenPulls(),
+    readMainBase()
+  ]);
   if (hasOpenAgentPull(pulls)) {
     console.log('Hourly agent skipped: an agent pull request is already open.');
     return;
@@ -247,7 +353,7 @@ async function main() {
 
   const configuration = parseAgentIssueConfiguration(issue.body || '');
   const allowedFiles = configuration.allowedFiles;
-  const baseFiles = await fetchAllowedFiles(allowedFiles);
+  const baseFiles = await fetchAllowedFiles(allowedFiles, base.baseSha);
   await updateIssue(issue.number, { title: markIssueInProgressTitle(issue.title) });
 
   try {
@@ -257,9 +363,9 @@ async function main() {
       return;
     }
 
-    let changedPaths = writeProposal(generation.proposal, allowedFiles);
-    verifyWorkingTree(allowedFiles);
-    let verification = runVerification(changedPaths);
+    writeProposal(generation.proposal, allowedFiles);
+    let changedPaths = actualChangedPaths(baseFiles, allowedFiles);
+    let verification = runVerification();
 
     if (!verification.ok) {
       generation = await generateProposal({
@@ -272,9 +378,9 @@ async function main() {
         await markForReview(issue, generation.proposal.reviewReason || verification.output);
         return;
       }
-      changedPaths = writeProposal(generation.proposal, allowedFiles);
-      verifyWorkingTree(allowedFiles);
-      verification = runVerification(changedPaths);
+      writeProposal(generation.proposal, allowedFiles);
+      changedPaths = actualChangedPaths(baseFiles, allowedFiles);
+      verification = runVerification();
     }
 
     if (!verification.ok) {
@@ -283,23 +389,21 @@ async function main() {
       return;
     }
 
-    const finalChangedPaths = verifyWorkingTree(allowedFiles);
+    changedPaths = actualChangedPaths(baseFiles, allowedFiles);
     const branch = buildAgentBranchName(issue.number, RUN_ID);
-    runCommand('git', ['switch', '-c', branch]);
-    runCommand('git', ['config', 'user.name', 'vector-hourly-agent']);
-    runCommand('git', ['config', 'user.email', '46207692+miros2012@users.noreply.github.com']);
-    runCommand('git', ['add', '--', ...finalChangedPaths]);
-    const staged = runCommand('git', ['diff', '--cached', '--name-only']).output.split('\n').map((x) => x.trim()).filter(Boolean);
-    ensureOnlyAllowedChanges(staged, allowedFiles);
-    runCommand('git', ['commit', '-m', `agent: issue #${issue.number} ${titleWithoutPrefix(issue.title)}`]);
-    runCommand('git', ['push', 'origin', `HEAD:refs/heads/${branch}`]);
-
+    await createAgentCommit({
+      baseSha: base.baseSha,
+      baseTreeSha: base.baseTreeSha,
+      branch,
+      issue,
+      changedPaths
+    });
     const pull = await createPullRequest({
       issue,
       branch,
       proposal: generation.proposal,
       model: generation.model,
-      changedPaths: finalChangedPaths
+      changedPaths
     });
     await updateIssue(issue.number, { title: titleWithPrefix('pr-open', issue.title) });
     await commentIssue(issue.number, `Guarded hourly agent opened ${pull.html_url}. Automatic merge is disabled.`);
