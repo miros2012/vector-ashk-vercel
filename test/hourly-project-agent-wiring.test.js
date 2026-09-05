@@ -31,6 +31,7 @@ test('hourly continuation workflow runs the guarded runner on schedule without p
   assert.match(workflow, /contents:\s*write/);
   assert.match(workflow, /issues:\s*write/);
   assert.match(workflow, /pull-requests:\s*write/);
+  assert.match(workflow, /statuses:\s*write/);
   assert.match(workflow, /node scripts\/hourly-project-agent\.mjs/);
   assert.match(workflow, /ref:\s*main/);
   assert.match(workflow, /persist-credentials:\s*false/);
@@ -45,6 +46,7 @@ test('runner verifies generated code in a no-network container and publishes thr
   assert.match(source, /parseAgentIssueConfiguration/);
   assert.match(source, /ensureOnlyAllowedChanges/);
   assert.match(source, /ACTIONS_ID_TOKEN_REQUEST_URL/);
+  assert.match(source, /GITHUB_RUN_ATTEMPT/);
   assert.match(source, /\/api\/health/);
   assert.match(source, /npm test/);
   assert.match(source, /--network/);
@@ -55,6 +57,8 @@ test('runner verifies generated code in a no-network container and publishes thr
   assert.match(source, /\/git\/trees/);
   assert.match(source, /\/git\/commits/);
   assert.match(source, /\/git\/refs/);
+  assert.match(source, /\/statuses\//);
+  assert.match(source, /hourly-agent\/isolated-verification/);
   assert.match(source, /\/pulls/);
   assert.doesNotMatch(source, /git[^\n]*push/);
   assert.doesNotMatch(source, /persist-credentials/);
