@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import { createRopPublisher } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
+import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import {
   evaluateTochkaOperationAck,
   normalizeExpectedOperationIdentifiers
@@ -9,6 +10,7 @@ import {
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 const PUBLISH_SCHEDULES = new Set(['35 21 * * *']);
+const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
 const RANGES = {
   'РОП_Штаб_Утро': 'A:X',
   'РОП_Задачи_Сегодня': 'A:P',
@@ -70,7 +72,7 @@ async function ensureTargetSheet(sheets, spreadsheetId, sheetName, rowCount, col
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
-        requests: [{ addSheet: { properties: { title: sheetName, gridProperties: { rowCount, columnCount, frozenRowCount: 1 } } } }]
+        requests: [{ addSheet: { properties: { title: sheetName, gridProperties: { rowCount, columnCount, frozenRowCount: 1 } } }]
       }
     });
     return;
@@ -137,6 +139,13 @@ function isAuthorizedCron(req) {
   return Boolean(expected) && actual === `Bearer ${expected}`;
 }
 
+function isAuthorizedTochkaBridge(req) {
+  const expected = String(process.env.TOCHKA_BRIDGE_KEY || process.env.VECTOR_SYNC_KEY || '').trim();
+  const actual = String(req?.headers?.['x-vector-key'] || '').trim();
+  const source = String(req?.headers?.['x-vector-refresh'] || '').trim();
+  return Boolean(expected) && actual === expected && source === 'tochka-webhook';
+}
+
 function requestBody(req) {
   if (req?.body && typeof req.body === 'object') return req.body;
   if (typeof req?.body === 'string' && req.body.trim()) {
@@ -147,6 +156,32 @@ function requestBody(req) {
     }
   }
   return {};
+}
+
+async function handleTochkaOperationsRefreshSuccess(req, res) {
+  if (!isAuthorizedTochkaBridge(req)) {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
+  }
+
+  try {
+    const sheets = await getSheets();
+    const value = new Date().toISOString();
+    await writeControlMarker({
+      sheets,
+      spreadsheetId: SOURCE_SPREADSHEET_ID,
+      key: TOCHKA_OPERATIONS_SUCCESS_MARKER,
+      value
+    });
+    return res.status(200).json({
+      ok: true,
+      mode: 'operations_refresh_recorded',
+      marker: TOCHKA_OPERATIONS_SUCCESS_MARKER,
+      timestamp: value
+    });
+  } catch (error) {
+    console.error('tochka-operations-refresh-success:', error?.name || 'Error');
+    return res.status(500).json({ ok: false, error: 'Tochka operation refresh marker failed' });
+  }
 }
 
 async function handleTochkaOperationAck(req, res, body) {
@@ -192,6 +227,10 @@ async function handleTochkaOperationAck(req, res, body) {
 
 export default async function handler(req, res) {
   const body = requestBody(req);
+  if (String(req?.method || '').toUpperCase() === 'POST' && String(body?.mode || '') === 'operations_refresh_success') {
+    res.setHeader?.('Cache-Control', 'no-store');
+    return handleTochkaOperationsRefreshSuccess(req, res);
+  }
   if (String(req?.method || '').toUpperCase() === 'POST' && String(body?.mode || '') === 'operation_ack') {
     res.setHeader?.('Cache-Control', 'no-store');
     return handleTochkaOperationAck(req, res, body);
