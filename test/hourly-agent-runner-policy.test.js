@@ -26,7 +26,17 @@ test('parses a strict JSON configuration block with explicit allowed files', () 
 test('rejects missing, malformed or unsafe issue configuration', () => {
   assert.throws(() => parseAgentIssueConfiguration('none'), /configuration/i);
   assert.throws(() => parseAgentIssueConfiguration('<!-- hourly-agent\nnot json\n-->'), /configuration/i);
-  assert.throws(() => parseAgentIssueConfiguration('<!-- hourly-agent\n{"allowedFiles":["api/health.js"]}\n-->'), /path/i);
+  for (const unsafePath of [
+    'api/health.js',
+    'lib/../api/health.js',
+    'lib/a b.js',
+    'lib/a\n.js',
+    'docs/.git/config',
+    'docs/secrets/token.txt'
+  ]) {
+    const body = `<!-- hourly-agent\n${JSON.stringify({ allowedFiles: [unsafePath] })}\n-->`;
+    assert.throws(() => parseAgentIssueConfiguration(body), /path/i);
+  }
 });
 
 test('changed files must be a non-empty subset of the issue allowlist', () => {
