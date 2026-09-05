@@ -1,0 +1,38 @@
+name: Copilot Actions capability probe
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/copilot-actions-probe.yml'
+      - '.github/copilot-instructions.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  copilot-requests: write
+
+jobs:
+  probe:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install GitHub Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Verify Copilot request capability
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          response="$(copilot -s --no-ask-user -p 'Return exactly COPILOT_ACTIONS_OK and no other text.' | tr -d '\r')"
+          printf '%s\n' "$response"
+          test "$response" = "COPILOT_ACTIONS_OK"
