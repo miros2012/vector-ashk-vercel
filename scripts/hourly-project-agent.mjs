@@ -185,6 +185,19 @@ function currentAllowedFiles(allowedFiles) {
   }));
 }
 
+function restoreBaseFiles(baseFiles) {
+  for (const file of baseFiles) {
+    const filePath = validateSafePath(file.path);
+    assertNoSymlinkPath(filePath);
+    if (file.exists) {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, String(file.content ?? ''), 'utf8');
+    } else if (fs.existsSync(filePath)) {
+      fs.rmSync(filePath, { force: true });
+    }
+  }
+}
+
 function actualChangedPaths(baseFiles, allowedFiles) {
   const baseByPath = new Map(baseFiles.map((file) => [file.path, String(file.content ?? '')]));
   const changed = allowedFiles.filter((filePath) => {
@@ -373,12 +386,12 @@ async function main() {
     return;
   }
 
-  const configuration = parseAgentIssueConfiguration(issue.body || '');
-  const allowedFiles = configuration.allowedFiles;
-  const baseFiles = await fetchAllowedFiles(allowedFiles, base.baseSha);
-  await updateIssue(issue.number, { title: markIssueInProgressTitle(issue.title) });
-
   try {
+    const configuration = parseAgentIssueConfiguration(issue.body || '');
+    const allowedFiles = configuration.allowedFiles;
+    const baseFiles = await fetchAllowedFiles(allowedFiles, base.baseSha);
+    await updateIssue(issue.number, { title: markIssueInProgressTitle(issue.title) });
+
     let generation = await generateProposal({ issue, files: baseFiles, runKey, attempt: 1 });
     if (generation.proposal.needsHumanReview) {
       await markForReview(issue, generation.proposal.reviewReason || 'The proposal requested review.');
@@ -390,9 +403,10 @@ async function main() {
     let verification = runVerification(runKey);
 
     if (!verification.ok) {
+      const failedFiles = currentAllowedFiles(allowedFiles);
       generation = await generateProposal({
         issue,
-        files: currentAllowedFiles(allowedFiles),
+        files: failedFiles,
         runKey,
         attempt: 2,
         testFailure: verification.output
@@ -401,6 +415,7 @@ async function main() {
         await markForReview(issue, generation.proposal.reviewReason || verification.output);
         return;
       }
+      restoreBaseFiles(baseFiles);
       writeProposal(generation.proposal, allowedFiles);
       changedPaths = actualChangedPaths(baseFiles, allowedFiles);
       verification = runVerification(runKey);
