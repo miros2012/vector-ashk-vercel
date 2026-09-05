@@ -76,11 +76,17 @@ async function ensureTargetSheet(sheets, spreadsheetId, sheetName, rowCount, col
   });
   const existing = (metadata.data.sheets || []).find(sheet => sheet.properties?.title === sheetName);
   if (!existing) {
+    const addSheetRequest = {
+      addSheet: {
+        properties: {
+          title: sheetName,
+          gridProperties: { rowCount, columnCount, frozenRowCount: 1 }
+        }
+      }
+    };
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
-      requestBody: {
-        requests: [{ addSheet: { properties: { title: sheetName, gridProperties: { rowCount, columnCount, frozenRowCount: 1 } } }]
-      }
+      requestBody: { requests: [addSheetRequest] }
     });
     return;
   }
