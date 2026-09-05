@@ -11,6 +11,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  statuses: write
   id-token: write
 
 concurrency:
@@ -21,8 +22,10 @@ jobs:
   continue-project:
     name: Guarded PR-only continuation
     if: >-
-      github.event_name != 'issues' ||
-      (github.event.issue.user.id == 46207692 && startsWith(github.event.issue.title, '[agent-ready]'))
+      github.event_name == 'schedule' ||
+      (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch') ||
+      (github.actor_id == 46207692 && github.event_name == 'issues' &&
+       github.event.issue.user.id == 46207692 && startsWith(github.event.issue.title, '[agent-ready]'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
