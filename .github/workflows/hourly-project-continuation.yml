@@ -1,0 +1,56 @@
+name: Hourly project continuation
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  statuses: write
+  id-token: write
+
+concurrency:
+  group: hourly-project-continuation
+  cancel-in-progress: false
+
+jobs:
+  continue-project:
+    name: Guarded PR-only continuation
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch') ||
+      (github.actor_id == 46207692 && github.event_name == 'issues' &&
+       github.event.issue.user.id == 46207692 && startsWith(github.event.issue.title, '[agent-ready]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout current main without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Pull fixed verification sandbox image
+        run: docker pull node:24-bookworm-slim
+
+      - name: Continue one bounded project task
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOURLY_AGENT_ENDPOINT: https://vector-ashk-backend.vercel.app/api/health
+        run: node scripts/hourly-project-agent.mjs
