@@ -40,11 +40,14 @@ test('hourly continuation workflow runs the guarded runner on schedule without p
   assert.doesNotMatch(workflow, /decision-event/);
 });
 
-test('hourly workflow does not require a repository lockfile', () => {
+test('hourly dependency install preserves a clean checkout for the agent guard', () => {
   const workflow = read('.github/workflows/hourly-project-continuation.yml');
+  const gitignorePath = path.join(root, '.gitignore');
+  const gitignore = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf8') : '';
   assert.doesNotMatch(workflow, /cache:\s*npm/);
   assert.doesNotMatch(workflow, /\bnpm\s+ci\b/);
-  assert.match(workflow, /npm install --no-audit --no-fund/);
+  assert.match(workflow, /npm install --package-lock=false --no-audit --no-fund/);
+  assert.match(gitignore, /^node_modules\/$/m);
 });
 
 test('runner verifies generated code in a no-network container and publishes through Git Data API only', () => {
