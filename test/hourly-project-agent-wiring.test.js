@@ -40,6 +40,13 @@ test('hourly continuation workflow runs the guarded runner on schedule without p
   assert.doesNotMatch(workflow, /decision-event/);
 });
 
+test('hourly workflow does not require a repository lockfile', () => {
+  const workflow = read('.github/workflows/hourly-project-continuation.yml');
+  assert.doesNotMatch(workflow, /cache:\s*npm/);
+  assert.doesNotMatch(workflow, /\bnpm\s+ci\b/);
+  assert.match(workflow, /npm install --no-audit --no-fund/);
+});
+
 test('runner verifies generated code in a no-network container and publishes through Git Data API only', () => {
   const source = read('scripts/hourly-project-agent.mjs');
   assert.match(source, /selectReadyIssue/);
