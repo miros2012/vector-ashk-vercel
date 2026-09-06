@@ -76,12 +76,12 @@ test('keeps fingerprint stable across equivalent negative zero values', () => {
   const first = createForecastSnapshot(input());
   const source = input();
   source.scenarios = source.scenarios.map(scenario => ({ ...scenario }));
-  source.scenarios[0].cashGap = -0;
-  source.scenarios[0].requiredCollection = -0;
-  source.scenarios[0].safeWithdrawal = -0;
+  source.scenarios[2].cashGap = -0;
+  source.scenarios[2].requiredCollection = -0;
+  source.scenarios[2].safeWithdrawal = -0;
 
   const second = createForecastSnapshot(source);
-  assert.equal(second.scenarios.find(scenario => scenario.name === 'target').cashGap, 0);
+  assert.equal(second.scenarios.find(scenario => scenario.name === 'base').cashGap, 0);
   assert.equal(first.fingerprint, second.fingerprint);
 });
 
