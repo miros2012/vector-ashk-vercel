@@ -178,6 +178,22 @@ test('fails closed for duplicate real rule ids but ignores a synthetic duplicate
   assert.equal(result.total, 1);
 });
 
+test('a synthetic duplicate cannot hide history belonging to a real decision', () => {
+  const result = build([
+    decision({ ruleId: 'same', completedAt: '2026-09-06T11:00:00.000Z' }),
+    decision({ ruleId: 'same', synthetic: true })
+  ], [
+    completedEvent({
+      eventId: 'real-completion',
+      ruleId: 'same',
+      at: '2026-09-05T08:00:00.000Z'
+    })
+  ]);
+
+  assert.equal(result.items[0].completionTimestamp, '2026-09-05T08:00:00.000Z');
+  assert.equal(result.historyEventCount, 1);
+});
+
 test('fails closed for malformed or future completion timestamps of eligible decisions', () => {
   assert.throws(() => build([
     decision({ completedAt: '2026-02-30T12:00:00.000Z' })
