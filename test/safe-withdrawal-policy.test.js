@@ -125,7 +125,7 @@ test('floors safe withdrawal at zero and exposes the protection shortfall', () =
 });
 
 test('non-OK Data Health always forces zero and normalizes supplied reasons', () => {
-  for (const status of ['DELAYED', 'ERROR', 'BLOCKED']) {
+  for (const status of ['WARNING', 'DELAYED', 'ERROR', 'BLOCKED']) {
     const result = calculateSafeWithdrawal(input({
       dataHealthStatus: status,
       blockingReasons: ['  Tochka   stale ', 'DDS blocked']
