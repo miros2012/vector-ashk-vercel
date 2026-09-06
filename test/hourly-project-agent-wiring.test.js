@@ -40,9 +40,8 @@ test('hourly continuation workflow runs the guarded runner on schedule without p
   assert.doesNotMatch(workflow, /decision-event/);
 });
 
-test('hourly workflow installs dependencies without requiring a missing lockfile', () => {
+test('hourly workflow does not require a repository lockfile', () => {
   const workflow = read('.github/workflows/hourly-project-continuation.yml');
-  assert.equal(fs.existsSync(path.join(root, 'package-lock.json')), false);
   assert.doesNotMatch(workflow, /cache:\s*npm/);
   assert.doesNotMatch(workflow, /\bnpm\s+ci\b/);
   assert.match(workflow, /npm install --no-audit --no-fund/);
