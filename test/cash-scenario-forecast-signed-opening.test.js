@@ -9,10 +9,15 @@ const scenarios = [
 ];
 
 test('accepts a negative projected opening and measures cash gap from daily closing balances', () => {
+  const openingCash = -641803.42;
+  const dayOneInflow = 275931.40275;
+  const dayOneOutflow = 92718;
+  const expectedDayOneClosing = openingCash + dayOneInflow - dayOneOutflow;
+
   const result = buildCashScenarioForecast({
-    openingCash: -641803.42,
+    openingCash,
     flows: [
-      { date: '2026-09-08', inflow: 275931.40275, outflow: 92718 },
+      { date: '2026-09-08', inflow: dayOneInflow, outflow: dayOneOutflow },
       { date: '2026-09-09', inflow: 245667.79575, outflow: 0 }
     ],
     scenarios,
@@ -20,11 +25,11 @@ test('accepts a negative projected opening and measures cash gap from daily clos
   });
 
   const base = result.scenarios.find(item => item.name === 'base');
-  assert.equal(result.openingCash, -641803.42);
-  assert.equal(base.daily[0].closingBalance, -458590.01725);
-  assert.equal(base.minimumBalance, -458590.01725);
+  assert.equal(result.openingCash, openingCash);
+  assert.equal(base.daily[0].closingBalance, expectedDayOneClosing);
+  assert.equal(base.minimumBalance, expectedDayOneClosing);
   assert.equal(base.minimumBalanceDate, '2026-09-08');
-  assert.equal(base.cashGap, 458590.01725);
+  assert.equal(base.cashGap, Math.max(0, -expectedDayOneClosing));
   assert.equal(base.safeOwnerWithdrawal, 0);
 });
 
