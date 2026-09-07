@@ -7,6 +7,9 @@ import { createOwnerActionControlSheetAdapter } from '../lib/owner-action-contro
 import { createOwnerActionQueueApi } from '../lib/owner-action-queue-api.js';
 import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sheet-adapter.js';
 import { createOwnerActionSheetAdapter } from '../lib/owner-action-sheet-adapter.js';
+import { buildOwnerLivePackage } from '../lib/owner-live-package-service.js';
+import { createOwnerLiveSourceReader } from '../lib/owner-live-source-reader.js';
+import { createOwnerReadonlyApi } from '../lib/owner-readonly-api.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 
@@ -52,6 +55,7 @@ let executionHandler;
 let ownerActionHandler;
 let effectivenessHandler;
 let queueHandler;
+let ownerPackageHandler;
 
 function createOwnerActionHandler() {
   const adapter = createOwnerActionSheetAdapter({
@@ -87,6 +91,27 @@ function createQueueHandler() {
   });
 }
 
+function createOwnerPackageHandler() {
+  const sheets = sheetsClient(true);
+  return createOwnerReadonlyApi({
+    configuredKey: configuredKey(),
+    readOwnerPackage: async () => {
+      const generatedAt = new Date().toISOString();
+      const reader = createOwnerLiveSourceReader({
+        sheets,
+        spreadsheetId: SPREADSHEET_ID,
+        now: () => new Date(generatedAt)
+      });
+      const facts = await reader.readOwnerLiveFacts();
+      return buildOwnerLivePackage({
+        facts,
+        generatedAt: new Date().toISOString(),
+        verificationSlaHours: 24
+      });
+    }
+  });
+}
+
 export default async function handler(req, res) {
   try {
     const ownerRoute = String(req.query?.ownerRoute || '').trim();
@@ -101,6 +126,10 @@ export default async function handler(req, res) {
     if (ownerRoute === 'queue') {
       queueHandler ||= createQueueHandler();
       return await queueHandler(req, res);
+    }
+    if (ownerRoute === 'package') {
+      ownerPackageHandler ||= createOwnerPackageHandler();
+      return await ownerPackageHandler(req, res);
     }
     executionHandler ||= createDecisionEventApi({
       sheets: sheetsClient(),
