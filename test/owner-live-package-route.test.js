@@ -14,8 +14,12 @@ function decisionEventSource() {
 function ownerPackageHandlerBlock(source) {
   const start = source.indexOf('function createOwnerPackageHandler');
   assert.notEqual(start, -1, 'createOwnerPackageHandler must exist');
-  const next = source.indexOf('\nfunction ', start + 1);
-  return source.slice(start, next === -1 ? source.length : next);
+  const boundaries = [
+    source.indexOf('\nfunction ', start + 1),
+    source.indexOf('\nexport default', start + 1)
+  ].filter(index => index !== -1);
+  const end = boundaries.length ? Math.min(...boundaries) : source.length;
+  return source.slice(start, end);
 }
 
 test('wires owner package through the existing decision-event function with readonly Sheets', () => {
