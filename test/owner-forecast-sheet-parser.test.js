@@ -209,3 +209,38 @@ test('normalizes negative zero in actual and daily monetary fields', async () =>
   assert.equal(Object.is(result.flows[0].outflow, -0), false);
   assert.equal(Object.is(result.protectedReserves[0].amount, -0), false);
 });
+
+test('fails deterministically for malformed or incomplete daily rows', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+
+  const malformed = liveRows();
+  malformed[5] = null;
+  assert.throws(
+    () => parseOwnerForecastSheetValues(malformed),
+    /dailyRows\[0\].*array/i
+  );
+
+  const missingReserve = liveRows();
+  missingReserve[5] = missingReserve[5].slice(0, 3);
+  assert.throws(
+    () => parseOwnerForecastSheetValues(missingReserve),
+    /dailyRows\[0\]\.reserve.*missing/i
+  );
+});
+
+test('does not mutate input and returns a deeply immutable result', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+  const source = liveRows();
+  const before = structuredClone(source);
+
+  const result = parseOwnerForecastSheetValues(source);
+
+  assert.deepEqual(source, before);
+  assert.equal(Object.isFrozen(result), true);
+  assert.equal(Object.isFrozen(result.flows), true);
+  assert.equal(Object.isFrozen(result.flows[0]), true);
+  assert.equal(Object.isFrozen(result.protectedReserves), true);
+  assert.equal(Object.isFrozen(result.protectedReserves[0]), true);
+  assert.throws(() => { result.flows[0].inflow = 0; }, TypeError);
+  assert.throws(() => { result.protectedReserves.push({}); }, TypeError);
+});
