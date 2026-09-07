@@ -51,6 +51,7 @@ test('manual workflow_dispatch requests a dedicated Owner smoke OIDC audience an
   assert.doesNotMatch(workflow, /VECTOR_SYNC_KEY|TOCHKA_BRIDGE_KEY|VECTOR_OWNER_API_KEY/);
 });
 
+// Issue #148 TDD contract: the smoke must not inherit repository write permissions.
 test('Owner package smoke runs in a dedicated least-privilege job', () => {
   const workflow = read('.github/workflows/hourly-project-continuation.yml');
   const preJobs = workflow.slice(0, workflow.indexOf('\njobs:\n'));
