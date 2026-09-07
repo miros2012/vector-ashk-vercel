@@ -25,6 +25,7 @@ function validBody(overrides = {}) {
     ok: true,
     package: {
       policy: {
+        operatingReserve: { defined: false, amount: null },
         blockers: ['OPERATING_RESERVE_UNDEFINED']
       },
       withdrawal: {
@@ -85,6 +86,7 @@ test('verifies one authenticated GET and returns a compact immutable attestation
     generatedAt: '2026-09-07T14:44:30.000Z',
     ageMs: 30_000,
     safeWithdrawal: 0,
+    operatingReserveDefined: false,
     policyBlockers: ['OPERATING_RESERVE_UNDEFINED']
   });
   assert.equal(Object.isFrozen(result), true);
@@ -237,5 +239,50 @@ test('requires explicit expected withdrawal/blocker contracts without mutating t
       requiredPolicyBlocker: 'OTHER_BLOCKER'
     }),
     /required policy blocker is missing/
+  );
+});
+
+test('fails closed when undefined operating-reserve blocker contradicts a numeric or defined reserve', async () => {
+  const base = {
+    baseUrl: 'https://vector.example.test',
+    key: 'owner-secret',
+    now: '2026-09-07T14:45:00.000Z',
+    maxAgeMs: 60_000,
+    expectedSafeWithdrawal: 0,
+    requiredPolicyBlocker: 'OPERATING_RESERVE_UNDEFINED'
+  };
+
+  await assert.rejects(
+    verifyOwnerPackageProduction({
+      ...base,
+      fetchImpl: async () => response({
+        body: validBody({
+          package: {
+            policy: {
+              operatingReserve: { defined: true, amount: 300_000 },
+              blockers: ['OPERATING_RESERVE_UNDEFINED']
+            }
+          }
+        })
+      })
+    }),
+    /operating reserve policy conflicts with blockers/
+  );
+
+  await assert.rejects(
+    verifyOwnerPackageProduction({
+      ...base,
+      fetchImpl: async () => response({
+        body: validBody({
+          package: {
+            policy: {
+              operatingReserve: { defined: false, amount: 300_000 },
+              blockers: ['OPERATING_RESERVE_UNDEFINED']
+            }
+          }
+        })
+      })
+    }),
+    /undefined operating reserve must not include an amount/
   );
 });

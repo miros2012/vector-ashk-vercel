@@ -27,6 +27,7 @@ function validBody() {
     ok: true,
     package: {
       policy: {
+        operatingReserve: { defined: false, amount: null },
         blockers: ['OPERATING_RESERVE_UNDEFINED']
       },
       withdrawal: {
@@ -75,7 +76,9 @@ test('executes one read-only production verification from explicit environment i
   const printed = JSON.parse(output[0]);
   assert.deepEqual(printed, result);
   assert.equal(printed.safeWithdrawal, 0);
+  assert.equal(printed.operatingReserveDefined, false);
   assert.deepEqual(printed.policyBlockers, ['OPERATING_RESERVE_UNDEFINED']);
+  assert.equal(Object.hasOwn(printed, 'operatingReserveAmount'), false);
   assert.equal(output[0].includes('owner-secret'), false);
   assert.equal(output[0].includes('must-never-be-printed'), false);
   assert.equal(Object.isFrozen(result), true);
@@ -124,6 +127,7 @@ test('allows optional expectation fields to be omitted without inventing busines
   });
 
   assert.equal(result.safeWithdrawal, 0);
+  assert.equal(result.operatingReserveDefined, false);
   assert.deepEqual(result.policyBlockers, ['OPERATING_RESERVE_UNDEFINED']);
 });
 
