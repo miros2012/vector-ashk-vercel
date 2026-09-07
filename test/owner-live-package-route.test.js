@@ -34,8 +34,14 @@ test('wires owner package through the existing decision-event function with read
   assert.match(block, /createOwnerLiveSourceReader/);
   assert.match(block, /createOwnerReadonlyApi/);
   assert.match(block, /buildOwnerLivePackage/);
-  assert.match(block, /generatedAt:\s*new Date\(\)\.toISOString\(\)/);
-  assert.match(block, /verificationSlaHours:\s*24/);
+  assert.match(block, /const generatedAt\s*=\s*new Date\(\)\.toISOString\(\)/);
+  assert.match(block, /now:\s*\(\)\s*=>\s*new Date\(generatedAt\)/);
+  assert.match(block, /facts,\s*generatedAt,\s*verificationSlaHours:\s*24/s);
+  assert.equal(
+    (block.match(/new Date\(\)\.toISOString\(\)/g) || []).length,
+    1,
+    'one request must use one generatedAt timestamp for source facts and package composition'
+  );
   assert.doesNotMatch(block, /operatingReserve\s*:/);
   assert.doesNotMatch(block, /sheetsClient\(\s*\)/);
   assert.doesNotMatch(block, /\.append\(|\.update\(|\.batchUpdate\(|\.clear\(/);
