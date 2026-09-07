@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOwnerPackageOidcSmokeService } from '../lib/owner-package-oidc-smoke.js';
 
-function validClaims(eventName = 'workflow_dispatch') {
+function validClaims(eventName = 'workflow_dispatch', audience = 'vector-owner-package-smoke-v1') {
   return {
     iss: 'https://token.actions.githubusercontent.com',
-    aud: 'vector-hourly-agent-v1',
+    aud: audience,
     sub: 'repo:miros2012@46207692/vector-ashk-vercel@1350493825:ref:refs/heads/main',
     repository: 'miros2012/vector-ashk-vercel',
     repository_id: '1350493825',
@@ -31,7 +31,7 @@ const attestation = Object.freeze({
   policyBlockers: Object.freeze(['OPERATING_RESERVE_UNDEFINED'])
 });
 
-test('owner-triggered workflow_dispatch runs the existing production smoke with Vercel-only key and returns compact attestation', async () => {
+test('owner-triggered workflow_dispatch runs the existing production smoke with dedicated Owner audience and Vercel-only key', async () => {
   const calls = [];
   const fetchImpl = async () => { throw new Error('fetch should be delegated only through executeSmoke'); };
   const service = createOwnerPackageOidcSmokeService({
@@ -66,6 +66,21 @@ test('owner-triggered workflow_dispatch runs the existing production smoke with 
   assert.equal(calls[0].now, '2026-09-07T16:00:00.000Z');
   assert.equal(typeof calls[0].writeOutput, 'function');
   assert.equal(JSON.stringify(result.body).includes('owner-secret'), false);
+});
+
+test('shared hourly-agent audience cannot invoke owner package smoke', async () => {
+  let executed = 0;
+  const service = createOwnerPackageOidcSmokeService({
+    verifyToken: async () => validClaims('workflow_dispatch', 'vector-hourly-agent-v1'),
+    executeSmoke: async () => { executed += 1; return attestation; },
+    fetchImpl: async () => null,
+    now: () => '2026-09-07T16:00:00.000Z',
+    keyProvider: () => 'owner-secret'
+  });
+
+  const result = await service({ authorization: 'Bearer signed-token' });
+  assert.deepEqual(result, { status: 403, body: { ok: false, error: 'forbidden' } });
+  assert.equal(executed, 0);
 });
 
 test('scheduled hourly run cannot invoke owner package smoke', async () => {
