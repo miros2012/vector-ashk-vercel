@@ -121,3 +121,35 @@ test('requires the parsed daily row count to equal the declared horizon', async 
     /daily rows.*horizonDays/i
   );
 });
+
+test('requires Google Sheets date serials to be finite integer numbers', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+
+  for (const value of [46273.5, '46273', Number.NaN, Number.POSITIVE_INFINITY]) {
+    const rows = liveRows();
+    rows[5][1] = value;
+    assert.throws(
+      () => parseOwnerForecastSheetValues(rows),
+      /date serial.*finite integer/i,
+      String(value)
+    );
+  }
+});
+
+test('rejects duplicate or non-consecutive forecast dates', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+
+  const duplicate = liveRows();
+  duplicate[6][1] = 46273;
+  assert.throws(
+    () => parseOwnerForecastSheetValues(duplicate),
+    /forecast dates.*duplicate/i
+  );
+
+  const gap = liveRows();
+  gap[6][1] = 46275;
+  assert.throws(
+    () => parseOwnerForecastSheetValues(gap),
+    /forecast dates.*consecutive/i
+  );
+});
