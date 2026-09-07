@@ -10,6 +10,7 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+// Regression contract: production request parsing must not invoke Vercel's legacy req.query getter.
 function throwingQueryRequest(url, method = 'GET') {
   const req = { method, headers: {}, url, originalUrl: url };
   Object.defineProperty(req, 'query', {
