@@ -153,3 +153,59 @@ test('rejects duplicate or non-consecutive forecast dates', async () => {
     /forecast dates.*consecutive/i
   );
 });
+
+test('requires projected daily opening cash to be a finite signed number without coercion', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+
+  for (const value of ['-1', Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    const rows = liveRows();
+    rows[5][5] = value;
+    assert.throws(
+      () => parseOwnerForecastSheetValues(rows),
+      /dailyRows\[0\]\.openingCash.*finite/i,
+      String(value)
+    );
+  }
+
+  const negative = liveRows();
+  negative[5][5] = -1;
+  assert.equal(parseOwnerForecastSheetValues(negative).openingCash, -1);
+});
+
+test('requires inflow, outflow and reserve to be finite non-negative numbers without coercion', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+  const fields = [
+    { column: 4, name: 'inflow' },
+    { column: 2, name: 'outflow' },
+    { column: 3, name: 'reserve' }
+  ];
+
+  for (const field of fields) {
+    for (const value of [-1, '1', Number.NaN, Number.POSITIVE_INFINITY]) {
+      const rows = liveRows();
+      rows[5][field.column] = value;
+      assert.throws(
+        () => parseOwnerForecastSheetValues(rows),
+        new RegExp(`dailyRows\\[0\\]\\.${field.name}.*${value === -1 ? 'non-negative' : 'finite'}`, 'i'),
+        `${field.name}: ${String(value)}`
+      );
+    }
+  }
+});
+
+test('normalizes negative zero in actual and daily monetary fields', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+  const rows = liveRows();
+  rows[2][1] = -0;
+  rows[5][5] = -0;
+  rows[5][4] = -0;
+  rows[5][2] = -0;
+  rows[5][3] = -0;
+
+  const result = parseOwnerForecastSheetValues(rows);
+  assert.equal(Object.is(result.availableCash, -0), false);
+  assert.equal(Object.is(result.openingCash, -0), false);
+  assert.equal(Object.is(result.flows[0].inflow, -0), false);
+  assert.equal(Object.is(result.flows[0].outflow, -0), false);
+  assert.equal(Object.is(result.protectedReserves[0].amount, -0), false);
+});
