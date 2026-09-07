@@ -22,11 +22,14 @@ test('existing health endpoint dispatches the OIDC owner package smoke without a
   assert.ok(!config.crons.some((cron) => /owner.*smoke|smoke.*owner/i.test(String(cron.path || ''))));
 });
 
-test('manual workflow_dispatch can run owner package smoke through health with GitHub OIDC only', () => {
+test('manual workflow_dispatch requests a dedicated Owner smoke OIDC audience and never exposes owner secrets', () => {
   const workflow = read('.github/workflows/hourly-project-continuation.yml');
   assert.match(workflow, /owner-package-smoke/);
   assert.match(workflow, /ACTIONS_ID_TOKEN_REQUEST_URL/);
-  assert.match(workflow, /vector-hourly-agent-v1/);
+  assert.match(
+    workflow,
+    /requestUrl\.searchParams\.set\(['"]audience['"],\s*['"]vector-owner-package-smoke-v1['"]\)/
+  );
   assert.match(workflow, /OWNER_PACKAGE_SMOKE_ENDPOINT:\s*https:\/\/vector-ashk-backend\.vercel\.app\/api\/health/);
   assert.match(workflow, /x-vercel-trusted-oidc-idp-token/);
   assert.match(workflow, /owner_package_smoke/);

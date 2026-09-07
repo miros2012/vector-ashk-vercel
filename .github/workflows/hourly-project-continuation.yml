@@ -72,7 +72,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           const requestUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
-          requestUrl.searchParams.set('audience', 'vector-hourly-agent-v1');
+          requestUrl.searchParams.set('audience', 'vector-owner-package-smoke-v1');
           const tokenResponse = await fetch(requestUrl, {
             headers: { authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` }
           });
