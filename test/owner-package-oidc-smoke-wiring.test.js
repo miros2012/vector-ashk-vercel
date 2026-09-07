@@ -35,6 +35,7 @@ test('existing health endpoint dispatches the OIDC owner package smoke without a
   assert.ok(!config.crons.some((cron) => /owner.*smoke|smoke.*owner/i.test(String(cron.path || ''))));
 });
 
+// Issue #154 TDD contract: carry the GitHub OIDC token only in Authorization.
 test('manual workflow_dispatch requests a dedicated Owner smoke OIDC audience and exposes the token only through Authorization', () => {
   const workflow = read('.github/workflows/hourly-project-continuation.yml');
   assert.match(workflow, /owner-package-smoke/);
