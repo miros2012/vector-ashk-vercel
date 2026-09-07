@@ -9,6 +9,6 @@
   "engines": {"node": "24.x"},
   "dependencies": {
     "@vercel/oidc": "^3.8.5",
-    "googleapis": "^144.0.0"
+    "googleapis": "^178.0.0"
   }
 }
