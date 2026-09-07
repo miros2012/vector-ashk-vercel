@@ -157,12 +157,24 @@ test('delegates invalid explicit financial inputs to the existing fail-closed co
     /availableCash must be finite/i
   );
   assert.throws(
-    () => buildConfiguredCashScenarioPolicy(input({ openingCash: -1 })),
-    /openingCash must be non-negative/i
+    () => buildConfiguredCashScenarioPolicy(input({ openingCash: Number.NEGATIVE_INFINITY })),
+    /openingCash must be finite/i
   );
   assert.throws(
     () => buildConfiguredCashScenarioPolicy(input({ policyMode: 'OPTIMISTIC' })),
     /policyMode is unsupported/i
+  );
+});
+
+test('accepts signed projected opening while actual available cash remains non-negative', () => {
+  const result = buildConfiguredCashScenarioPolicy(input({ openingCash: -1 }));
+
+  assert.equal(result.forecast.openingCash, -1);
+  assert.equal(result.forecast.scenarios.find(item => item.name === 'base').daily[0].closingBalance, -101);
+
+  assert.throws(
+    () => buildConfiguredCashScenarioPolicy(input({ openingCash: -1, availableCash: -1 })),
+    /availableCash must be non-negative/i
   );
 });
 
