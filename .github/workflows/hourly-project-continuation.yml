@@ -102,7 +102,6 @@ jobs:
             method: 'POST',
             headers: {
               authorization: `Bearer ${token}`,
-              'x-vercel-trusted-oidc-idp-token': token,
               'content-type': 'application/json',
               accept: 'application/json'
             },
