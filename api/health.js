@@ -10,11 +10,13 @@ import {
 } from '../lib/tochka-operation-ack.js';
 import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
 import { createHourlyProjectAgentService } from '../lib/hourly-project-agent.js';
+import { createOwnerPackageOidcSmokeService } from '../lib/owner-package-oidc-smoke.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 const PUBLISH_SCHEDULES = new Set(['35 21 * * *']);
 const HOURLY_AGENT_MODES = new Set(['hourly_agent_probe', 'hourly_agent_patch']);
+const OWNER_PACKAGE_SMOKE_MODE = 'owner_package_smoke';
 const CONTROL_SHEET = '__vercel_control';
 const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
 const TOCHKA_HEARTBEAT_KEY_HASH_MARKER = 'tochka_operations_heartbeat_key_sha256';
@@ -151,6 +153,10 @@ const hourlyProjectAgentService = createHourlyProjectAgentService({
   getGatewayToken: getVercelOidcToken
 });
 
+const ownerPackageOidcSmokeService = createOwnerPackageOidcSmokeService({
+  verifyToken: verifyGitHubActionsOidcToken
+});
+
 function isAuthorizedCron(req) {
   const expected = String(process.env.CRON_SECRET || '').trim();
   const actual = String(req?.headers?.authorization || '');
@@ -207,6 +213,13 @@ async function handleHourlyProjectAgent(req, res, body) {
   const result = await hourlyProjectAgentService({
     authorization: req?.headers?.authorization,
     body
+  });
+  return res.status(result.status).json(result.body);
+}
+
+async function handleOwnerPackageSmoke(req, res) {
+  const result = await ownerPackageOidcSmokeService({
+    authorization: req?.headers?.authorization
   });
   return res.status(result.status).json(result.body);
 }
@@ -284,6 +297,10 @@ export default async function handler(req, res) {
   if (method === 'POST' && HOURLY_AGENT_MODES.has(String(body?.mode || ''))) {
     res.setHeader?.('Cache-Control', 'no-store');
     return handleHourlyProjectAgent(req, res, body);
+  }
+  if (method === 'POST' && String(body?.mode || '') === OWNER_PACKAGE_SMOKE_MODE) {
+    res.setHeader?.('Cache-Control', 'no-store');
+    return handleOwnerPackageSmoke(req, res);
   }
   if (method === 'POST' && String(body?.mode || '') === 'operations_refresh_success') {
     res.setHeader?.('Cache-Control', 'no-store');
