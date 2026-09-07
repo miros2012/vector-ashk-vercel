@@ -22,7 +22,7 @@ Policy incompleteness and source-data health are separate concepts.
 
 ## Source-of-truth boundaries
 
-All production reads use Google Sheets read-only scope and `UNFORMATTED_VALUE` for financial values.
+All production reads use Google Sheets read-only scope and `UNFORMATTED_VALUE` for financial values. The business date is resolved in `Asia/Yekaterinburg`.
 
 ### 30-day forecast
 
@@ -34,7 +34,11 @@ This supplies actual available cash, projected opening cash, dated inflows, date
 
 ### Data Health
 
-Read the bounded `Data Health Snapshot` contract and reuse the canonical Data Health parser/evaluator rather than creating another health rule set.
+Read exactly:
+
+`'Data Health Snapshot'!A1:L40`
+
+Reuse the canonical Data Health parser/evaluator rather than creating another health rule set.
 
 The package must preserve the distinction between:
 
@@ -48,27 +52,65 @@ The existing manual Tochka → DDS operations remain untouched and unclassified.
 
 ### Sales and collections
 
-Use the current `РОП_Штаб_Утро` city row for sales plan-to-date and sales fact. Select the row mechanically by the current business date, slice `СЕГОДНЯ — НА СЕЙЧАС`, and level `ГОРОД`; do not depend on a fixed physical row number.
+Read exactly:
 
-Receivables do **not** come from that ROP row. Use the canonical `АШК_Дебиторка_Свод__vercel` total instead. If duplicate source surfaces disagree, do not average, merge, or silently pick a convenient value.
+`'РОП_Штаб_Утро'!A1:I500`
+
+Use the single row matching all three conditions:
+
+- business date = current Tyumen business date;
+- slice = `СЕГОДНЯ — НА СЕЙЧАС`;
+- level = `ГОРОД`.
+
+From that row use only plan-to-date and month-to-date fact. Do not depend on a fixed physical row number. Missing or duplicate matching city rows fail closed.
+
+Receivables do **not** come from the ROP row. Read exactly:
+
+`'АШК_Дебиторка_Свод__vercel'!A1:F2`
+
+Require the `ИТОГО` row and use its contract count, debt, sales, and paid totals. If duplicate source surfaces disagree, do not average, merge, or silently pick a convenient value.
 
 ### Obligations
 
-Use `Обязательства` plus `Корректировки обязательств` through existing obligation semantics. Paid obligations and zero-cash-outflow reserve rows must not be counted as open cash needs. Do not double-count obligations already represented by the driving-fund reserve or forecast protection logic.
+Read exactly:
+
+- `'Обязательства'!A1:Q500`
+- `'Корректировки обязательств'!A1:J500`
+
+Reuse existing obligation/adjustment status semantics.
+
+For the owner liquidity package:
+
+- `openObligations` = sum of positive finite `Net cash outflow` for obligations that are not paid/closed;
+- zero-cash-outflow reserve rows are excluded from cash needs;
+- `unconfirmedObligationReserve` = sum of positive finite cash need for rows whose status is `Оценка` or starts with `Требует`;
+- `confirmedObligations` = open cash needs excluding those unconfirmed rows;
+- if an unconfirmed open obligation exists without a usable finite amount, withdrawal is blocked rather than guessed;
+- paid obligations are never counted again;
+- obligations already protected through a dedicated reserve must not be duplicated as another reserve component.
 
 ### Driving fund
 
-Read `Фонд вождения` by exact business labels, not hard-coded row numbers, and expose at minimum:
+Read exactly:
 
-- required driving-fund reserve;
-- live driving-fund balance;
-- positive deficit / negative surplus.
+`'Фонд вождения'!A21:J30`
+
+Parse by exact business labels, not hard-coded row numbers, and expose at minimum:
+
+- `Необходимый резерв фонда, ₽`;
+- `LIVE остаток фонда вождения, ₽`;
+- `Дефицит фонда (+) / избыток (-), ₽`.
 
 The current simplified driving-fund model remains authoritative; this work does not change master rates, hours, fuel, leasing, or the model formula.
 
 ### Decisions and verification
 
-Reuse the existing `Решения` / `История решений` lifecycle and verification queue. Synthetic decisions remain excluded from owner effectiveness and action logic.
+Read exactly:
+
+- `'Решения'!A1:V200`
+- `'История решений'!A1:K1000`
+
+Reuse the existing lifecycle and verification queue. Synthetic decisions remain excluded from owner effectiveness and action logic.
 
 ## Composition architecture
 
@@ -76,7 +118,7 @@ The implementation is split into three bounded layers.
 
 ### Layer 1 — live source reader
 
-Create one read-only source adapter/service that gathers the minimum bounded ranges and returns a normalized `owner live facts` object.
+Create one read-only source adapter/service that gathers the minimum bounded ranges above and returns a normalized `owner live facts` object.
 
 Responsibilities:
 
@@ -94,7 +136,7 @@ Create a composition service that turns normalized live facts into the inputs ex
 
 Responsibilities:
 
-- run the configured three-scenario cash forecast using the owner-approved cash policy;
+- run the configured three-scenario cash forecast using `VECTOR_OWNER_CASH_CONFIGURATIONS` / `VECTOR_OWNER_CASH_POLICY`;
 - build owner agenda candidates only from supplied live facts and existing supported categories;
 - build the decision verification queue from the real decision lifecycle;
 - build the immutable Owner Dashboard snapshot;
@@ -107,7 +149,9 @@ When the operating reserve is later approved, the gate can switch to the ordinar
 
 ### Layer 3 — protected API wiring
 
-Expose the package through the existing `api/decision-event.js` serverless function using a new `ownerRoute=package` dispatch and a friendly rewrite such as `/api/owner-package`.
+Expose the package through the existing `api/decision-event.js` serverless function using `ownerRoute=package` and the exact friendly rewrite:
+
+`/api/owner-package` → `/api/decision-event?ownerRoute=package`
 
 Requirements:
 
@@ -168,12 +212,13 @@ Tests must prove:
 - undefined operating reserve returns `safeWithdrawal = 0` plus `OPERATING_RESERVE_UNDEFINED`;
 - Data Health is not rewritten just to block withdrawal;
 - existing Data Health blockers still force financial actions fail-closed;
+- an unconfirmed obligation with no usable amount blocks withdrawal rather than being guessed;
 - no guessed operating reserve enters calculations or output;
 - existing approved behavior remains unchanged when an explicit operating reserve is supplied in tests.
 
 ### PR C — production read-only route
 
-Wire the service into `api/decision-event.js`, add the rewrite, retain the current function-count ceiling, and verify GET/auth/no-store/read-only behavior.
+Wire the service into `api/decision-event.js`, add the exact `/api/owner-package` rewrite, retain the current function-count ceiling, and verify GET/auth/no-store/read-only behavior.
 
 ## Non-goals
 
@@ -204,7 +249,7 @@ Before declaring the live Owner API complete:
 1. all three implementation PRs are merged;
 2. post-merge CI on `main` is green;
 3. production deployment is READY;
-4. authenticated production GET returns the package with `Cache-Control: no-store`;
+4. authenticated production GET `/api/owner-package` returns the package with `Cache-Control: no-store`;
 5. live package uses current source facts;
 6. while the operating reserve remains undefined, production `safeWithdrawal` is exactly `0` with blocker `OPERATING_RESERVE_UNDEFINED`;
 7. manual Tochka → DDS backlog remains untouched and continues to block financial execution according to canonical Data Health.
