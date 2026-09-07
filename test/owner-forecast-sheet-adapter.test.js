@@ -65,3 +65,25 @@ test('reads exactly the bounded live forecast range as unformatted values and pa
   });
   assert.deepEqual(source, before);
 });
+
+test('fails closed with a deterministic adapter error when Sheets returns no value matrix', async () => {
+  const createOwnerForecastSheetAdapter = await loadAdapter();
+
+  for (const response of [undefined, null, {}, { data: {} }, { data: { values: null } }]) {
+    const sheets = {
+      spreadsheets: {
+        values: {
+          async get() {
+            return response;
+          }
+        }
+      }
+    };
+    const adapter = createOwnerForecastSheetAdapter({ sheets, spreadsheetId: 'sheet-123' });
+
+    await assert.rejects(
+      () => adapter.readOwnerForecast(),
+      /owner forecast values unavailable/i
+    );
+  }
+});
