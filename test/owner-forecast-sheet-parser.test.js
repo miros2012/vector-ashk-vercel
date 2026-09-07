@@ -68,3 +68,56 @@ test('requires horizonDays to be a positive integer number', async () => {
     );
   }
 });
+
+test('requires exactly one horizon and actual-cash label occurrence', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+
+  const duplicateHorizon = liveRows();
+  duplicateHorizon.push(['Горизонт', 2]);
+  assert.throws(
+    () => parseOwnerForecastSheetValues(duplicateHorizon),
+    /Горизонт.*exactly once/i
+  );
+
+  const duplicateCash = liveRows();
+  duplicateCash.push(['Стартовый остаток', 55781]);
+  assert.throws(
+    () => parseOwnerForecastSheetValues(duplicateCash),
+    /Стартовый остаток.*exactly once/i
+  );
+});
+
+test('requires exactly one complete daily header with every required header once', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+
+  const duplicateCell = liveRows();
+  duplicateCell[4].push('Дата');
+  assert.throws(
+    () => parseOwnerForecastSheetValues(duplicateCell),
+    /Дата.*exactly once.*header/i
+  );
+
+  const duplicateHeader = liveRows();
+  duplicateHeader.push([
+    'Дата',
+    'Остаток на начало',
+    'Поступления всего',
+    'Выплаты всего',
+    'Резерв / блокировка'
+  ]);
+  assert.throws(
+    () => parseOwnerForecastSheetValues(duplicateHeader),
+    /daily header.*exactly once/i
+  );
+});
+
+test('requires the parsed daily row count to equal the declared horizon', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+  const rows = liveRows();
+  rows.pop();
+
+  assert.throws(
+    () => parseOwnerForecastSheetValues(rows),
+    /daily rows.*horizonDays/i
+  );
+});
