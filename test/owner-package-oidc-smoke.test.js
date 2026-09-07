@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOwnerPackageOidcSmokeService } from '../lib/owner-package-oidc-smoke.js';
 
+const MAIN_SHA = '4abdd3e2e9ec80105c8c8bc6b85dc4a20f98ea5d';
+
 function validClaims(eventName = 'workflow_dispatch', audience = 'vector-owner-package-smoke-v1') {
   return {
     iss: 'https://token.actions.githubusercontent.com',
@@ -12,6 +14,8 @@ function validClaims(eventName = 'workflow_dispatch', audience = 'vector-owner-p
     repository_owner_id: '46207692',
     ref: 'refs/heads/main',
     workflow_ref: 'miros2012/vector-ashk-vercel/.github/workflows/hourly-project-continuation.yml@refs/heads/main',
+    workflow_sha: MAIN_SHA,
+    sha: MAIN_SHA,
     event_name: eventName,
     actor_id: '46207692',
     run_id: '12345',
@@ -37,7 +41,8 @@ function serviceForClaims(claims, executedRef = { count: 0 }) {
     executeSmoke: async () => { executedRef.count += 1; return attestation; },
     fetchImpl: async () => null,
     now: () => '2026-09-07T16:00:00.000Z',
-    keyProvider: () => 'owner-secret'
+    keyProvider: () => 'owner-secret',
+    deploymentShaProvider: () => MAIN_SHA
   });
 }
 
@@ -55,7 +60,8 @@ test('owner-triggered workflow_dispatch runs the existing production smoke with 
     },
     fetchImpl,
     now: () => '2026-09-07T16:00:00.000Z',
-    keyProvider: () => 'owner-secret'
+    keyProvider: () => 'owner-secret',
+    deploymentShaProvider: () => MAIN_SHA
   });
 
   const result = await service({ authorization: 'Bearer signed-token' });
@@ -121,6 +127,35 @@ test('owner smoke identity is independently bound to immutable repository, workf
   }
 });
 
+test('owner smoke fails closed when GitHub run, workflow, and deployed Vercel commit SHAs are not the same exact revision', async () => {
+  const cases = [
+    { claims: { ...validClaims(), sha: '' }, deploymentSha: MAIN_SHA },
+    { claims: { ...validClaims(), workflow_sha: '' }, deploymentSha: MAIN_SHA },
+    { claims: { ...validClaims(), sha: 'z'.repeat(40) }, deploymentSha: MAIN_SHA },
+    { claims: { ...validClaims(), workflow_sha: '1'.repeat(40) }, deploymentSha: MAIN_SHA },
+    { claims: validClaims(), deploymentSha: '' },
+    { claims: validClaims(), deploymentSha: '2'.repeat(40) }
+  ];
+
+  for (const entry of cases) {
+    let keyReads = 0;
+    let executions = 0;
+    const service = createOwnerPackageOidcSmokeService({
+      verifyToken: async () => entry.claims,
+      executeSmoke: async () => { executions += 1; return attestation; },
+      fetchImpl: async () => null,
+      now: () => '2026-09-07T16:00:00.000Z',
+      keyProvider: () => { keyReads += 1; return 'owner-secret'; },
+      deploymentShaProvider: () => entry.deploymentSha
+    });
+
+    const result = await service({ authorization: 'Bearer signed-token' });
+    assert.deepEqual(result, { status: 403, body: { ok: false, error: 'forbidden' } });
+    assert.equal(keyReads, 0);
+    assert.equal(executions, 0);
+  }
+});
+
 test('scheduled hourly run cannot invoke owner package smoke', async () => {
   const executed = { count: 0 };
   const service = serviceForClaims(validClaims('schedule'), executed);
@@ -138,7 +173,8 @@ test('missing or invalid bearer token fails closed before smoke execution', asyn
     executeSmoke: async () => { executed += 1; return attestation; },
     fetchImpl: async () => null,
     now: () => '2026-09-07T16:00:00.000Z',
-    keyProvider: () => 'owner-secret'
+    keyProvider: () => 'owner-secret',
+    deploymentShaProvider: () => MAIN_SHA
   });
 
   for (const authorization of ['', 'Basic abc', 'Bearer bad-token']) {
@@ -153,7 +189,8 @@ test('missing Vercel owner key or smoke failure returns generic 500 without leak
   const base = {
     verifyToken: async () => validClaims(),
     fetchImpl: async () => null,
-    now: () => '2026-09-07T16:00:00.000Z'
+    now: () => '2026-09-07T16:00:00.000Z',
+    deploymentShaProvider: () => MAIN_SHA
   };
 
   const missingKey = createOwnerPackageOidcSmokeService({
