@@ -10,6 +10,7 @@ import { createOwnerActionSheetAdapter } from '../lib/owner-action-sheet-adapter
 import { buildOwnerLivePackage } from '../lib/owner-live-package-service.js';
 import { createOwnerLiveSourceReader } from '../lib/owner-live-source-reader.js';
 import { createOwnerReadonlyApi } from '../lib/owner-readonly-api.js';
+import { firstRequestQueryValue } from '../lib/request-query.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 
@@ -114,7 +115,7 @@ function createOwnerPackageHandler() {
 
 export default async function handler(req, res) {
   try {
-    const ownerRoute = String(req.query?.ownerRoute || '').trim();
+    const ownerRoute = firstRequestQueryValue(req, 'ownerRoute');
     if (ownerRoute === 'action') {
       ownerActionHandler ||= createOwnerActionHandler();
       return await ownerActionHandler(req, res);
