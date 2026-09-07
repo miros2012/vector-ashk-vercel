@@ -105,7 +105,7 @@ function createOwnerPackageHandler() {
       const facts = await reader.readOwnerLiveFacts();
       return buildOwnerLivePackage({
         facts,
-        generatedAt: new Date().toISOString(),
+        generatedAt,
         verificationSlaHours: 24
       });
     }
