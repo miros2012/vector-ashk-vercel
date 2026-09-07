@@ -31,6 +31,16 @@ const attestation = Object.freeze({
   policyBlockers: Object.freeze(['OPERATING_RESERVE_UNDEFINED'])
 });
 
+function serviceForClaims(claims, executedRef = { count: 0 }) {
+  return createOwnerPackageOidcSmokeService({
+    verifyToken: async () => claims,
+    executeSmoke: async () => { executedRef.count += 1; return attestation; },
+    fetchImpl: async () => null,
+    now: () => '2026-09-07T16:00:00.000Z',
+    keyProvider: () => 'owner-secret'
+  });
+}
+
 test('owner-triggered workflow_dispatch runs the existing production smoke with dedicated Owner audience and Vercel-only key', async () => {
   const calls = [];
   const fetchImpl = async () => { throw new Error('fetch should be delegated only through executeSmoke'); };
@@ -68,34 +78,56 @@ test('owner-triggered workflow_dispatch runs the existing production smoke with 
   assert.equal(JSON.stringify(result.body).includes('owner-secret'), false);
 });
 
+test('dedicated Owner audience may be one entry in an audience array', async () => {
+  const executed = { count: 0 };
+  const service = serviceForClaims(validClaims('workflow_dispatch', ['other-audience', 'vector-owner-package-smoke-v1']), executed);
+  const result = await service({ authorization: 'Bearer signed-token' });
+  assert.equal(result.status, 200);
+  assert.equal(executed.count, 1);
+});
+
 test('shared hourly-agent audience cannot invoke owner package smoke', async () => {
-  let executed = 0;
-  const service = createOwnerPackageOidcSmokeService({
-    verifyToken: async () => validClaims('workflow_dispatch', 'vector-hourly-agent-v1'),
-    executeSmoke: async () => { executed += 1; return attestation; },
-    fetchImpl: async () => null,
-    now: () => '2026-09-07T16:00:00.000Z',
-    keyProvider: () => 'owner-secret'
-  });
+  const executed = { count: 0 };
+  const service = serviceForClaims(validClaims('workflow_dispatch', 'vector-hourly-agent-v1'), executed);
 
   const result = await service({ authorization: 'Bearer signed-token' });
   assert.deepEqual(result, { status: 403, body: { ok: false, error: 'forbidden' } });
-  assert.equal(executed, 0);
+  assert.equal(executed.count, 0);
+});
+
+test('owner smoke identity is independently bound to immutable repository, workflow, actor and run claims', async () => {
+  const invalid = [
+    { iss: 'https://example.invalid' },
+    { sub: 'repo:other/repo:ref:refs/heads/main' },
+    { repository: 'other/repo' },
+    { repository_id: '999' },
+    { repository_owner_id: '999' },
+    { ref: 'refs/heads/feature' },
+    { workflow_ref: 'miros2012/vector-ashk-vercel/.github/workflows/test.yml@refs/heads/main' },
+    { event_name: 'issues' },
+    { actor_id: '999' },
+    { run_id: '0' },
+    { run_id: 'not-a-run' },
+    { run_attempt: '0' },
+    { run_attempt: '' }
+  ];
+
+  for (const override of invalid) {
+    const executed = { count: 0 };
+    const service = serviceForClaims({ ...validClaims(), ...override }, executed);
+    const result = await service({ authorization: 'Bearer signed-token' });
+    assert.deepEqual(result, { status: 403, body: { ok: false, error: 'forbidden' } });
+    assert.equal(executed.count, 0);
+  }
 });
 
 test('scheduled hourly run cannot invoke owner package smoke', async () => {
-  let executed = 0;
-  const service = createOwnerPackageOidcSmokeService({
-    verifyToken: async () => validClaims('schedule'),
-    executeSmoke: async () => { executed += 1; return attestation; },
-    fetchImpl: async () => null,
-    now: () => '2026-09-07T16:00:00.000Z',
-    keyProvider: () => 'owner-secret'
-  });
+  const executed = { count: 0 };
+  const service = serviceForClaims(validClaims('schedule'), executed);
 
   const result = await service({ authorization: 'Bearer signed-token' });
   assert.deepEqual(result, { status: 403, body: { ok: false, error: 'forbidden' } });
-  assert.equal(executed, 0);
+  assert.equal(executed.count, 0);
 });
 
 test('missing or invalid bearer token fails closed before smoke execution', async () => {
