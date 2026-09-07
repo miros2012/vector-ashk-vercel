@@ -221,7 +221,7 @@ test('fails deterministically for malformed or incomplete daily rows', async () 
   );
 
   const missingReserve = liveRows();
-  missingReserve[5] = missingReserve[5].slice(0, 3);
+  missingReserve[5][3] = undefined;
   assert.throws(
     () => parseOwnerForecastSheetValues(missingReserve),
     /dailyRows\[0\]\.reserve.*missing/i
