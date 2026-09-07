@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { firstRequestQueryValue } from '../lib/request-query.js';
 const ASHK_BASE_URL='https://app.dscontrol.ru';
 const SPREADSHEET_ID='1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const OWNER_SHEET='АШК_Часы_Август';
@@ -14,7 +15,7 @@ export default async function handler(req,res){try{
  const rr=await sheets.spreadsheets.values.get({spreadsheetId:SPREADSHEET_ID,range:`'${OWNER_SHEET}'!A2:A3008`});
  const owners=[...new Set((rr.data.values||[]).map(r=>String(r?.[0]??'').trim()).filter(Boolean))];
  const forced=['3561934','3652747','3817878','3643144','3784958','3825402','3752815'];
- const offset=Math.max(0,Number(req.query?.offset||0)||0),count=Math.min(120,Math.max(1,Number(req.query?.count||120)||120));
+ const offset=Math.max(0,Number(firstRequestQueryValue(req,'offset')||0)||0),count=Math.min(120,Math.max(1,Number(firstRequestQueryValue(req,'count')||120)||120));
  const pool=[...new Set([...forced,...owners])];
  const sample=pool.slice(offset,offset+count);
  let errors=0,allOps=0,sessionOps=0,augSessionOps=0,sessionHours=0,sessionTokens=0,emptyTokenHours=0,mismatchHours=0,outsideSessionHours=0;
