@@ -54,3 +54,17 @@ test('rejects negative actual available cash while keeping projected opening sig
     /availableCash.*non-negative/i
   );
 });
+
+test('requires horizonDays to be a positive integer number', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+
+  for (const value of [0, -1, 1.5, '2', Number.POSITIVE_INFINITY]) {
+    const rows = liveRows();
+    rows[1][3] = value;
+    assert.throws(
+      () => parseOwnerForecastSheetValues(rows),
+      /horizonDays.*positive integer/i,
+      String(value)
+    );
+  }
+});
