@@ -11,11 +11,8 @@ async function loadParser() {
   }
 }
 
-test('parses live forecast facts by labels and keeps protected reserves out of cash outflows', async () => {
-  const parseOwnerForecastSheetValues = await loadParser();
-  assert.equal(typeof parseOwnerForecastSheetValues, 'function');
-
-  const rows = [
+function liveRows() {
+  return [
     ['unrelated preamble'],
     ['ПРОГНОЗ ДЕНЕГ — 30 ДНЕЙ', 'MVP v1', 'Горизонт', 2],
     ['Стартовый остаток', 55781],
@@ -24,8 +21,13 @@ test('parses live forecast facts by labels and keeps protected reserves out of c
     ['🔴 Разрыв', 46273, 92718, 16831.81556775, 275931.40275, -759019.02],
     ['🔴 Разрыв', 46274, 0, 31817.5511085, 245667.79575, -575805.61725]
   ];
+}
 
-  const result = parseOwnerForecastSheetValues(rows);
+test('parses live forecast facts by labels and keeps protected reserves out of cash outflows', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+  assert.equal(typeof parseOwnerForecastSheetValues, 'function');
+
+  const result = parseOwnerForecastSheetValues(liveRows());
 
   assert.deepEqual(result, {
     availableCash: 55781,
@@ -40,4 +42,15 @@ test('parses live forecast facts by labels and keeps protected reserves out of c
       { date: '2026-09-09', amount: 31817.5511085 }
     ]
   });
+});
+
+test('rejects negative actual available cash while keeping projected opening signed', async () => {
+  const parseOwnerForecastSheetValues = await loadParser();
+  const rows = liveRows();
+  rows[2][1] = -1;
+
+  assert.throws(
+    () => parseOwnerForecastSheetValues(rows),
+    /availableCash.*non-negative/i
+  );
 });
