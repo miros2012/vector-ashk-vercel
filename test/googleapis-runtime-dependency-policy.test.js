@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { google } from 'googleapis';
 
 function installedVersions(tree, dependencyName, versions = []) {
@@ -19,11 +19,14 @@ test('Google API runtime preserves the JWT and Sheets client surfaces used by pr
 });
 
 test('installed runtime dependency tree has no unsupported uuid major 10 or below', () => {
-  const output = execFileSync('npm', ['ls', 'uuid', '--json', '--all'], {
+  const result = spawnSync('npm', ['ls', 'uuid', '--json', '--all'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe']
   });
-  const tree = JSON.parse(output);
+  assert.ok(result.status === 0 || result.status === 1, `npm ls uuid failed unexpectedly with status ${result.status}`);
+  assert.ok(result.stdout?.trim(), 'npm ls uuid must return a JSON dependency tree');
+
+  const tree = JSON.parse(result.stdout);
   const versions = installedVersions(tree, 'uuid');
   const unsupported = versions.filter(version => {
     const major = Number(version.split('.')[0]);
