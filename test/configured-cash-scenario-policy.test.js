@@ -165,3 +165,74 @@ test('delegates invalid explicit financial inputs to the existing fail-closed co
     /policyMode is unsupported/i
   );
 });
+
+test('protected reserves reduce scenario caps without changing cash balances or cash gaps', () => {
+  const result = buildConfiguredCashScenarioPolicy(input({
+    protectedReserves: [{ date: '2026-09-07', amount: 150 }]
+  }));
+
+  assert.deepEqual(result.protectedReserves, [
+    { date: '2026-09-07', amount: 150 }
+  ]);
+  assert.deepEqual(result.scenarioCaps, {
+    conservative: 500,
+    base: 650,
+    target: 800
+  });
+  assert.equal(result.forecast.scenarios[0].minimumBalance, 750);
+  assert.equal(result.forecast.scenarios[0].cashGap, 0);
+  assert.equal(result.forecast.scenarios[0].safeOwnerWithdrawal, 650);
+  assert.equal(result.withdrawal.safeWithdrawal, 500);
+});
+
+test('protected reserve schedule must match the forecast horizon exactly', () => {
+  assert.throws(
+    () => buildConfiguredCashScenarioPolicy(input({ protectedReserves: [] })),
+    /protected reserves.*horizon/i
+  );
+  assert.throws(
+    () => buildConfiguredCashScenarioPolicy(input({
+      protectedReserves: [{ date: '2026-09-08', amount: 1 }]
+    })),
+    /protected reserves.*horizon/i
+  );
+});
+
+test('protected reserves fail closed on duplicates, invalid dates and invalid amounts', () => {
+  assert.throws(
+    () => buildConfiguredCashScenarioPolicy(input({
+      protectedReserves: [
+        { date: '2026-09-07', amount: 1 },
+        { date: '2026-09-07', amount: 2 }
+      ]
+    })),
+    /duplicate protected reserve date/i
+  );
+  assert.throws(
+    () => buildConfiguredCashScenarioPolicy(input({
+      protectedReserves: [{ date: '2026-02-30', amount: 1 }]
+    })),
+    /protectedReserves\[0\]\.date.*valid/i
+  );
+  assert.throws(
+    () => buildConfiguredCashScenarioPolicy(input({
+      protectedReserves: [{ date: '2026-09-07', amount: -1 }]
+    })),
+    /protectedReserves\[0\]\.amount.*non-negative/i
+  );
+});
+
+test('normalized protected reserves are deeply immutable and input is not mutated', () => {
+  const source = input({
+    protectedReserves: [{ date: '2026-09-07', amount: -0 }]
+  });
+  const before = structuredClone(source);
+  const result = buildConfiguredCashScenarioPolicy(source);
+
+  assert.deepEqual(source, before);
+  assert.equal(result.protectedReserves[0].amount, 0);
+  assert.equal(Object.is(result.protectedReserves[0].amount, -0), false);
+  assert.equal(Object.isFrozen(result.protectedReserves), true);
+  assert.equal(Object.isFrozen(result.protectedReserves[0]), true);
+  assert.throws(() => { result.protectedReserves[0].amount = 1; }, TypeError);
+});
