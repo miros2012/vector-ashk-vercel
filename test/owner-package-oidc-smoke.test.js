@@ -20,6 +20,7 @@ function validClaims(eventName = 'workflow_dispatch', audience = 'vector-owner-p
     actor_id: '46207692',
     run_id: '12345',
     run_attempt: '1',
+    runner_environment: 'github-hosted',
     jti: 'test-jti'
   };
 }
