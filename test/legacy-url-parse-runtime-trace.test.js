@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   traceApplicationUrlParseDep0169,
-  traceGoogleapisCommonDiscoveryDep0169
+  traceGoogleapisCommonDiscoveryDep0169,
+  traceGoogleSheetsClientConstructionDep0169
 } from '../lib/legacy-url-parse-runtime-trace.js';
 
 function assertDiscoveryCallExecuted(report) {
@@ -19,6 +20,15 @@ test('controlled dependency call is reachable but does not emit DEP0169 from nod
   assertDiscoveryCallExecuted(report);
   assert.equal(report.warningCode, null);
   assert.equal(report.traceContainsStaticMatch, false);
+});
+
+test('production-like Google Sheets client construction does not emit DEP0169 on Node 24', async () => {
+  const report = await traceGoogleSheetsClientConstructionDep0169({ rootDir: process.cwd() });
+
+  assert.equal(report.triggerMode, 'google-sheets-client-construction');
+  assert.equal(report.operationErrorCode, null);
+  assert.equal(report.clientConstructed, true);
+  assert.equal(report.warningCode, null);
 });
 
 test('same trace harness observes DEP0169 for an application-level url.parse control', async () => {
