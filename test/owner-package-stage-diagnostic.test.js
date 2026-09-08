@@ -49,7 +49,7 @@ async function loadStageModule() {
   return import(stageModuleUrl.href);
 }
 
-test('Owner package stage helper exposes only the fixed allowlist and strips raw errors', async () => {
+test('Owner package stage helper exposes only the fixed allowlist while preserving internal fail-closed errors', async () => {
   const {
     OWNER_PACKAGE_STAGES,
     runOwnerPackageStage,
@@ -59,18 +59,22 @@ test('Owner package stage helper exposes only the fixed allowlist and strips raw
   assert.deepEqual([...OWNER_PACKAGE_STAGES], EXPECTED_STAGES);
 
   const rawMarker = 'RAW_FINANCE_OR_SECRET_MARKER_90413';
+  const rawError = new Error(rawMarker);
   const stagedError = await runOwnerPackageStage('OBLIGATIONS_PARSE', async () => {
-    throw new Error(rawMarker);
+    throw rawError;
   }).then(() => null, error => error);
 
+  assert.equal(stagedError, rawError);
+  assert.equal(stagedError.message, rawMarker);
   assert.equal(ownerPackageFailureStage(stagedError), 'OBLIGATIONS_PARSE');
-  assert.equal(String(stagedError?.message || '').includes(rawMarker), false);
-  assert.equal(String(stagedError?.stack || '').includes(rawMarker), false);
+  assert.equal(Object.hasOwn(stagedError, 'stage'), false);
 
-  const unknownStageError = await runOwnerPackageStage('DO_NOT_LOG_THIS_STAGE', async () => {
-    throw new Error(rawMarker);
+  const unknownStageError = new Error(rawMarker);
+  const preservedUnknownError = await runOwnerPackageStage('DO_NOT_LOG_THIS_STAGE', async () => {
+    throw unknownStageError;
   }).then(() => null, error => error);
-  assert.equal(ownerPackageFailureStage(unknownStageError), 'UNCLASSIFIED');
+  assert.equal(preservedUnknownError, unknownStageError);
+  assert.equal(ownerPackageFailureStage(preservedUnknownError), 'UNCLASSIFIED');
   assert.equal(ownerPackageFailureStage(new Error(rawMarker)), 'UNCLASSIFIED');
 });
 
