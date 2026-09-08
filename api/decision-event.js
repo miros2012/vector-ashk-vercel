@@ -36,6 +36,10 @@ function configuredKey() {
   return process.env.VECTOR_SYNC_KEY || process.env.TOCHKA_BRIDGE_KEY || '';
 }
 
+function ownerPackageKey() {
+  return process.env.VECTOR_OWNER_PACKAGE_KEY || '';
+}
+
 function executeThroughDecisionApi(decisionApi, key) {
   return async (command) => {
     const response = {
@@ -95,7 +99,7 @@ function createQueueHandler() {
 function createOwnerPackageHandler() {
   const sheets = sheetsClient(true);
   return createOwnerReadonlyApi({
-    configuredKey: configuredKey(),
+    configuredKey: ownerPackageKey(),
     readOwnerPackage: async () => {
       const generatedAt = new Date().toISOString();
       const reader = createOwnerLiveSourceReader({
