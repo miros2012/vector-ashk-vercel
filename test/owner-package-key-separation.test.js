@@ -4,6 +4,10 @@ import fs from 'node:fs/promises';
 import { createOwnerPackageOidcSmokeService } from '../lib/owner-package-oidc-smoke.js';
 
 const MAIN_SHA = 'a'.repeat(40);
+const OWNER_SECRET = `owner-${'a'.repeat(42)}`;
+const SYNC_SECRET = `sync-${'b'.repeat(42)}`;
+const BRIDGE_SECRET = `bridge-${'c'.repeat(42)}`;
+const REUSED_SECRET = `reused-${'r'.repeat(42)}`;
 
 function validClaims() {
   return {
@@ -43,9 +47,9 @@ async function withEnv(values, run) {
 
 test('Owner smoke fails closed before execution when the dedicated key reuses a broader credential', async () => {
   await withEnv({
-    VECTOR_OWNER_PACKAGE_KEY: 'same-secret',
-    VECTOR_SYNC_KEY: 'same-secret',
-    TOCHKA_BRIDGE_KEY: 'different-bridge-secret'
+    VECTOR_OWNER_PACKAGE_KEY: REUSED_SECRET,
+    VECTOR_SYNC_KEY: REUSED_SECRET,
+    TOCHKA_BRIDGE_KEY: BRIDGE_SECRET
   }, async () => {
     let executions = 0;
     const service = createOwnerPackageOidcSmokeService({
@@ -76,24 +80,24 @@ test('shared Owner key resolver accepts only a non-empty credential distinct fro
   const { resolveOwnerPackageKey } = await import('../lib/owner-package-key.js');
 
   assert.equal(resolveOwnerPackageKey({
-    VECTOR_OWNER_PACKAGE_KEY: 'owner-secret',
-    VECTOR_SYNC_KEY: 'sync-secret',
-    TOCHKA_BRIDGE_KEY: 'bridge-secret'
-  }), 'owner-secret');
+    VECTOR_OWNER_PACKAGE_KEY: OWNER_SECRET,
+    VECTOR_SYNC_KEY: SYNC_SECRET,
+    TOCHKA_BRIDGE_KEY: BRIDGE_SECRET
+  }), OWNER_SECRET);
   assert.equal(resolveOwnerPackageKey({
-    VECTOR_OWNER_PACKAGE_KEY: 'reused',
-    VECTOR_SYNC_KEY: 'reused',
-    TOCHKA_BRIDGE_KEY: 'bridge-secret'
+    VECTOR_OWNER_PACKAGE_KEY: REUSED_SECRET,
+    VECTOR_SYNC_KEY: REUSED_SECRET,
+    TOCHKA_BRIDGE_KEY: BRIDGE_SECRET
   }), '');
   assert.equal(resolveOwnerPackageKey({
-    VECTOR_OWNER_PACKAGE_KEY: 'reused',
-    VECTOR_SYNC_KEY: 'sync-secret',
-    TOCHKA_BRIDGE_KEY: 'reused'
+    VECTOR_OWNER_PACKAGE_KEY: REUSED_SECRET,
+    VECTOR_SYNC_KEY: SYNC_SECRET,
+    TOCHKA_BRIDGE_KEY: REUSED_SECRET
   }), '');
   assert.equal(resolveOwnerPackageKey({
     VECTOR_OWNER_PACKAGE_KEY: '',
-    VECTOR_SYNC_KEY: 'sync-secret',
-    TOCHKA_BRIDGE_KEY: 'bridge-secret'
+    VECTOR_SYNC_KEY: SYNC_SECRET,
+    TOCHKA_BRIDGE_KEY: BRIDGE_SECRET
   }), '');
 
   const decisionSource = await fs.readFile(new URL('../api/decision-event.js', import.meta.url), 'utf8');
