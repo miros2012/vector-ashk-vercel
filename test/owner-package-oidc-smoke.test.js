@@ -80,7 +80,8 @@ test('owner-triggered workflow_dispatch runs the existing production smoke with 
   assert.equal(calls[0].env.VECTOR_OWNER_EXPECTED_SAFE_WITHDRAWAL, '0');
   assert.equal(calls[0].env.VECTOR_OWNER_REQUIRED_POLICY_BLOCKER, 'OPERATING_RESERVE_UNDEFINED');
   assert.equal(calls[0].fetchImpl, fetchImpl);
-  assert.equal(calls[0].now, '2026-09-07T16:00:00.000Z');
+  assert.equal(typeof calls[0].now, 'function');
+  assert.equal(calls[0].now(), '2026-09-07T16:00:00.000Z');
   assert.equal(typeof calls[0].writeOutput, 'function');
   assert.equal(JSON.stringify(result.body).includes('owner-secret'), false);
 });
