@@ -10,6 +10,7 @@ import { createOwnerActionSheetAdapter } from '../lib/owner-action-sheet-adapter
 import { buildOwnerLivePackage } from '../lib/owner-live-package-service.js';
 import { createOwnerLiveSourceReader } from '../lib/owner-live-source-reader.js';
 import { resolveOwnerPackageKey } from '../lib/owner-package-key.js';
+import { runOwnerPackageStage } from '../lib/owner-package-stage.js';
 import { createOwnerReadonlyApi } from '../lib/owner-readonly-api.js';
 import { firstRequestQueryValue } from '../lib/request-query.js';
 
@@ -113,11 +114,11 @@ function createOwnerPackageHandler() {
         now: () => new Date(generatedAt)
       });
       const facts = await reader.readOwnerLiveFacts();
-      return buildOwnerLivePackage({
+      return runOwnerPackageStage('PACKAGE_BUILD', () => buildOwnerLivePackage({
         facts,
         generatedAt,
         verificationSlaHours: 24
-      });
+      }));
     }
   });
 }
