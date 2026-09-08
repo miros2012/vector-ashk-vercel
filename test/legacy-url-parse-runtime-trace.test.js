@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { traceGoogleapisCommonDiscoveryDep0169 } from '../lib/legacy-url-parse-runtime-trace.js';
+import {
+  traceApplicationUrlParseDep0169,
+  traceGoogleapisCommonDiscoveryDep0169
+} from '../lib/legacy-url-parse-runtime-trace.js';
 
 function assertDiscoveryCallExecuted(report) {
   assert.equal(report.triggerMode, 'missing-local-file');
@@ -10,7 +13,7 @@ function assertDiscoveryCallExecuted(report) {
   assert.ok(Number.isInteger(report.staticMatch?.line));
 }
 
-test('Node 24 application deprecation stays silent for the reachable dependency call-site by default', async () => {
+test('controlled dependency call is reachable but does not emit DEP0169 from node_modules on Node 24', async () => {
   const report = await traceGoogleapisCommonDiscoveryDep0169({ rootDir: process.cwd() });
 
   assertDiscoveryCallExecuted(report);
@@ -18,13 +21,11 @@ test('Node 24 application deprecation stays silent for the reachable dependency 
   assert.equal(report.traceContainsStaticMatch, false);
 });
 
-test('pending deprecation mode traces DEP0169 to the same statically identified dependency call-site', async () => {
-  const report = await traceGoogleapisCommonDiscoveryDep0169({
-    rootDir: process.cwd(),
-    pendingDeprecation: true
-  });
+test('same trace harness observes DEP0169 for an application-level url.parse control', async () => {
+  const report = await traceApplicationUrlParseDep0169({ rootDir: process.cwd() });
 
-  assertDiscoveryCallExecuted(report);
+  assert.equal(report.triggerMode, 'application-control');
+  assert.equal(report.operationErrorCode, null);
   assert.equal(report.warningCode, 'DEP0169');
-  assert.equal(report.traceContainsStaticMatch, true);
+  assert.equal(report.traceContainsApplicationControl, true);
 });
