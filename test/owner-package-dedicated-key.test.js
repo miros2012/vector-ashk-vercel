@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import { createOwnerPackageOidcSmokeService } from '../lib/owner-package-oidc-smoke.js';
 
 const MAIN_SHA = 'a'.repeat(40);
+const DEDICATED_OWNER_KEY = `owner-${'d'.repeat(42)}`;
 
 function validClaims() {
   return {
@@ -43,7 +44,7 @@ async function withEnv(values, run) {
 
 test('Owner smoke uses only VECTOR_OWNER_PACKAGE_KEY and never falls back to broader sync or bridge keys', async () => {
   await withEnv({
-    VECTOR_OWNER_PACKAGE_KEY: 'dedicated-owner-key',
+    VECTOR_OWNER_PACKAGE_KEY: DEDICATED_OWNER_KEY,
     VECTOR_SYNC_KEY: 'legacy-sync-key',
     TOCHKA_BRIDGE_KEY: 'legacy-bridge-key'
   }, async () => {
@@ -61,7 +62,7 @@ test('Owner smoke uses only VECTOR_OWNER_PACKAGE_KEY and never falls back to bro
 
     const result = await service({ authorization: 'Bearer signed-token' });
     assert.equal(result.status, 200);
-    assert.equal(receivedKey, 'dedicated-owner-key');
+    assert.equal(receivedKey, DEDICATED_OWNER_KEY);
   });
 
   await withEnv({
