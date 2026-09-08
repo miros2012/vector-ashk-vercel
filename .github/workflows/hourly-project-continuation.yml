@@ -113,8 +113,7 @@ jobs:
           const responseIsNoStore = /(?:^|,)\s*no-store(?:\s*(?:,|$)|\s*=)/i.test(cacheControl);
           const attestationIsNoStore = /(?:^|,)\s*no-store(?:\s*(?:,|$)|\s*=)/i.test(String(attestation?.cacheControl || ''));
           const attestationIsFresh = Number.isFinite(attestation?.ageMs) &&
-            attestation.ageMs >= 0 &&
-            attestation.ageMs <= 300000;
+            !(attestation.ageMs < 0 || attestation.ageMs > 300000);
           const hasRequiredBlocker = attestation?.policyBlockers?.includes('OPERATING_RESERVE_UNDEFINED');
           if (
             !response.ok ||
