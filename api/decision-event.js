@@ -9,6 +9,7 @@ import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sh
 import { createOwnerActionSheetAdapter } from '../lib/owner-action-sheet-adapter.js';
 import { buildOwnerLivePackage } from '../lib/owner-live-package-service.js';
 import { createOwnerLiveSourceReader } from '../lib/owner-live-source-reader.js';
+import { resolveOwnerPackageKey } from '../lib/owner-package-key.js';
 import { createOwnerReadonlyApi } from '../lib/owner-readonly-api.js';
 import { firstRequestQueryValue } from '../lib/request-query.js';
 
@@ -37,7 +38,7 @@ function configuredKey() {
 }
 
 function ownerPackageKey() {
-  return process.env.VECTOR_OWNER_PACKAGE_KEY || '';
+  return resolveOwnerPackageKey(process.env);
 }
 
 function executeThroughDecisionApi(decisionApi, key) {
