@@ -107,8 +107,27 @@ jobs:
             },
             body: JSON.stringify({ mode: 'owner_package_smoke' })
           });
+          const cacheControl = response.headers.get('cache-control') || '';
           const body = await response.json().catch(() => ({}));
-          if (!response.ok || body?.ok !== true || body?.mode !== 'owner_package_smoke') {
+          const attestation = body?.attestation;
+          const responseIsNoStore = /(?:^|,)\s*no-store(?:\s*(?:,|$)|\s*=)/i.test(cacheControl);
+          const attestationIsNoStore = /(?:^|,)\s*no-store(?:\s*(?:,|$)|\s*=)/i.test(String(attestation?.cacheControl || ''));
+          const attestationIsFresh = Number.isFinite(attestation?.ageMs) &&
+            !(attestation.ageMs < 0 || attestation.ageMs > 300000);
+          const hasRequiredBlocker = attestation?.policyBlockers?.includes('OPERATING_RESERVE_UNDEFINED');
+          if (
+            !response.ok ||
+            body?.ok !== true ||
+            body?.mode !== 'owner_package_smoke' ||
+            !responseIsNoStore ||
+            attestation?.ok !== true ||
+            attestation?.status !== 200 ||
+            !attestationIsNoStore ||
+            !attestationIsFresh ||
+            attestation?.safeWithdrawal !== 0 ||
+            attestation?.operatingReserveDefined !== false ||
+            !hasRequiredBlocker
+          ) {
             throw new Error(`owner package smoke failed with ${response.status}`);
           }
           console.log(JSON.stringify(body));
