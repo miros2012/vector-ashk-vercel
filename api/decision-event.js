@@ -38,7 +38,11 @@ function configuredKey() {
 }
 
 function ownerPackageKey() {
-  return resolveOwnerPackageKey(process.env);
+  return resolveOwnerPackageKey({
+    VECTOR_OWNER_PACKAGE_KEY: process.env.VECTOR_OWNER_PACKAGE_KEY,
+    VECTOR_SYNC_KEY: process.env.VECTOR_SYNC_KEY,
+    TOCHKA_BRIDGE_KEY: process.env.TOCHKA_BRIDGE_KEY
+  });
 }
 
 function executeThroughDecisionApi(decisionApi, key) {
