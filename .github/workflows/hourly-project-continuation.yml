@@ -128,7 +128,14 @@ jobs:
             attestation?.operatingReserveDefined !== false ||
             !hasRequiredBlocker
           ) {
-            throw new Error(`owner package smoke failed with ${response.status}`);
+            const allowedFailureCodes = new Set([
+              'OWNER_PACKAGE_KEY_UNAVAILABLE',
+              'OWNER_PACKAGE_VERIFY_FAILED'
+            ]);
+            const failureCode = allowedFailureCodes.has(body?.failureCode)
+              ? body.failureCode
+              : 'OWNER_PACKAGE_UNCLASSIFIED_FAILURE';
+            throw new Error(`owner package smoke failed with ${response.status}; failureCode=${failureCode}`);
           }
           console.log(JSON.stringify(body));
           NODE

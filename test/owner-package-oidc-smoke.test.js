@@ -186,7 +186,7 @@ test('missing or invalid bearer token fails closed before smoke execution', asyn
   assert.equal(executed, 0);
 });
 
-test('missing Vercel owner key or smoke failure returns generic 500 without leaking secrets', async () => {
+test('missing Vercel owner key or smoke failure returns classified generic 500 without leaking secrets', async () => {
   const base = {
     verifyToken: async () => validClaims(),
     fetchImpl: async () => null,
@@ -201,7 +201,14 @@ test('missing Vercel owner key or smoke failure returns generic 500 without leak
   });
   assert.deepEqual(
     await missingKey({ authorization: 'Bearer signed-token' }),
-    { status: 500, body: { ok: false, error: 'owner package smoke unavailable' } }
+    {
+      status: 500,
+      body: {
+        ok: false,
+        error: 'owner package smoke unavailable',
+        failureCode: 'OWNER_PACKAGE_KEY_UNAVAILABLE'
+      }
+    }
   );
 
   const failing = createOwnerPackageOidcSmokeService({
@@ -210,6 +217,13 @@ test('missing Vercel owner key or smoke failure returns generic 500 without leak
     keyProvider: () => 'owner-secret'
   });
   const result = await failing({ authorization: 'Bearer signed-token' });
-  assert.deepEqual(result, { status: 500, body: { ok: false, error: 'owner package smoke failed' } });
+  assert.deepEqual(result, {
+    status: 500,
+    body: {
+      ok: false,
+      error: 'owner package smoke failed',
+      failureCode: 'OWNER_PACKAGE_VERIFY_FAILED'
+    }
+  });
   assert.equal(JSON.stringify(result).includes('owner-secret'), false);
 });
