@@ -14,8 +14,16 @@ function assertDiscoveryCallExecuted(report) {
   assert.ok(Number.isInteger(report.staticMatch?.line));
 }
 
-test('controlled dependency call is reachable but does not emit DEP0169 from node_modules on Node 24', async () => {
+test('dependency trace is safe when the historical discovery call-site is present or already remediated', async () => {
   const report = await traceGoogleapisCommonDiscoveryDep0169({ rootDir: process.cwd() });
+
+  if (report.triggerMode === 'call-site-absent') {
+    assert.equal(report.operationErrorCode, null);
+    assert.equal(report.staticMatch, null);
+    assert.equal(report.warningCode, null);
+    assert.equal(report.traceContainsStaticMatch, false);
+    return;
+  }
 
   assertDiscoveryCallExecuted(report);
   assert.equal(report.warningCode, null);
