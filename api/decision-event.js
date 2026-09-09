@@ -15,6 +15,7 @@ import { createOwnerReadonlyApi } from '../lib/owner-readonly-api.js';
 import { firstRequestQueryValue } from '../lib/request-query.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
+const INTERNAL_OWNER_ACTION_KEY = 'owner-action-internal-only';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -84,8 +85,7 @@ function createEffectivenessHandler() {
   });
 }
 
-function createQueueHandler() {
-  const key = configuredKey();
+function createQueueApi(key) {
   const sheets = sheetsClient();
   const queue = createOwnerActionQueueSheetAdapter({ sheets, spreadsheetId: SPREADSHEET_ID });
   const control = createOwnerActionControlSheetAdapter({ sheets, spreadsheetId: SPREADSHEET_ID });
@@ -100,6 +100,24 @@ function createQueueHandler() {
     markCommand: queue.markCommand,
     executeCommand: executeThroughDecisionApi(decisionApi, key)
   });
+}
+
+function createQueueHandler() {
+  return createQueueApi(configuredKey());
+}
+
+export async function processOwnerActionQueue() {
+  const key = configuredKey() || INTERNAL_OWNER_ACTION_KEY;
+  const queueApi = createQueueApi(key);
+  const response = {
+    body: null,
+    setHeader() {},
+    status() { return this; },
+    json(body) { this.body = body; return this; }
+  };
+  await queueApi({ method: 'POST', headers: { 'x-vector-key': key } }, response);
+  if (!response.body?.ok) throw new Error('owner action queue processing failed');
+  return response.body;
 }
 
 function createOwnerPackageHandler() {
