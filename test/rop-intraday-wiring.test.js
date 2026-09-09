@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const api = readFileSync(new URL('../api/nightly-finance-orchestrator.js', import.meta.url), 'utf8');
+const balancesApi = readFileSync(new URL('../api/balances.js', import.meta.url), 'utf8');
 const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
 const financePath = '/api/nightly-finance-orchestrator';
 const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
@@ -22,6 +23,14 @@ test('each Hobby-safe intraday schedule selects lightweight payments plus ROP re
   assert.match(api, /INTRADAY_SCHEDULES/);
   assert.match(api, /INTRADAY_SCHEDULES\.has\(schedule\)/);
   assert.match(api, /refreshRopFromStaging/);
+});
+
+test('intraday finance continues through canonical Data Health, verified decisions, and existing Owner Action Queue', () => {
+  assert.match(api, /processOwnerActionQueue/);
+  assert.match(api, /runDataHealth:\s*reconcileDecisions\.dataHealth/);
+  assert.match(api, /runDecisions:\s*reconcileDecisions/);
+  assert.match(api, /runOwnerActionQueue:\s*runOwnerActionQueueNow/);
+  assert.match(balancesApi, /export\s+async\s+function\s+processOwnerActionQueue\s*\(/);
 });
 
 test('intraday ROP refresh reconstructs debt from the full verified receivables staging sheet', () => {
