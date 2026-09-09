@@ -13,10 +13,28 @@ function responseRecorder() {
   };
 }
 
-function child(calls, name, statusCode = 200) {
+function child(calls, name, statusCode = 200, body = null) {
   return async (req, res) => {
     calls.push([name, req.method]);
-    return res.status(statusCode).json({ ok: statusCode >= 200 && statusCode < 300 });
+    return res.status(statusCode).json(body || { ok: statusCode >= 200 && statusCode < 300 });
+  };
+}
+
+function intradayTail(calls) {
+  return {
+    runDataHealth: child(calls, 'dataHealth', 200, { ok: true, status: 'OK' }),
+    runDecisions: child(calls, 'decisions', 200, {
+      ok: true,
+      mode: 'commit',
+      verified: true,
+      matches: 4,
+      total: 4,
+      writeCount: 0
+    }),
+    runOwnerActionQueue: async () => {
+      calls.push(['ownerActionQueue', 'internal']);
+      return { ok: true, staged: 0, ready: 0, succeeded: 0, failed: 0 };
+    }
   };
 }
 
@@ -72,17 +90,18 @@ test('nightly finance stops before balances and decisions when current-day DDS i
   assert.equal(res.body.stages.decisions.skipped, true);
 });
 
-test('intraday ROP imports current-day Tochka DDS before refreshing balances', async () => {
+test('intraday ROP imports current-day Tochka DDS before refreshing balances and decision state', async () => {
   const calls = [];
   const handler = createIntradayRopOrchestrator({
     cronSecret: 'secret',
     runPayments: child(calls, 'payments'),
     refreshRop: async () => {
       calls.push(['rop', 'internal']);
-      return { ok: true, liveDate: '2026-09-04' };
+      return { ok: true, liveDate: '2026-09-09' };
     },
     runTochkaDds: child(calls, 'tochkaDds'),
-    runBalances: child(calls, 'balances')
+    runBalances: child(calls, 'balances'),
+    ...intradayTail(calls)
   });
   const res = responseRecorder();
 
@@ -93,22 +112,26 @@ test('intraday ROP imports current-day Tochka DDS before refreshing balances', a
     ['payments', 'POST'],
     ['rop', 'internal'],
     ['tochkaDds', 'GET'],
-    ['balances', 'GET']
+    ['balances', 'GET'],
+    ['dataHealth', 'GET'],
+    ['decisions', 'GET'],
+    ['ownerActionQueue', 'internal']
   ]);
   assert.deepEqual(res.body.stages.tochkaDds, { ok: true, statusCode: 200 });
 });
 
-test('intraday ROP preserves refreshed sales data but blocks balance refresh when DDS import fails', async () => {
+test('intraday ROP preserves refreshed sales data but blocks all later stages when DDS import fails', async () => {
   const calls = [];
   const handler = createIntradayRopOrchestrator({
     cronSecret: 'secret',
     runPayments: child(calls, 'payments'),
     refreshRop: async () => {
       calls.push(['rop', 'internal']);
-      return { ok: true, liveDate: '2026-09-04' };
+      return { ok: true, liveDate: '2026-09-09' };
     },
     runTochkaDds: child(calls, 'tochkaDds', 502),
-    runBalances: child(calls, 'balances')
+    runBalances: child(calls, 'balances'),
+    ...intradayTail(calls)
   });
   const res = responseRecorder();
 
@@ -119,4 +142,7 @@ test('intraday ROP preserves refreshed sales data but blocks balance refresh whe
   assert.equal(res.body.stages.rop.ok, true);
   assert.deepEqual(res.body.stages.tochkaDds, { ok: false, statusCode: 502 });
   assert.equal(res.body.stages.balances.skipped, true);
+  assert.equal(res.body.stages.dataHealth.skipped, true);
+  assert.equal(res.body.stages.decisions.skipped, true);
+  assert.equal(res.body.stages.ownerActionQueue.skipped, true);
 });
