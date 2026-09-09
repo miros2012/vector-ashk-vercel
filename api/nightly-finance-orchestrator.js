@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import syncHours from './sync-hours.js';
 import syncPayments from './sync-payments.js';
 import reconcileDecisions from './decision-reconcile-daily.js';
+import { processOwnerActionQueue } from './decision-event.js';
 import { refreshBalancesMirrorOnly } from './balances.js';
 import { publishRopNow } from './health.js';
 import { createNightlyFinanceOrchestrator } from '../lib/nightly-finance-orchestrator.js';
@@ -438,6 +439,10 @@ async function refreshRopFromStagingAndPublish() {
   });
 }
 
+async function runOwnerActionQueueNow() {
+  return processOwnerActionQueue();
+}
+
 const receivablesSource = createAshkReceivablesSource({
   baseUrl: 'https://app.dscontrol.ru',
   apiKey: process.env.ASHK_API_KEY || '',
@@ -485,7 +490,10 @@ const intradayHandler = createIntradayRopOrchestrator({
   runPayments: syncPayments,
   refreshRop: refreshRopFromStagingAndPublish,
   runTochkaDds: tochkaDdsHandler,
-  runBalances: refreshBalancesMirrorOnly
+  runBalances: refreshBalancesMirrorOnly,
+  runDataHealth: reconcileDecisions.dataHealth,
+  runDecisions: reconcileDecisions,
+  runOwnerActionQueue: runOwnerActionQueueNow
 });
 
 const manualFinanceRunHandler = createManualFinanceRunHandler({
