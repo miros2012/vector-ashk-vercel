@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 async function loadReader() {
   try {
-    const module = await import('../lib/owner-operating-reserve-reader.js');
+    const module = await import('../lib/owner-live-source-reader.js');
     return module.readOwnerOperatingReserve;
   } catch (error) {
     if (error?.code === 'ERR_MODULE_NOT_FOUND') return undefined;
@@ -71,5 +71,6 @@ test('fails closed to undefined when reserve setting is missing, duplicated, non
 test('Owner package wiring reads the setting and passes it to the existing live package policy', async () => {
   const source = await readFile(new URL('../api/decision-event.js', import.meta.url), 'utf8');
   assert.match(source, /readOwnerOperatingReserve/);
-  assert.match(source, /operatingReserve\s*:\s*operatingReserve/);
+  assert.match(source, /buildOwnerLivePackage\(\{[\s\S]*?operatingReserve(?:\s*,|\s*:\s*operatingReserve)/);
+  assert.doesNotMatch(source, /550000|550_000/);
 });
