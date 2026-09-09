@@ -8,7 +8,7 @@ import { createOwnerActionQueueApi } from '../lib/owner-action-queue-api.js';
 import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sheet-adapter.js';
 import { createOwnerActionSheetAdapter } from '../lib/owner-action-sheet-adapter.js';
 import { buildOwnerLivePackage } from '../lib/owner-live-package-service.js';
-import { createOwnerLiveSourceReader } from '../lib/owner-live-source-reader.js';
+import { createOwnerLiveSourceReader, readOwnerOperatingReserve } from '../lib/owner-live-source-reader.js';
 import { resolveOwnerPackageKey } from '../lib/owner-package-key.js';
 import { runOwnerPackageStage } from '../lib/owner-package-stage.js';
 import { createOwnerReadonlyApi } from '../lib/owner-readonly-api.js';
@@ -113,10 +113,14 @@ function createOwnerPackageHandler() {
         spreadsheetId: SPREADSHEET_ID,
         now: () => new Date(generatedAt)
       });
-      const facts = await reader.readOwnerLiveFacts();
+      const [facts, operatingReserve] = await Promise.all([
+        reader.readOwnerLiveFacts(),
+        readOwnerOperatingReserve({ sheets, spreadsheetId: SPREADSHEET_ID })
+      ]);
       return runOwnerPackageStage('PACKAGE_BUILD', () => buildOwnerLivePackage({
         facts,
         generatedAt,
+        operatingReserve,
         verificationSlaHours: 24
       }));
     }
