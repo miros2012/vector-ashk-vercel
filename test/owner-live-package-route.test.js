@@ -26,23 +26,26 @@ test('wires owner package through the existing decision-event function with read
   const source = decisionEventSource();
   assert.match(source, /createOwnerReadonlyApi/);
   assert.match(source, /createOwnerLiveSourceReader/);
+  assert.match(source, /readOwnerOperatingReserve/);
   assert.match(source, /buildOwnerLivePackage/);
   assert.match(source, /ownerRoute\s*===\s*['"]package['"]/);
 
   const block = ownerPackageHandlerBlock(source);
   assert.match(block, /sheetsClient\(true\)/);
   assert.match(block, /createOwnerLiveSourceReader/);
+  assert.match(block, /readOwnerOperatingReserve/);
   assert.match(block, /createOwnerReadonlyApi/);
   assert.match(block, /buildOwnerLivePackage/);
   assert.match(block, /const generatedAt\s*=\s*new Date\(\)\.toISOString\(\)/);
   assert.match(block, /now:\s*\(\)\s*=>\s*new Date\(generatedAt\)/);
-  assert.match(block, /facts,\s*generatedAt,\s*verificationSlaHours:\s*24/s);
+  assert.match(block, /facts,\s*generatedAt,\s*operatingReserve,\s*verificationSlaHours:\s*24/s);
   assert.equal(
     (block.match(/new Date\(\)\.toISOString\(\)/g) || []).length,
     1,
     'one request must use one generatedAt timestamp for source facts and package composition'
   );
-  assert.doesNotMatch(block, /operatingReserve\s*:/);
+  assert.match(block, /readOwnerOperatingReserve\(\{\s*sheets,\s*spreadsheetId:\s*SPREADSHEET_ID\s*\}\)/);
+  assert.doesNotMatch(block, /550000|550_000/);
   assert.doesNotMatch(block, /sheetsClient\(\s*\)/);
   assert.doesNotMatch(block, /\.append\(|\.update\(|\.batchUpdate\(|\.clear\(/);
 });
