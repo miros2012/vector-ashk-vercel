@@ -32,8 +32,9 @@ const attestation = Object.freeze({
   businessDate: '2026-09-07',
   generatedAt: '2026-09-07T15:59:30.000Z',
   ageMs: 30000,
-  safeWithdrawal: 0,
-  policyBlockers: Object.freeze(['OPERATING_RESERVE_UNDEFINED'])
+  safeWithdrawal: 125000,
+  operatingReserveDefined: true,
+  policyBlockers: Object.freeze([])
 });
 
 function serviceForClaims(claims, executedRef = { count: 0 }) {
@@ -77,8 +78,8 @@ test('owner-triggered workflow_dispatch runs the existing production smoke with 
   assert.equal(calls[0].env.VECTOR_OWNER_PACKAGE_BASE_URL, 'https://vector-ashk-backend.vercel.app');
   assert.equal(calls[0].env.VECTOR_OWNER_API_KEY, 'owner-secret');
   assert.equal(calls[0].env.VECTOR_OWNER_PACKAGE_MAX_AGE_MS, '300000');
-  assert.equal(calls[0].env.VECTOR_OWNER_EXPECTED_SAFE_WITHDRAWAL, '0');
-  assert.equal(calls[0].env.VECTOR_OWNER_REQUIRED_POLICY_BLOCKER, 'OPERATING_RESERVE_UNDEFINED');
+  assert.equal(Object.hasOwn(calls[0].env, 'VECTOR_OWNER_EXPECTED_SAFE_WITHDRAWAL'), false);
+  assert.equal(Object.hasOwn(calls[0].env, 'VECTOR_OWNER_REQUIRED_POLICY_BLOCKER'), false);
   assert.equal(calls[0].fetchImpl, fetchImpl);
   assert.equal(typeof calls[0].now, 'function');
   assert.equal(calls[0].now(), '2026-09-07T16:00:00.000Z');
