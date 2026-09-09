@@ -114,7 +114,13 @@ jobs:
           const attestationIsNoStore = /(?:^|,)\s*no-store(?:\s*(?:,|$)|\s*=)/i.test(String(attestation?.cacheControl || ''));
           const attestationIsFresh = Number.isFinite(attestation?.ageMs) &&
             !(attestation.ageMs < 0 || attestation.ageMs > 300000);
-          const hasRequiredBlocker = attestation?.policyBlockers?.includes('OPERATING_RESERVE_UNDEFINED');
+          const safeWithdrawalIsValid = Number.isFinite(attestation?.safeWithdrawal) &&
+            !(attestation?.safeWithdrawal < 0);
+          const hasUndefinedReserveBlocker = Array.isArray(attestation?.policyBlockers) &&
+            attestation.policyBlockers.includes('OPERATING_RESERVE_UNDEFINED');
+          const reservePolicyIsValid = Array.isArray(attestation?.policyBlockers) &&
+            attestation?.operatingReserveDefined === true &&
+            !hasUndefinedReserveBlocker;
           if (
             !response.ok ||
             body?.ok !== true ||
@@ -124,9 +130,9 @@ jobs:
             attestation?.status !== 200 ||
             !attestationIsNoStore ||
             !attestationIsFresh ||
-            attestation?.safeWithdrawal !== 0 ||
-            attestation?.operatingReserveDefined !== false ||
-            !hasRequiredBlocker
+            !safeWithdrawalIsValid ||
+            attestation?.operatingReserveDefined !== true ||
+            !reservePolicyIsValid
           ) {
             const allowedFailureCodes = new Set([
               'OWNER_PACKAGE_KEY_UNAVAILABLE',
