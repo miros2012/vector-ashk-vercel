@@ -20,7 +20,11 @@ test('owner-triggered workflow independently verifies the expected production at
   assert.match(workflow, /Number\.isFinite\(attestation\?\.ageMs\)/);
   assert.match(workflow, /attestation\.ageMs\s*<\s*0/);
   assert.match(workflow, /attestation\.ageMs\s*>\s*300000/);
-  assert.match(workflow, /attestation\?\.safeWithdrawal\s*!==\s*0/);
-  assert.match(workflow, /attestation\?\.operatingReserveDefined\s*!==\s*false/);
-  assert.match(workflow, /attestation\?\.policyBlockers\?\.includes\(['"]OPERATING_RESERVE_UNDEFINED['"]\)/);
+  assert.match(workflow, /Number\.isFinite\(attestation\?\.safeWithdrawal\)/);
+  assert.match(workflow, /attestation\?\.safeWithdrawal\s*<\s*0/);
+  assert.match(workflow, /attestation\?\.operatingReserveDefined\s*!==\s*true/);
+  assert.match(workflow, /attestation\.policyBlockers\.includes\(['"]OPERATING_RESERVE_UNDEFINED['"]\)/);
+  assert.doesNotMatch(workflow, /attestation\?\.safeWithdrawal\s*!==\s*0/);
+  assert.doesNotMatch(workflow, /attestation\?\.operatingReserveDefined\s*!==\s*false/);
+  assert.doesNotMatch(workflow, /550000|550_000/);
 });
