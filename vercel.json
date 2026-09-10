@@ -18,7 +18,11 @@
     "api/master-hours-diagnostic.js": { "maxDuration": 60 },
     "api/sync-hours.js": { "maxDuration": 60 },
     "api/sync-payments.js": { "maxDuration": 60 },
-    "api/nightly-finance-orchestrator.js": { "maxDuration": 180 }
+    "api/nightly-finance-orchestrator.js": { "maxDuration": 180 },
+    "api/cash-photo-upload.js": { "maxDuration": 180 },
+    "api/cash-photo-config.js": { "maxDuration": 60 },
+    "api/cash-photo-storage-probe.js": { "maxDuration": 60 },
+    "api/cash-photo-retry.js": { "maxDuration": 180 }
   },
   "crons": [
     { "path": "/api/nightly-finance-orchestrator", "schedule": "30 21 * * *" },
@@ -34,6 +38,7 @@
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 13 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 14 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 15 * * *" },
+    { "path": "/api/cash-photo-retry", "schedule": "15 * * * *" },
     { "path": "/api/health", "schedule": "35 21 * * *" }
   ]
 }
