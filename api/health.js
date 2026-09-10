@@ -20,7 +20,6 @@ import { createCashPhotoRetryHttpHandler } from '../lib/cash-photo-retry-http.js
 import { createCashPhotoRetryService } from '../lib/cash-photo-retry-service.js';
 import { buildCashPhotoGatewayPayload } from '../lib/cash-photo-prompt.js';
 import { recognizeWithFallback } from '../lib/cash-photo-recognizer.js';
-import { enableCashPhotoDriveApi } from '../lib/cash-photo-drive-api-enable.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
@@ -33,8 +32,7 @@ const TOCHKA_HEARTBEAT_KEY_HASH_MARKER = 'tochka_operations_heartbeat_key_sha256
 const CASH_PHOTO_SPREADSHEET_ID = process.env.CASH_PHOTO_SPREADSHEET_ID || SOURCE_SPREADSHEET_ID;
 const CASH_PHOTO_DRIVE_FOLDER_ID = process.env.CASH_PHOTO_DRIVE_FOLDER_ID || '1PHTv_r47ZEbnH76I7zbC5YgphpELpkfG';
 const CASH_PHOTO_MODELS = ['google/gemini-3.8-flash', 'google/gemini-3.5-flash'];
-const CASH_PHOTO_ROUTES = new Set(['config', 'upload', 'retry', 'probe', 'enable-drive']);
-const CASH_PHOTO_ENABLE_DRIVE_NONCE = 'BN86crVXWwkox7FHPH6V1Ha0OhYetWzaaPVJdsxppRkJ4NDV7dvSUzMcXgqqzRGQ';
+const CASH_PHOTO_ROUTES = new Set(['config', 'upload', 'retry', 'probe']);
 const RANGES = {
   'РОП_Штаб_Утро': 'A:X',
   'РОП_Задачи_Сегодня': 'A:P',
@@ -331,30 +329,9 @@ async function handleCashPhotoProbe(req, res, services) {
   });
 }
 
-async function handleCashPhotoEnableDrive(req, res) {
-  if (String(req?.method || '').toUpperCase() !== 'GET') {
-    res.setHeader?.('Allow', 'GET');
-    return res.status(405).json({ ok: false, error: 'method_not_allowed' });
-  }
-  const url = new URL(String(req?.url || ''), 'https://vector.invalid');
-  const nonce = String(url.searchParams.get('nonce') || '');
-  if (nonce !== CASH_PHOTO_ENABLE_DRIVE_NONCE) {
-    return res.status(404).json({ ok: false, error: 'not_found' });
-  }
-  const auth = new google.auth.JWT({
-    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    key: privateKey(),
-    scopes: ['https://www.googleapis.com/auth/cloud-platform']
-  });
-  await auth.authorize();
-  await enableCashPhotoDriveApi({ auth });
-  return res.status(200).json({ ok: true, operationAccepted: true });
-}
-
 async function handleCashPhotoRoute(req, res, route) {
   res.setHeader?.('Cache-Control', 'no-store');
   try {
-    if (route === 'enable-drive') return handleCashPhotoEnableDrive(req, res);
     const services = await getCashPhotoServices();
     if (route === 'config') return services.configHandler(req, res);
     if (route === 'upload') return services.uploadHandler(req, res);
