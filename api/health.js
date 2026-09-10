@@ -333,10 +333,10 @@ async function handleCashPhotoRoute(req, res, route) {
   res.setHeader?.('Cache-Control', 'no-store');
   try {
     const services = await getCashPhotoServices();
-    if (route === 'config') return services.configHandler(req, res);
-    if (route === 'upload') return services.uploadHandler(req, res);
-    if (route === 'retry') return services.retryHandler(req, res);
-    if (route === 'probe') return handleCashPhotoProbe(req, res, services);
+    if (route === 'config') return await services.configHandler(req, res);
+    if (route === 'upload') return await services.uploadHandler(req, res);
+    if (route === 'retry') return await services.retryHandler(req, res);
+    if (route === 'probe') return await handleCashPhotoProbe(req, res, services);
     return res.status(404).json({ ok: false, error: 'not_found' });
   } catch (error) {
     console.error('cash-photo-route:', error?.name || 'Error');
