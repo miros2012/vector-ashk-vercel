@@ -11,6 +11,15 @@ import {
 import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
 import { createHourlyProjectAgentService } from '../lib/hourly-project-agent.js';
 import { createOwnerPackageOidcSmokeService } from '../lib/owner-package-oidc-smoke.js';
+import { createCashPhotoAccessStore } from '../lib/cash-photo-access-store.js';
+import { createCashPhotoStore } from '../lib/cash-photo-store.js';
+import { createCashPhotoUploadHttpHandler } from '../lib/cash-photo-upload-http.js';
+import { createCashPhotoUploadService } from '../lib/cash-photo-upload-service.js';
+import { createCashPhotoConfigHttpHandler } from '../lib/cash-photo-config-http.js';
+import { createCashPhotoRetryHttpHandler } from '../lib/cash-photo-retry-http.js';
+import { createCashPhotoRetryService } from '../lib/cash-photo-retry-service.js';
+import { buildCashPhotoGatewayPayload } from '../lib/cash-photo-prompt.js';
+import { recognizeWithFallback } from '../lib/cash-photo-recognizer.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
@@ -20,6 +29,10 @@ const OWNER_PACKAGE_SMOKE_MODE = 'owner_package_smoke';
 const CONTROL_SHEET = '__vercel_control';
 const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
 const TOCHKA_HEARTBEAT_KEY_HASH_MARKER = 'tochka_operations_heartbeat_key_sha256';
+const CASH_PHOTO_SPREADSHEET_ID = process.env.CASH_PHOTO_SPREADSHEET_ID || SOURCE_SPREADSHEET_ID;
+const CASH_PHOTO_DRIVE_FOLDER_ID = process.env.CASH_PHOTO_DRIVE_FOLDER_ID || '1PHTv_r47ZEbnH76I7zbC5YgphpELpkfG';
+const CASH_PHOTO_MODELS = ['google/gemini-3.8-flash', 'google/gemini-3.5-flash'];
+const CASH_PHOTO_ROUTES = new Set(['config', 'upload', 'retry', 'probe']);
 const RANGES = {
   'РОП_Штаб_Утро': 'A:X',
   'РОП_Задачи_Сегодня': 'A:P',
@@ -198,7 +211,7 @@ async function isAuthorizedTochkaBridge(req, sheets) {
 }
 
 function requestBody(req) {
-  if (req?.body && typeof req.body === 'object') return req.body;
+  if (req?.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) && !(req.body instanceof Uint8Array)) return req.body;
   if (typeof req?.body === 'string' && req.body.trim()) {
     try {
       return JSON.parse(req.body);
@@ -207,6 +220,132 @@ function requestBody(req) {
     }
   }
   return {};
+}
+
+function cashPhotoRoute(req) {
+  try {
+    const url = new URL(String(req?.url || ''), 'https://vector.invalid');
+    const route = String(url.searchParams.get('cashPhotoRoute') || '').trim();
+    return CASH_PHOTO_ROUTES.has(route) ? route : '';
+  } catch {
+    return '';
+  }
+}
+
+function configuredCashPhotoModels() {
+  const configured = String(process.env.CASH_PHOTO_MODELS || '')
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+  return configured.length ? configured : CASH_PHOTO_MODELS;
+}
+
+let cashPhotoServicesPromise;
+async function getCashPhotoServices() {
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+    throw new Error('Google service account secrets missing');
+  }
+  if (!cashPhotoServicesPromise) {
+    cashPhotoServicesPromise = (async () => {
+      const auth = new google.auth.JWT({
+        email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        key: privateKey(),
+        scopes: [
+          'https://www.googleapis.com/auth/spreadsheets',
+          'https://www.googleapis.com/auth/drive'
+        ]
+      });
+      await auth.authorize();
+      const sheets = google.sheets({ version: 'v4', auth });
+      const drive = google.drive({ version: 'v3', auth });
+      const access = createCashPhotoAccessStore({ sheets, spreadsheetId: CASH_PHOTO_SPREADSHEET_ID });
+      const store = createCashPhotoStore({
+        sheets,
+        drive,
+        spreadsheetId: CASH_PHOTO_SPREADSHEET_ID,
+        folderId: CASH_PHOTO_DRIVE_FOLDER_ID
+      });
+      const recognize = async ({ imageBytes, mimeType, branch, year }) => {
+        const token = process.env.AI_GATEWAY_API_KEY || await getVercelOidcToken();
+        if (!token) throw new Error('AI Gateway authentication unavailable');
+        return recognizeWithFallback({
+          token,
+          payload: buildCashPhotoGatewayPayload({ imageBytes, mimeType, branch, year }),
+          models: configuredCashPhotoModels(),
+          maxAttemptsPerModel: 2,
+          baseDelayMs: 750
+        });
+      };
+      const uploadService = createCashPhotoUploadService({ store, recognize });
+      const retryService = createCashPhotoRetryService({ store, recognize });
+      return {
+        store,
+        uploadHandler: createCashPhotoUploadHttpHandler({
+          authorize: token => access.authorize(token),
+          uploadService
+        }),
+        configHandler: createCashPhotoConfigHttpHandler({
+          authorize: token => access.authorize(token)
+        }),
+        retryHandler: createCashPhotoRetryHttpHandler({
+          authorize: token => access.authorize(token),
+          retryService
+        })
+      };
+    })();
+  }
+  return cashPhotoServicesPromise;
+}
+
+async function handleCashPhotoProbe(req, res, services) {
+  if (String(req?.method || '').toUpperCase() !== 'GET') {
+    res.setHeader?.('Allow', 'GET');
+    return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+  }
+  const [storage, archive] = await Promise.all([
+    services.store.probe(),
+    (async () => {
+      const auth = new google.auth.JWT({
+        email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        key: privateKey(),
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+      });
+      await auth.authorize();
+      const sheets = google.sheets({ version: 'v4', auth });
+      await sheets.spreadsheets.values.get({
+        spreadsheetId: CASH_PHOTO_SPREADSHEET_ID,
+        range: "'Архив кассовых фото'!A1:N1"
+      });
+      return true;
+    })()
+  ]);
+  const oidcToken = process.env.AI_GATEWAY_API_KEY || await getVercelOidcToken();
+  return res.status(200).json({
+    ok: true,
+    driveFolderAccessible: Boolean(storage?.ok),
+    driveCanAddChildren: Boolean(storage?.canAddChildren),
+    photoArchiveAccessible: Boolean(archive),
+    aiGatewayOidcAvailable: Boolean(oidcToken)
+  });
+}
+
+async function handleCashPhotoRoute(req, res, route) {
+  res.setHeader?.('Cache-Control', 'no-store');
+  try {
+    const services = await getCashPhotoServices();
+    if (route === 'config') return services.configHandler(req, res);
+    if (route === 'upload') return services.uploadHandler(req, res);
+    if (route === 'retry') return services.retryHandler(req, res);
+    if (route === 'probe') return handleCashPhotoProbe(req, res, services);
+    return res.status(404).json({ ok: false, error: 'not_found' });
+  } catch (error) {
+    console.error('cash-photo-route:', error?.name || 'Error');
+    return res.status(503).json({
+      ok: false,
+      error: 'cash_photo_service_unavailable',
+      message: 'Сервис загрузки временно недоступен. Попробуйте ещё раз позже.'
+    });
+  }
 }
 
 async function handleHourlyProjectAgent(req, res, body) {
@@ -292,6 +431,9 @@ async function handleTochkaOperationAck(req, res, body) {
 }
 
 export default async function handler(req, res) {
+  const route = cashPhotoRoute(req);
+  if (route) return handleCashPhotoRoute(req, res, route);
+
   const body = requestBody(req);
   const method = String(req?.method || '').toUpperCase();
   if (method === 'POST' && HOURLY_AGENT_MODES.has(String(body?.mode || ''))) {
