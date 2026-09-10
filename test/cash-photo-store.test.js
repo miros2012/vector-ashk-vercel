@@ -52,6 +52,33 @@ test('findByHash returns archive identity and parses Drive file id from URL', as
   });
 });
 
+test('findByHash resolves a legacy rich-text Drive hyperlink instead of trusting display text', async () => {
+  const { drive, sheets, calls, sheetRows } = makeClients();
+  sheetRows.push([
+    'PHOTO-legacy', '', 'Ямская', '2026', '1000056081.jpg',
+    'Открыть фото', 'legacy-hash', 'Ошибка распознавания', '', '', '', '', '', ''
+  ]);
+  sheets.spreadsheets.get = async (args) => {
+    calls.push(['sheets.metadata.get', args]);
+    return {
+      data: {
+        sheets: [{ data: [{ rowData: [{ values: [{
+          hyperlink: 'https://drive.google.com/file/d/legacy-file-id/view?usp=drivesdk'
+        }] }] }] }]
+      }
+    };
+  };
+
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+  const found = await store.findByHash('legacy-hash');
+  assert.deepEqual(found, {
+    photoId: 'PHOTO-legacy', archiveRow: 2, fileId: 'legacy-file-id',
+    photoUrl: 'https://drive.google.com/file/d/legacy-file-id/view?usp=drivesdk',
+    status: 'Ошибка распознавания', hash: 'legacy-hash'
+  });
+  assert.equal(calls.filter(([name]) => name === 'sheets.metadata.get').length, 1);
+});
+
 test('persistPhoto writes Drive file first then appends one archive row in uploaded state', async () => {
   const { drive, sheets, calls } = makeClients();
   const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder', now: () => new Date('2026-09-10T10:00:00Z') });
@@ -123,6 +150,36 @@ test('listPending returns only retryable archive rows with enough metadata', asy
     photoId: 'PHOTO-1', archiveRow: 2, fileId: 'file1', photoUrl: 'https://drive.google.com/file/d/file1/view',
     status: 'Ожидает распознавания', hash: 'h1', branch: 'Ямская', year: 2026, fileName: 'one.jpg'
   }]);
+});
+
+test('listPending resolves the legacy rich-text hyperlink for a specifically selected pending photo', async () => {
+  const { drive, sheets, calls, sheetRows } = makeClients();
+  sheetRows.push([
+    'PHOTO-legacy', '', 'Ямская', '2026', '1000056081.jpg',
+    'Открыть фото', 'legacy-hash', 'Ожидает распознавания'
+  ]);
+  sheets.spreadsheets.get = async (args) => {
+    calls.push(['sheets.metadata.get', args]);
+    return {
+      data: {
+        sheets: [{ data: [{ rowData: [{ values: [{
+          hyperlink: 'https://drive.google.com/file/d/legacy-file-id/view?usp=drivesdk'
+        }] }] }] }]
+      }
+    };
+  };
+
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+  const pending = await store.listPending(1, { branch: 'Ямская', photoId: 'PHOTO-legacy' });
+  assert.deepEqual(pending, [{
+    photoId: 'PHOTO-legacy', archiveRow: 2, fileId: 'legacy-file-id',
+    photoUrl: 'https://drive.google.com/file/d/legacy-file-id/view?usp=drivesdk',
+    status: 'Ожидает распознавания', hash: 'legacy-hash', branch: 'Ямская', year: 2026,
+    fileName: '1000056081.jpg'
+  }]);
+  const metadataCall = calls.find(([name]) => name === 'sheets.metadata.get');
+  assert.ok(metadataCall);
+  assert.deepEqual(metadataCall[1].ranges, ["'Архив кассовых фото'!F2:F2"]);
 });
 
 test('readPhoto downloads Drive bytes without writing anything', async () => {
