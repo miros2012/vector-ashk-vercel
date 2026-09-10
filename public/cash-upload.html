@@ -93,9 +93,30 @@
     return blob;
   }
 
+  async function retryPhoto(photoId, attempt = 0, silent = false) {
+    try {
+      const headers = { 'x-cash-photo-token': token };
+      if (photoId) headers['x-cash-photo-id'] = photoId;
+      const response = await fetch('/api/health?cashPhotoRoute=retry', {
+        method: 'POST', cache: 'no-store', headers
+      });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      if (data.recognized > 0 && !silent) {
+        showStatus('Фото распознано. Данные сохранены для последующей финансовой обработки.', 'ok');
+        return;
+      }
+      if (data.stillPending > 0 && photoId && attempt < 1) {
+        setTimeout(() => retryPhoto(photoId, attempt + 1, silent), 60000);
+      }
+    } catch (_) {
+      // Повтор распознавания не должен превращать сохранённое фото в ошибку загрузки.
+    }
+  }
+
   async function loadConfig() {
     if (!token) throw new Error('invalid link');
-    const response = await fetch('/api/cash-photo-config', {
+    const response = await fetch('/api/health?cashPhotoRoute=config', {
       method: 'GET', cache: 'no-store', headers: { 'x-cash-photo-token': token }
     });
     if (!response.ok) throw new Error('invalid link');
@@ -105,6 +126,7 @@
     maxBytes = Number(data.maxBytes) || maxBytes;
     loading.classList.add('hidden');
     app.classList.remove('hidden');
+    setTimeout(() => retryPhoto('', 0, true), 1500);
   }
 
   sendBtn.addEventListener('click', async () => {
@@ -114,7 +136,7 @@
     showStatus('Сохраняем фото и распознаём страницу…', 'info');
     try {
       const upload = await shrinkIfNeeded(file);
-      const response = await fetch('/api/cash-photo-upload', {
+      const response = await fetch('/api/health?cashPhotoRoute=upload', {
         method: 'POST',
         cache: 'no-store',
         headers: {
@@ -129,6 +151,7 @@
       if (response.status === 202 && data.saved) {
         showStatus(data.message || 'Фото сохранено. Распознавание продолжится автоматически.', 'ok');
         photoEl.value = '';
+        if (data.photoId) setTimeout(() => retryPhoto(data.photoId, 0, false), 30000);
       } else if (response.ok) {
         showStatus(data.message || 'Фото принято.', 'ok');
         photoEl.value = '';
