@@ -23,3 +23,14 @@ test('cash photo dispatch parses req.url and does not use Vercel req.query', () 
   assert.match(health, /new URL\(/);
   assert.doesNotMatch(health, /req\?*\.query|req\.query|request\.query/);
 });
+
+test('cash photo async route handlers are awaited inside the shared failure guard', () => {
+  assert.match(health, /return await services\.configHandler\(req, res\)/);
+  assert.match(health, /return await services\.uploadHandler\(req, res\)/);
+  assert.match(health, /return await services\.retryHandler\(req, res\)/);
+  assert.match(health, /return await handleCashPhotoProbe\(req, res, services\)/);
+});
+
+test('failed one-time Drive API enable path stays removed from production routing', () => {
+  assert.doesNotMatch(health, /enable-drive|CASH_PHOTO_ENABLE_DRIVE_NONCE|enableCashPhotoDriveApi/);
+});
