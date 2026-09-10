@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <title>Вектор — кассовый журнал</title>
+  <style>
+    :root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111;background:#f4f5f7}
+    *{box-sizing:border-box} body{margin:0;padding:20px 14px 48px;background:#f4f5f7}
+    .wrap{max-width:640px;margin:0 auto}.brand{display:flex;align-items:center;gap:12px;margin:4px 2px 18px}
+    .mark{width:42px;height:42px;border-radius:12px;background:#e42b21;color:white;display:grid;place-items:center;font-weight:900;font-size:24px}
+    h1{font-size:24px;line-height:1.1;margin:0}.sub{color:#6b7280;font-size:14px;margin-top:4px}
+    .card{background:white;border-radius:22px;padding:20px;box-shadow:0 10px 32px rgba(0,0,0,.06)}
+    .branch{background:#f7f7f8;border-radius:15px;padding:14px 16px;margin-bottom:18px}.branch b{display:block;font-size:18px}.branch span{font-size:13px;color:#6b7280}
+    label{display:block;font-weight:750;margin:15px 0 8px}.field,input[type=number],input[type=file]{width:100%;border:1px solid #d5d7dc;border-radius:14px;padding:13px 14px;background:white;font-size:16px}
+    input[type=file]{padding:12px}.hint{font-size:13px;color:#777;margin:7px 2px 0;line-height:1.45}
+    button{width:100%;margin-top:20px;border:0;border-radius:15px;padding:15px 18px;background:#e42b21;color:white;font-weight:800;font-size:17px;cursor:pointer}
+    button:disabled{opacity:.5;cursor:wait}.status{display:none;margin-top:16px;padding:14px 16px;border-radius:15px;white-space:pre-line;line-height:1.45;font-size:15px}
+    .status.info{display:block;background:#eef4ff;color:#234a8b}.status.ok{display:block;background:#eaf7ee;color:#176b34}.status.err{display:block;background:#fff0ef;color:#922b25}
+    .loading{padding:28px;text-align:center;color:#6b7280}.hidden{display:none!important}
+    footer{text-align:center;color:#9aa0a6;font-size:12px;margin-top:15px}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="brand"><div class="mark">V</div><div><h1>ВЕКТОР</h1><div class="sub">Кассовый журнал</div></div></div>
+    <section id="loading" class="card loading">Проверяем ссылку…</section>
+    <section id="app" class="card hidden">
+      <div class="branch"><span>Филиал</span><b id="branch">—</b></div>
+      <label for="year">Год журнала</label>
+      <input id="year" type="number" min="2020" max="2100">
+      <label for="photo">Фотография страницы</label>
+      <input id="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment">
+      <div class="hint">Загружайте только новую страницу без повторяющихся операций. Если сервис распознавания временно занят, фото всё равно будет сохранено — повторно отправлять его не нужно.</div>
+      <button id="send" type="button">Отправить журнал</button>
+      <div id="status" class="status"></div>
+    </section>
+    <section id="invalid" class="card hidden"><b>Ссылка недействительна</b><div class="hint" style="margin-top:8px">Попросите администратора выдать новую ссылку загрузки.</div></section>
+    <footer>Федеральная Академия Вождения «Вектор»</footer>
+  </main>
+<script>
+(() => {
+  const loading = document.getElementById('loading');
+  const app = document.getElementById('app');
+  const invalid = document.getElementById('invalid');
+  const branchEl = document.getElementById('branch');
+  const yearEl = document.getElementById('year');
+  const photoEl = document.getElementById('photo');
+  const sendBtn = document.getElementById('send');
+  const statusEl = document.getElementById('status');
+  let maxBytes = 4 * 1024 * 1024;
+
+  function tokenFromHash() {
+    const raw = String(location.hash || '').replace(/^#/, '');
+    const params = new URLSearchParams(raw.includes('=') ? raw : 'token=' + encodeURIComponent(raw));
+    return params.get('token') || '';
+  }
+  const token = tokenFromHash();
+
+  function showStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.className = 'status ' + kind;
+  }
+  function fileNameFor(blob, original) {
+    if (blob.type === original.type) return original.name || 'journal.jpg';
+    return (original.name || 'journal').replace(/\.[^.]+$/, '') + '.jpg';
+  }
+  function canvasBlob(canvas, quality) {
+    return new Promise((resolve, reject) => canvas.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error('image compression failed')),
+      'image/jpeg', quality
+    ));
+  }
+  async function shrinkIfNeeded(file) {
+    if (file.size <= Math.floor(maxBytes * .94)) return file;
+    const bitmap = await createImageBitmap(file);
+    const maxSide = 2200;
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext('2d');
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    if (bitmap.close) bitmap.close();
+    let quality = .86;
+    let blob = await canvasBlob(canvas, quality);
+    while (blob.size > Math.floor(maxBytes * .94) && quality > .52) {
+      quality -= .08;
+      blob = await canvasBlob(canvas, quality);
+    }
+    if (blob.size > maxBytes) throw new Error('photo remains too large');
+    return blob;
+  }
+
+  async function retryPhoto(photoId, attempt = 0, silent = false) {
+    try {
+      const headers = { 'x-cash-photo-token': token };
+      if (photoId) headers['x-cash-photo-id'] = photoId;
+      const response = await fetch('/api/health?cashPhotoRoute=retry', {
+        method: 'POST', cache: 'no-store', headers
+      });
+      if (!response.ok) return;
+      const data = await response.json().catch(() => ({}));
+      if (data.recognized > 0 && !silent) {
+        showStatus('Фото распознано. Данные сохранены для последующей финансовой обработки.', 'ok');
+        return;
+      }
+      if (data.stillPending > 0 && photoId && attempt < 1) {
+        setTimeout(() => retryPhoto(photoId, attempt + 1, silent), 60000);
+      }
+    } catch (_) {
+      // Повтор распознавания не должен превращать сохранённое фото в ошибку загрузки.
+    }
+  }
+
+  async function loadConfig() {
+    if (!token) throw new Error('invalid link');
+    const response = await fetch('/api/health?cashPhotoRoute=config', {
+      method: 'GET', cache: 'no-store', headers: { 'x-cash-photo-token': token }
+    });
+    if (!response.ok) throw new Error('invalid link');
+    const data = await response.json();
+    branchEl.textContent = data.label || data.branch;
+    yearEl.value = data.year;
+    maxBytes = Number(data.maxBytes) || maxBytes;
+    loading.classList.add('hidden');
+    app.classList.remove('hidden');
+    setTimeout(() => retryPhoto('', 0, true), 1500);
+  }
+
+  sendBtn.addEventListener('click', async () => {
+    const file = photoEl.files && photoEl.files[0];
+    if (!file) { showStatus('Выберите фотографию страницы.', 'err'); return; }
+    sendBtn.disabled = true;
+    showStatus('Сохраняем фото и распознаём страницу…', 'info');
+    try {
+      const upload = await shrinkIfNeeded(file);
+      const response = await fetch('/api/health?cashPhotoRoute=upload', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'x-cash-photo-token': token,
+          'x-cash-year': String(Number(yearEl.value)),
+          'x-cash-file-name': encodeURIComponent(fileNameFor(upload, file)),
+          'content-type': upload.type || 'image/jpeg'
+        },
+        body: upload
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 202 && data.saved) {
+        showStatus(data.message || 'Фото сохранено. Распознавание продолжится автоматически.', 'ok');
+        photoEl.value = '';
+        if (data.photoId) setTimeout(() => retryPhoto(data.photoId, 0, false), 30000);
+      } else if (response.ok) {
+        showStatus(data.message || 'Фото принято.', 'ok');
+        photoEl.value = '';
+      } else {
+        showStatus(data.message || 'Не удалось отправить фото. Попробуйте ещё раз позже.', 'err');
+      }
+    } catch (_) {
+      showStatus('Не удалось отправить фото. Проверьте интернет и попробуйте ещё раз.', 'err');
+    } finally {
+      sendBtn.disabled = false;
+    }
+  });
+
+  loadConfig().catch(() => {
+    loading.classList.add('hidden');
+    invalid.classList.remove('hidden');
+  });
+})();
+</script>
+</body>
+</html>
