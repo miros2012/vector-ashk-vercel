@@ -18,8 +18,8 @@ import { createCashPhotoUploadService } from '../lib/cash-photo-upload-service.j
 import { createCashPhotoConfigHttpHandler } from '../lib/cash-photo-config-http.js';
 import { createCashPhotoRetryHttpHandler } from '../lib/cash-photo-retry-http.js';
 import { createCashPhotoRetryService } from '../lib/cash-photo-retry-service.js';
-import { buildCashPhotoGatewayPayload } from '../lib/cash-photo-prompt.js';
-import { recognizeWithFallback } from '../lib/cash-photo-recognizer.js';
+import { buildCashPhotoGeminiPayload } from '../lib/cash-photo-prompt.js';
+import { recognizeWithFallback, probeGeminiModels, DEFAULT_CASH_PHOTO_MODELS } from '../lib/cash-photo-recognizer.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
@@ -31,7 +31,7 @@ const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
 const TOCHKA_HEARTBEAT_KEY_HASH_MARKER = 'tochka_operations_heartbeat_key_sha256';
 const CASH_PHOTO_SPREADSHEET_ID = process.env.CASH_PHOTO_SPREADSHEET_ID || SOURCE_SPREADSHEET_ID;
 const CASH_PHOTO_DRIVE_FOLDER_ID = process.env.CASH_PHOTO_DRIVE_FOLDER_ID || '1PHTv_r47ZEbnH76I7zbC5YgphpELpkfG';
-const CASH_PHOTO_MODELS = ['google/gemini-3.8-flash', 'google/gemini-3.5-flash'];
+const CASH_PHOTO_MODELS = DEFAULT_CASH_PHOTO_MODELS;
 const CASH_PHOTO_ROUTES = new Set(['config', 'upload', 'retry', 'probe']);
 const RANGES = {
   'РОП_Штаб_Утро': 'A:X',
@@ -266,11 +266,9 @@ async function getCashPhotoServices() {
         folderId: CASH_PHOTO_DRIVE_FOLDER_ID
       });
       const recognize = async ({ imageBytes, mimeType, branch, year }) => {
-        const token = process.env.AI_GATEWAY_API_KEY || await getVercelOidcToken();
-        if (!token) throw new Error('AI Gateway authentication unavailable');
         return recognizeWithFallback({
-          token,
-          payload: buildCashPhotoGatewayPayload({ imageBytes, mimeType, branch, year }),
+          apiKey: process.env.GEMINI_API_KEY,
+          payload: buildCashPhotoGeminiPayload({ imageBytes, mimeType, branch, year }),
           models: configuredCashPhotoModels(),
           maxAttemptsPerModel: 2,
           baseDelayMs: 750
@@ -319,13 +317,13 @@ async function handleCashPhotoProbe(req, res, services) {
       return true;
     })()
   ]);
-  const oidcToken = process.env.AI_GATEWAY_API_KEY || await getVercelOidcToken();
-  return res.status(200).json({
-    ok: true,
+  const gemini = await probeGeminiModels({ models: configuredCashPhotoModels() });
+  return res.status(gemini.ok ? 200 : 503).json({
+    ok: gemini.ok,
     driveFolderAccessible: Boolean(storage?.ok),
     driveCanAddChildren: Boolean(storage?.canAddChildren),
     photoArchiveAccessible: Boolean(archive),
-    aiGatewayOidcAvailable: Boolean(oidcToken)
+    gemini
   });
 }
 
