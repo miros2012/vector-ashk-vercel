@@ -19,7 +19,7 @@
     button:disabled{opacity:.5;cursor:wait}.status{display:none;margin-top:16px;padding:14px 16px;border-radius:15px;white-space:pre-line;line-height:1.45;font-size:15px}
     .status.info{display:block;background:#eef4ff;color:#234a8b}.status.ok{display:block;background:#eaf7ee;color:#176b34}.status.err{display:block;background:#fff0ef;color:#922b25}
     .loading{padding:28px;text-align:center;color:#6b7280}.hidden{display:none!important}
-    footer{text-align:center;color:#9aa0a6;font-size:12px;margin-top:15px}
+    footer{text-align:center;color:#6b7280;font-size:12px;margin-top:15px;line-height:1.7}a{color:#a51f18;text-underline-offset:3px}
   </style>
 </head>
 <body>
@@ -33,11 +33,12 @@
       <label for="photo">Фотография страницы</label>
       <input id="photo" type="file" accept="image/jpeg,image/png,image/webp" capture="environment">
       <div class="hint">Загружайте только новую страницу без повторяющихся операций. Если сервис распознавания временно занят, фото всё равно будет сохранено — повторно отправлять его не нужно.</div>
+      <p class="hint">Фото сохраняется в Google Drive и передаётся Google Gemini для распознавания. Результат сохраняется в Google Sheets. <a href="/cash-photo-privacy.html">Как обрабатываются данные</a>.</p>
       <button id="send" type="button">Отправить журнал</button>
       <div id="status" class="status"></div>
     </section>
     <section id="invalid" class="card hidden"><b>Ссылка недействительна</b><div class="hint" style="margin-top:8px">Попросите администратора выдать новую ссылку загрузки.</div></section>
-    <footer>Федеральная Академия Вождения «Вектор»</footer>
+    <footer>Федеральная Академия Вождения «Вектор»<br><a href="/cash-photo.html">Об приложении</a> · <a href="/cash-photo-privacy.html">Политика конфиденциальности</a></footer>
   </main>
 <script>
 (() => {

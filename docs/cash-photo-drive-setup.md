@@ -7,7 +7,7 @@ Branch authentication now reads SHA-256 hashes and branch identities only from t
 ## One-time owner setup
 
 1. Open [Google Auth Platform](https://console.cloud.google.com/auth/overview?project=vector-finance-ai) in project `vector-finance-ai`.
-2. If prompted, configure Branding with app name **Вектор — кассовые фото**, the owner's support email, and developer contact email. Select External audience if Internal is unavailable.
+2. If prompted, configure Branding with app name **Вектор — кассовые фото**, the owner's support email, and developer contact email. Select External audience if Internal is unavailable. Fill the public URLs and authorized domain listed below, then Save. Missing homepage or privacy-policy URLs can disable Publish app.
 3. In Data Access, request only `https://www.googleapis.com/auth/drive.file`. This is a non-sensitive per-file scope; do not add full Drive access.
 4. For persistent production use, set Audience / Publishing status to **In production** before consent. External apps left in Testing receive seven-day refresh tokens for this scope. Follow any Google verification requirements shown for the project.
 5. In Clients, create **Desktop app**, named **Vector cash photo setup**, and download its JSON to the owner's Mac. Do not send its contents or screenshots of secrets to chat or GitHub.
@@ -28,13 +28,38 @@ Branch authentication now reads SHA-256 hashes and branch identities only from t
 
 If consent or setup fails, the script prints only a fixed safe error. Do not paste credentials for troubleshooting. Check the selected project/account, Desktop client type, publishing status, and that the output path is new and outside the checkout. A rerun reuses the marked folder instead of creating another; the previous branch links remain valid until the registry is replaced in Vercel.
 
+## Google Branding fields
+
+Use these pages after the commit adding them is deployed to Production and both URLs return 200 without authentication:
+
+| Field | Value |
+| --- | --- |
+| App name | Вектор — кассовые фото |
+| User support email / Developer contact information | `miroslav.shd@gmail.com` |
+| Application home page | `https://vector-ashk-backend.vercel.app/cash-photo.html` |
+| Application privacy policy link | `https://vector-ashk-backend.vercel.app/cash-photo-privacy.html` |
+| Application terms of service link | Leave empty; optional in Google's brand-verification documentation |
+| Authorized domains → Add domain | `vector-ashk-backend.vercel.app` (no scheme or path) |
+
+The public homepage explains the app and links to the privacy page; it contains no branch links or archive IDs. The upload form also links to the policy and names the storage and recognition providers. If the support contact or actual data handling changes, update both the public pages and Google Branding.
+
+`vercel.app` is listed in the Public Suffix List; the project's own hostname is the private domain to enter, not `vercel.app`. If Google requests domain ownership verification, follow the actual prompt using an account that owns this Google Cloud project and the deployment. Do not claim verification is complete from a successful Save alone. A deployed page does not itself approve OAuth branding.
+
+After saving Branding, return to Audience → Publish app. If it remains unavailable, inspect the new validation message before changing other settings.
+
+## Data handling before real uploads
+
+Read the public privacy page before connecting the owner's account. Photos pass through Vercel to Drive and Gemini; recognized text is stored in Sheets. Access to those files follows their existing Google sharing settings. Private branch authentication does not make a publicly shared archive private. Review actual Drive and Sheets sharing before uploading confidential records.
+
+Verify the actual Gemini project's billing and applicable data-processing terms before uploading confidential or personal information. Google's unpaid-service terms prohibit those inputs and allow use of inputs/outputs for product improvement with human review; paid-service terms differ. The Cloud console's free-trial banner does not establish the API project's billing mode. The setup script does not activate billing or change these settings. Use synthetic, non-confidential data for acceptance until this is settled.
+
 ## Variables added
 
 | Variable | Purpose |
 | --- | --- |
 | `CASH_PHOTO_DRIVE_CLIENT_ID` | Google Desktop OAuth client ID |
 | `CASH_PHOTO_DRIVE_CLIENT_SECRET` | OAuth client credential |
-| `CASH_PHOTO_DRIVE_REFRESH_TOKEN` | Offline Drive access, stored only as a Vercel secret |
+| `CASH_PHOTO_DRIVE_REFRESH_TOKEN` | Offline Drive access; saved in the private setup output and Vercel environment |
 | `CASH_PHOTO_DRIVE_FOLDER_ID` | The new app-owned upload folder |
 | `CASH_PHOTO_ACCESS_JSON` | Array of `{accessId,branch,label,active,tokenSha256}` entries |
 
@@ -55,3 +80,6 @@ Missing/partial OAuth config disables uploads. Missing/invalid/ambiguous branch 
 - [Drive per-file scope](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)
 - [Desktop OAuth, PKCE and loopback redirect](https://developers.google.com/identity/protocols/oauth2/native-app)
 - [Refresh-token lifetime and Testing status](https://developers.google.com/identity/protocols/oauth2#expiration)
+- [Google brand verification: homepage, privacy, optional terms and domain ownership](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification)
+- [Public Suffix List, including vercel.app](https://publicsuffix.org/list/public_suffix_list.dat)
+- [Gemini API data handling for paid and unpaid services](https://ai.google.dev/gemini-api/terms)

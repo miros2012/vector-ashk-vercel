@@ -13,6 +13,5 @@ test('mobile upload page keeps token in URL hash, compresses large photos and us
   assert.match(html, /x-cash-photo-token/);
   assert.match(html, /canvas/i);
   assert.match(html, /202/);
-  assert.doesNotMatch(html, /Gemini/);
   assert.doesNotMatch(html, /error\.message/);
 });

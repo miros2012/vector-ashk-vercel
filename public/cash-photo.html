@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111111">
+  <meta name="description" content="Вектор — кассовые фото: загрузка страниц кассовых журналов, распознавание и сохранение результатов в архиве для проверки сотрудниками.">
+  <title>Вектор — кассовые фото</title>
+  <link rel="stylesheet" href="/cash-photo-info.css">
+</head>
+<body>
+  <div class="wrap">
+    <header><a class="brand" href="/cash-photo.html"><span class="mark" aria-hidden="true">V</span><span><strong>ВЕКТОР</strong><small>Кассовые фото</small></span></a></header>
+    <main>
+      <p class="eyebrow">Для сотрудников сети автошкол «Вектор»</p>
+      <h1>Вектор — кассовые фото</h1>
+      <p class="lead">Приложение принимает фотографии страниц кассовых журналов, распознаёт записи и сохраняет результат в архиве для последующей проверки.</p>
+      <div class="steps">
+        <section class="step"><span class="number">01</span><h2>Загрузить фото</h2><p>Сотрудник открывает ссылку своего филиала, указывает год журнала и выбирает фотографию страницы.</p></section>
+        <section class="step"><span class="number">02</span><h2>Распознать записи</h2><p>Фото сохраняется в Google Drive и передаётся Google Gemini для извлечения дат, описаний и сумм.</p></section>
+        <section class="step"><span class="number">03</span><h2>Проверить результат</h2><p>Результат и статус обработки сохраняются в Google Sheets, в разделе «Архив кассовых фото».</p></section>
+      </div>
+      <div class="note"><p>Распознанные записи требуют проверки человеком. Загрузка фото сама по себе не проводит платежи и не переносит операции в ДДС.</p></div>
+      <h2>Как получить доступ</h2>
+      <p>Личную ссылку филиала выдаёт администратор. Для подключения хранилища владелец Google Drive отдельно разрешает приложению работать с файлами, созданными или выбранными для этого приложения. Сотрудникам для загрузки по ссылке не нужно подключать свой Google Drive.</p>
+      <h2>Обработка данных и связь</h2>
+      <p>Фото проходит через сервер приложения на Vercel. Для хранения используются Google Drive и Google Sheets, для распознавания — Google Gemini API. Состав данных, доступ, сроки хранения и порядок удаления описаны в <a href="/cash-photo-privacy.html">политике конфиденциальности</a>.</p>
+      <p class="contact">По вопросам доступа и обработки данных: <a href="mailto:miroslav.shd@gmail.com">miroslav.shd@gmail.com</a>.</p>
+    </main>
+    <footer><a href="/cash-photo-privacy.html">Политика конфиденциальности</a><span>Вектор — кассовые фото</span></footer>
+  </div>
+</body>
+</html>
