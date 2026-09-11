@@ -125,3 +125,20 @@ test('probe fails closed for absent key, failed auth or missing generation suppo
     assert.equal(result.ok,false);assert.ok(!JSON.stringify(result).includes(key));
   }
 });
+
+test('rejecting error headers closes a slow upstream body without reading its content', async t => {
+  const { createServer } = await import('node:http');
+  let responseClosed = false;
+  const server = createServer((_req,res)=>{
+    res.on('close',()=>{responseClosed=true;});
+    res.writeHead(503,{'content-type':'application/json'});res.flushHeaders();
+    // Deliberately never finish the upstream error body.
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{server.closeAllConnections();server.close();});
+  await assert.rejects(recognizeWithFallback({...options,models:models.slice(0,1),maxAttemptsPerModel:1,requestTimeoutMs:1000,
+    fetchImpl:async(_url,init)=>fetch(`http://127.0.0.1:${server.address().port}`,init)
+  }),CashPhotoRecognitionUnavailableError);
+  await new Promise(resolve=>setTimeout(resolve,40));
+  assert.equal(responseClosed,true,'non-success body must be aborted before clearing its deadline');
+});
