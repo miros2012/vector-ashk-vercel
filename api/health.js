@@ -12,6 +12,7 @@ import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
 import { createHourlyProjectAgentService } from '../lib/hourly-project-agent.js';
 import { createOwnerPackageOidcSmokeService } from '../lib/owner-package-oidc-smoke.js';
 import { createCashPhotoAccessStore } from '../lib/cash-photo-access-store.js';
+import { createCashPhotoDriveWriter } from '../lib/cash-photo-drive-writer.js';
 import { createCashPhotoStore } from '../lib/cash-photo-store.js';
 import { createCashPhotoUploadHttpHandler } from '../lib/cash-photo-upload-http.js';
 import { createCashPhotoUploadService } from '../lib/cash-photo-upload-service.js';
@@ -258,10 +259,12 @@ async function getCashPhotoServices() {
       await auth.authorize();
       const sheets = google.sheets({ version: 'v4', auth });
       const drive = google.drive({ version: 'v3', auth });
-      const access = createCashPhotoAccessStore({ sheets, spreadsheetId: CASH_PHOTO_SPREADSHEET_ID });
+      const access = createCashPhotoAccessStore();
+      const driveWriter = createCashPhotoDriveWriter({ google });
       const store = createCashPhotoStore({
         sheets,
         drive,
+        uploadDrive: driveWriter,
         spreadsheetId: CASH_PHOTO_SPREADSHEET_ID,
         folderId: CASH_PHOTO_DRIVE_FOLDER_ID
       });
@@ -278,6 +281,8 @@ async function getCashPhotoServices() {
       const retryService = createCashPhotoRetryService({ store, recognize });
       return {
         store,
+        driveWriter,
+        accessConfigured: access.configured,
         uploadHandler: createCashPhotoUploadHttpHandler({
           authorize: token => access.authorize(token),
           uploadService
@@ -300,8 +305,9 @@ async function handleCashPhotoProbe(req, res, services) {
     res.setHeader?.('Allow', 'GET');
     return res.status(405).json({ ok: false, error: 'method_not_allowed' });
   }
-  const [storage, archive] = await Promise.all([
+  const [storage, uploadStorage, archive] = await Promise.all([
     services.store.probe(),
+    services.driveWriter.probe(CASH_PHOTO_DRIVE_FOLDER_ID),
     (async () => {
       const auth = new google.auth.JWT({
         email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -318,8 +324,11 @@ async function handleCashPhotoProbe(req, res, services) {
     })()
   ]);
   const gemini = await probeGeminiModels({ models: configuredCashPhotoModels() });
-  return res.status(gemini.ok ? 200 : 503).json({
-    ok: gemini.ok,
+  const ok = gemini.ok && uploadStorage.ok && services.accessConfigured;
+  return res.status(ok ? 200 : 503).json({
+    ok,
+    accessConfigured: services.accessConfigured,
+    uploadStorage,
     driveFolderAccessible: Boolean(storage?.ok),
     driveCanAddChildren: Boolean(storage?.canAddChildren),
     photoArchiveAccessible: Boolean(archive),

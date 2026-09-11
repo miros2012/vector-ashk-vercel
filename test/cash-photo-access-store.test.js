@@ -1,42 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createCashPhotoAccessStore } from '../lib/cash-photo-access-store.js';
 
-function sheetsWithRows(rows) {
-  return {
-    spreadsheets: {
-      values: {
-        async get(args) {
-          assert.equal(args.range, "'Доступ мобильной загрузки'!A2:I");
-          return { data: { values: rows } };
-        }
-      }
-    }
-  };
-}
+const token = 'a'.repeat(43);
+const tokenSha256 = createHash('sha256').update(token).digest('hex');
+const entry = { accessId: 'BRANCH:ЯМСКАЯ', branch: 'Ямская', label: 'Ямская', active: true, tokenSha256 };
 
-test('authorizes active branch by opaque token and derives branch server-side', async () => {
-  const store = createCashPhotoAccessStore({
-    sheets: sheetsWithRows([
-      ['BRANCH:ЯМСКАЯ', 'Филиал', 'Ямская', 'Ямская', 'TRUE', '', '', '2', 'opaque-yamskaya']
-    ]),
-    spreadsheetId: 'sheet'
-  });
-  assert.deepEqual(await store.authorize('opaque-yamskaya'), {
-    accessId: 'BRANCH:ЯМСКАЯ', role: 'Филиал', branch: 'Ямская', label: 'Ямская'
-  });
+test('private registry derives branch identity and never reads the public sheet', async () => {
+  const store = createCashPhotoAccessStore({ registryJson: JSON.stringify([entry]), sheets: { get spreadsheets() { throw Error('Public sheet must not be read'); } } });
+  assert.equal(store.configured, true);
+  assert.deepEqual(await store.authorize(token), { accessId: 'BRANCH:ЯМСКАЯ', role: 'Филиал', branch: 'Ямская', label: 'Ямская' });
+  assert.equal(await store.authorize('b'.repeat(43)), null);
+  assert.equal(await store.authorize(tokenSha256), null);
+  assert.equal(await store.authorize(''), null);
 });
 
-test('rejects inactive, non-branch, blank and unknown tokens', async () => {
-  const store = createCashPhotoAccessStore({
-    sheets: sheetsWithRows([
-      ['BRANCH:OLD', 'Филиал', 'Old', 'Old', 'FALSE', '', '', '1', 'inactive'],
-      ['PERSON:X', 'Подотчёт', 'X', '', 'TRUE', '', '', '2', 'person']
-    ]),
-    spreadsheetId: 'sheet'
-  });
-  assert.equal(await store.authorize('inactive'), null);
-  assert.equal(await store.authorize('person'), null);
-  assert.equal(await store.authorize('unknown'), null);
-  assert.equal(await store.authorize(''), null);
+test('missing, malformed, ambiguous and plaintext registries fail closed', async () => {
+  const invalid = ['', '{bad', '{}', '[]', JSON.stringify([entry, entry]), JSON.stringify([{ ...entry, active: 'true' }]), JSON.stringify([{ ...entry, branch: '' }]), JSON.stringify([{ ...entry, tokenSha256: '' }]), JSON.stringify([{ ...entry, token }])];
+  for (const registryJson of invalid) {
+    const store = createCashPhotoAccessStore({ registryJson });
+    assert.equal(store.configured, false);
+    assert.equal(await store.authorize(token), null);
+  }
+});
+
+test('disabled branch stays unauthorized even with a matching hash', async () => {
+  const store = createCashPhotoAccessStore({ registryJson: JSON.stringify([{ ...entry, active: false }]) });
+  assert.equal(await store.authorize(token), null);
 });
