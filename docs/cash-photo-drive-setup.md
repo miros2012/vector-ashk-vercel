@@ -83,3 +83,33 @@ Missing/partial OAuth config disables uploads. Missing/invalid/ambiguous branch 
 - [Google brand verification: homepage, privacy, optional terms and domain ownership](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification)
 - [Public Suffix List, including vercel.app](https://publicsuffix.org/list/public_suffix_list.dat)
 - [Gemini API data handling for paid and unpaid services](https://ai.google.dev/gemini-api/terms)
+
+## Автоматическая production-проверка
+
+После успешного Node test suite на `main` job `Cash photo production smoke`
+самостоятельно ждёт соответствующий Vercel commit и проверяет сохранение,
+распознавание, чтение файла из Drive, JSON из архива и повторную отправку.
+Дополнительные секреты или действия владельца не нужны.
+
+Проверка использует короткоживущий GitHub Actions OIDC с отдельной audience
+`vector-cash-photo-smoke-v1`. Сервер проверяет подпись, срок действия, immutable
+repository/owner IDs, владельца-инициатора, workflow `test.yml`, push в main,
+GitHub-hosted runner и равенство run/workflow/deployment SHA. PR и fork jobs
+не получают этот доступ. Branch-token обработчики сотрудников сохраняют свой
+обычный контракт.
+
+Разрешена только встроенная картинка `vector-upload-test.png` с проверяемым
+SHA-256, без денежных операций, под филиалом `ТЕСТ ЗАГРУЗКИ`. Сервер не принимает
+от тестового клиента изображения, ссылки, филиалы или идентификаторы чужих фото.
+Одна явно помеченная техническая строка и её файл остаются как контрольный
+образец; последующие запуски проверяют этот же образец без размножения файлов.
+Это не финансовая операция и не запись в ДДС. Первый успешный запуск сообщает
+`newUpload: true`; следующие — `false`. Доступ сотрудника через мобильный браузер
+проверяется отдельно тестами HTTP-обработчиков: production smoke вызывает тот же
+upload service с ограниченной служебной авторизацией.
+
+`202 recognition_pending` не считается успехом. Job делает не более трёх
+попыток распознавания сохранённого образца. Ожидание deployment ограничено 18
+проверками, весь job — 8 минутами. Для повторного запуска после внешнего сбоя
+можно использовать GitHub Actions → Re-run failed jobs; владелец не должен
+заново загружать файл или передавать токены.

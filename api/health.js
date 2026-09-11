@@ -11,6 +11,7 @@ import {
 import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
 import { createHourlyProjectAgentService } from '../lib/hourly-project-agent.js';
 import { createOwnerPackageOidcSmokeService } from '../lib/owner-package-oidc-smoke.js';
+import { createCashPhotoSmokeHandler } from '../lib/cash-photo-automatic-smoke.js';
 import { createCashPhotoAccessStore } from '../lib/cash-photo-access-store.js';
 import { createCashPhotoDriveWriter } from '../lib/cash-photo-drive-writer.js';
 import { createCashPhotoStore } from '../lib/cash-photo-store.js';
@@ -281,6 +282,9 @@ async function getCashPhotoServices() {
       const retryService = createCashPhotoRetryService({ store, recognize });
       return {
         store,
+        uploadService,
+        sheets,
+        spreadsheetId: CASH_PHOTO_SPREADSHEET_ID,
         driveWriter,
         accessConfigured: access.configured,
         uploadHandler: createCashPhotoUploadHttpHandler({
@@ -437,12 +441,20 @@ async function handleTochkaOperationAck(req, res, body) {
   }
 }
 
+const handleCashPhotoSmoke = createCashPhotoSmokeHandler({
+  verifyToken: verifyGitHubActionsOidcToken,
+  getServices: getCashPhotoServices
+});
+
 export default async function handler(req, res) {
   const route = cashPhotoRoute(req);
   if (route) return handleCashPhotoRoute(req, res, route);
 
   const body = requestBody(req);
   const method = String(req?.method || '').toUpperCase();
+  if (String(body?.mode || '') === 'cash_photo_smoke') {
+    return handleCashPhotoSmoke({ method, headers: req.headers, body }, res);
+  }
   if (method === 'POST' && HOURLY_AGENT_MODES.has(String(body?.mode || ''))) {
     res.setHeader?.('Cache-Control', 'no-store');
     return handleHourlyProjectAgent(req, res, body);
