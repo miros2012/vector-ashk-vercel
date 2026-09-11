@@ -68,7 +68,7 @@ test('retired GET recovery and diagnostic requests cannot invoke work', async ()
   }
 });
 
- test('legacy query flags cannot bypass authorization on POST', async () => {
+test('legacy query flags cannot bypass authorization on POST', async () => {
   let calls = 0;
   const handler = createCashPhotoRetryHttpHandler({
     authorize: async () => null,

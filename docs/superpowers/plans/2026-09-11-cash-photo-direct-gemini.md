@@ -16,18 +16,18 @@ main/production a5c365674617cfba053517032b9d75b57c37b71f; push CI 34566188791 su
 
 ## Task 1: Direct client and payload
 Files: lib/cash-photo-recognizer.js, lib/cash-photo-prompt.js, api/health.js and respective tests.
-- [ ] RED: replace Gateway fixtures with native candidates/content/parts; assert official endpoint, header-only key, preserved schema, safe missing-key/network/4xx/malformed errors, bounded 429/500/503 retries, fallback and time budget.
-- [ ] Run `node --test test/cash-photo-recognizer.test.js test/cash-photo-prompt.test.js` and record expected failures.
-- [ ] Implement `recognizeWithFallback({apiKey=process.env.GEMINI_API_KEY,payload,models,...})` using fixed `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, `redirect:'error'`, AbortController timeout, safe status-only diagnostics and a 40s total budget.
-- [ ] Implement native payload: `contents:[{role:'user',parts:[{text:prompt},{inlineData:{mimeType,data}}]}]`, `generationConfig:{responseMimeType:'application/json',responseJsonSchema:schema}`.
-- [ ] Wire only cash-photo recognition in health; retain unrelated OIDC consumers. Probe checks API-key presence and read-only model metadata, never requests generation publicly.
-- [ ] Integration regression: upload saves bytes/archive before key failure; transient failure -> safe 202; successful recognition writes only archive; same hash -> no duplicate.
-- [ ] Full suite and API syntax, review diff, commit, push, PR, merge-ref CI, merge, push CI, exact-SHA production READY.
+- [x] RED: replace Gateway fixtures with native candidates/content/parts; assert official endpoint, header-only key, preserved schema, safe missing-key/network/4xx/malformed errors, bounded 429/500/503 retries, fallback and time budget.
+- [x] Run `node --test test/cash-photo-recognizer.test.js test/cash-photo-prompt.test.js` and record expected failures.
+- [x] Implement `recognizeWithFallback({apiKey=process.env.GEMINI_API_KEY,payload,models,...})` using fixed `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, `redirect:'error'`, AbortController timeout, safe status-only diagnostics and a 40s total budget.
+- [x] Implement native payload: `contents:[{role:'user',parts:[{text:prompt},{inlineData:{mimeType,data}}]}]`, `generationConfig:{responseMimeType:'application/json',responseJsonSchema:schema}`.
+- [x] Wire only cash-photo recognition in health; retain unrelated OIDC consumers. Probe checks API-key presence and read-only model metadata, never requests generation publicly.
+- [x] Integration regression: upload saves bytes/archive before key failure; transient failure -> safe 202; successful recognition writes only archive; same hash -> no duplicate.
+- [x] Full suite and API syntax, review diff, commit, push, PR, merge-ref CI, merge, push CI, exact-SHA production READY.
 
 ## Task 2: Production recovery
-- [ ] Read-only probe must confirm direct Gemini and both configured models support generateContent.
-- [ ] Re-read row 301; only if still unrecognized call existing exact-target recovery once.
-- [ ] Read back H:N and A:G. Confirm recognized status, operation/review counts, model, complete JSON, unchanged photo/hash, no duplicate, no DDS effects.
+- [x] Read-only probe must confirm direct Gemini and both configured models support generateContent.
+- [x] Re-read row 301; only if still unrecognized call existing exact-target recovery once.
+- [x] Read back H:N and A:G. Confirm recognized status, operation/review counts, model, complete JSON, unchanged photo/hash, no duplicate, no DDS effects.
 
 ## Task 3: Cleanup
 Files: lib/cash-photo-retry-http.js, lib/cash-photo-google-oauth-probe.js, related tests.
@@ -42,3 +42,9 @@ Files: lib/cash-photo-retry-http.js, lib/cash-photo-google-oauth-probe.js, relat
 - https://ai.google.dev/api/models
 - https://ai.google.dev/gemini-api/docs/interactions-overview (generateContent remains supported)
 - https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta (native generateContent path and responseJsonSchema verified)
+
+
+## Recovery acceptance, 2026-09-11
+PR #199 merged as 39b1e61b74ee3530e0f24a4965e393bb54817245. Merge-ref run 34570279007 and post-merge run 34570367268 both pass 735/735. Production dpl_4TMZhVmmykyNsQcrargbLg2pL44d is exact-SHA READY; direct key/model metadata and Drive/Sheets probes return 200.
+One exact-target recovery returned attempted=1, recognized=1. Connector readback confirms archive row 301 is recognized/pending processing, 11 operations, zero model review flags, model gemini-3.8-flash and valid recognition JSON. Only row301 changed among302 archive rows; photo/hash/hyperlink remain identical, no duplicates. Full DDS formula/value snapshot (18,685 populated rows) is byte-for-byte identical before/after recovery.
+Temporary GET recovery and OAuth diagnostics are now removed by the cleanup change; normal authenticated POST retry remains.
