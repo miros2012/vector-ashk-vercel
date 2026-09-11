@@ -47,72 +47,35 @@ test('retry route rejects unknown token without calling recognition', async () =
   assert.equal(calls, 0);
 });
 
-test('one-time recovery GET is limited to the exact saved Yamskaya photo', async () => {
-  let received;
-  const handler = createCashPhotoRetryHttpHandler({
-    authorize: async () => null,
-    retryService: {
-      async retryPending(limit, filters) {
-        received = { limit, filters };
-        return { attempted: 1, recognized: 1, stillPending: 0, failed: 0 };
-      }
-    }
-  });
-  const res = responseRecorder();
-  await handler({
-    method: 'GET',
-    url: '/api/health?cashPhotoRoute=retry&recovery=YAMSKAYA_20260910',
-    headers: {}
-  }, res);
-
-  assert.equal(res.code, 200);
-  assert.deepEqual(received, {
-    limit: 1,
-    filters: {
-      branch: 'Ямская',
-      photoId: 'PHOTO-20260910-134422-315df084',
-      allowFailed: true
-    }
-  });
-  assert.deepEqual(res.payload, { ok: true, attempted: 1, recognized: 1, stillPending: 0, failed: 0 });
-  assert.equal(res.headers['cache-control'], 'no-store');
+test('retired GET recovery and diagnostic requests cannot invoke work', async () => {
+  for (const url of [
+    '/api/health?cashPhotoRoute=retry&recovery=YAMSKAYA_20260910',
+    '/api/health?cashPhotoRoute=retry&diagnostic=GOOGLE_OAUTH',
+    '/api/health?cashPhotoRoute=retry&recovery=OTHER',
+    '/api/health?cashPhotoRoute=retry'
+  ]) {
+    let calls = 0;
+    const handler = createCashPhotoRetryHttpHandler({
+      authorize: async () => { calls++; return null; },
+      retryService: { async retryPending() { calls++; return { attempted: 1 }; } },
+      probeGoogleOauth: async () => { calls++; return { ok: true }; }
+    });
+    const res = responseRecorder();
+    await handler({ method: 'GET', url, headers: {} }, res);
+    assert.equal(res.code, 405);
+    assert.equal(res.headers.allow, 'POST');
+    assert.equal(calls, 0);
+  }
 });
 
-test('temporary Google OAuth diagnostic exposes only availability, status and allowlisted reason', async () => {
-  const handler = createCashPhotoRetryHttpHandler({
-    authorize: async () => null,
-    retryService: { async retryPending() { throw new Error('must not retry'); } },
-    probeGoogleOauth: async () => ({ ok: false, status: 403, reason: 'API_DISABLED' })
-  });
-  const res = responseRecorder();
-  await handler({
-    method: 'GET',
-    url: '/api/health?cashPhotoRoute=retry&diagnostic=GOOGLE_OAUTH',
-    headers: {}
-  }, res);
-  assert.equal(res.code, 200);
-  assert.deepEqual(res.payload, {
-    ok: true,
-    googleGeminiOauthAvailable: false,
-    upstreamStatus: 403,
-    reason: 'API_DISABLED'
-  });
-  assert.equal(JSON.stringify(res.payload).includes('token'), false);
-  assert.equal(res.headers['cache-control'], 'no-store');
-});
-
-test('any other GET recovery value is rejected without recognition', async () => {
+test('legacy query flags cannot bypass authorization on POST', async () => {
   let calls = 0;
   const handler = createCashPhotoRetryHttpHandler({
     authorize: async () => null,
-    retryService: { async retryPending() { calls += 1; } }
+    retryService: { async retryPending() { calls++; } }
   });
   const res = responseRecorder();
-  await handler({
-    method: 'GET',
-    url: '/api/health?cashPhotoRoute=retry&recovery=OTHER',
-    headers: {}
-  }, res);
-  assert.equal(res.code, 405);
-  assert.equal(calls, 0);
+  await handler({method:'POST',url:'/api/health?cashPhotoRoute=retry&recovery=YAMSKAYA_20260910&diagnostic=GOOGLE_OAUTH',headers:{}},res);
+  assert.equal(res.code,403);
+  assert.equal(calls,0);
 });
