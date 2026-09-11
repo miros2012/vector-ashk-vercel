@@ -78,6 +78,28 @@ test('one-time recovery GET is limited to the exact saved Yamskaya photo', async
   assert.equal(res.headers['cache-control'], 'no-store');
 });
 
+test('temporary Google OAuth diagnostic exposes only availability and upstream status', async () => {
+  const handler = createCashPhotoRetryHttpHandler({
+    authorize: async () => null,
+    retryService: { async retryPending() { throw new Error('must not retry'); } },
+    probeGoogleOauth: async () => ({ ok: false, status: 403 })
+  });
+  const res = responseRecorder();
+  await handler({
+    method: 'GET',
+    url: '/api/health?cashPhotoRoute=retry&diagnostic=GOOGLE_OAUTH',
+    headers: {}
+  }, res);
+  assert.equal(res.code, 200);
+  assert.deepEqual(res.payload, {
+    ok: true,
+    googleGeminiOauthAvailable: false,
+    upstreamStatus: 403
+  });
+  assert.equal(JSON.stringify(res.payload).includes('token'), false);
+  assert.equal(res.headers['cache-control'], 'no-store');
+});
+
 test('any other GET recovery value is rejected without recognition', async () => {
   let calls = 0;
   const handler = createCashPhotoRetryHttpHandler({
