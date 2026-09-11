@@ -78,11 +78,11 @@ test('one-time recovery GET is limited to the exact saved Yamskaya photo', async
   assert.equal(res.headers['cache-control'], 'no-store');
 });
 
-test('temporary Google OAuth diagnostic exposes only availability and upstream status', async () => {
+test('temporary Google OAuth diagnostic exposes only availability, status and allowlisted reason', async () => {
   const handler = createCashPhotoRetryHttpHandler({
     authorize: async () => null,
     retryService: { async retryPending() { throw new Error('must not retry'); } },
-    probeGoogleOauth: async () => ({ ok: false, status: 403 })
+    probeGoogleOauth: async () => ({ ok: false, status: 403, reason: 'API_DISABLED' })
   });
   const res = responseRecorder();
   await handler({
@@ -94,7 +94,8 @@ test('temporary Google OAuth diagnostic exposes only availability and upstream s
   assert.deepEqual(res.payload, {
     ok: true,
     googleGeminiOauthAvailable: false,
-    upstreamStatus: 403
+    upstreamStatus: 403,
+    reason: 'API_DISABLED'
   });
   assert.equal(JSON.stringify(res.payload).includes('token'), false);
   assert.equal(res.headers['cache-control'], 'no-store');
