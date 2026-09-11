@@ -96,6 +96,19 @@ test('persistPhoto writes Drive file first then appends one archive row in uploa
   assert.match(result.photoId, /^PHOTO-20260910-.*-315df084$/);
 });
 
+test('separate OAuth writer owns new uploads while legacy reader remains available', async () => {
+  const { drive, sheets, calls } = makeClients();
+  const uploadDrive = { files: { async create(args) { calls.push(['oauth.create', args]); return { data: { id: 'user-owned-file' } }; } } };
+  const store = createCashPhotoStore({ drive, uploadDrive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+  await store.persistPhoto({ imageBytes: Buffer.from('photo'), mimeType: 'image/png', branch: 'Ямская', year: 2026, fileName: 'photo.png', hash: 'abc' });
+  assert.equal(calls[0][0], 'oauth.create');
+  assert.equal(calls[0][1].supportsAllDrives, true);
+  assert.equal(calls[1][0], 'sheets.append');
+  assert.equal(calls.some(([name]) => name === 'drive.create'), false);
+  await store.probe();
+  assert.equal(calls.at(-1)[0], 'drive.get');
+});
+
 test('markRecognized updates only cash photo archive fields and never DDS', async () => {
   const { drive, sheets, calls } = makeClients();
   const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
