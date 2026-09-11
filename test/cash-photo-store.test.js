@@ -182,6 +182,40 @@ test('listPending resolves the legacy rich-text hyperlink for a specifically sel
   assert.deepEqual(metadataCall[1].ranges, ["'Архив кассовых фото'!F2:F2"]);
 });
 
+test('listPending allows one explicitly selected failed legacy photo only for recovery', async () => {
+  const { drive, sheets, calls, sheetRows } = makeClients();
+  sheetRows.push(
+    ['PHOTO-20260910-134422-315df084', '', 'Ямская', '2026', '1000056081.jpg', 'Открыть фото', 'target-hash', 'Ошибка распознавания'],
+    ['PHOTO-other', '', 'Ямская', '2026', 'other.jpg', 'https://drive.google.com/file/d/other-file/view', 'other-hash', 'Ошибка распознавания']
+  );
+  sheets.spreadsheets.get = async (args) => {
+    calls.push(['sheets.metadata.get', args]);
+    return {
+      data: {
+        sheets: [{ data: [{ rowData: [{ values: [{
+          hyperlink: 'https://drive.google.com/file/d/target-file/view?usp=drivesdk'
+        }] }] }] }]
+      }
+    };
+  };
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+
+  assert.deepEqual(await store.listPending(1, {
+    branch: 'Ямская',
+    photoId: 'PHOTO-20260910-134422-315df084',
+    allowFailed: true
+  }), [{
+    photoId: 'PHOTO-20260910-134422-315df084', archiveRow: 2, fileId: 'target-file',
+    photoUrl: 'https://drive.google.com/file/d/target-file/view?usp=drivesdk',
+    status: 'Ошибка распознавания', hash: 'target-hash', branch: 'Ямская', year: 2026,
+    fileName: '1000056081.jpg'
+  }]);
+  assert.deepEqual(await store.listPending(1, {
+    branch: 'Ямская',
+    photoId: 'PHOTO-20260910-134422-315df084'
+  }), []);
+});
+
 test('readPhoto downloads Drive bytes without writing anything', async () => {
   const { drive, sheets, calls } = makeClients();
   drive.files.get = async (args, options) => {
