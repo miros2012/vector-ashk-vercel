@@ -43,3 +43,8 @@ test('deployment wait is bounded', async () => {
   const f = fixture([]); await assert.rejects(f.run(), /cash_photo_deployment_timeout/);
   assert.equal(f.waits, 17);
 });
+
+test('successful responses cannot add unreviewed fields to public workflow logs', async () => {
+  const f = fixture([[200, { ...good, checks: { ...good.checks, extra: 'private-server-data' } }]]);
+  await f.run(); assert.doesNotMatch(JSON.stringify(f.logs), /private-server-data|extra/);
+});

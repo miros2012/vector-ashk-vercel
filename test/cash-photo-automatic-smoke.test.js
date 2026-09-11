@@ -125,3 +125,23 @@ test('HTTP upload success with corrupted archive JSON is not accepted as proof',
   assert.equal(res.code, 500); assert.equal(res.body.ok, false);
   assert.doesNotMatch(JSON.stringify(res.body), /broken|stack|private/);
 });
+
+test('a changed Drive file fails readback even when archive status says recognized', async () => {
+  const f = setup(); assert.equal((await f.run()).code, 200);
+  f.files.set('test-file', Buffer.from('wrong image bytes'));
+  assert.equal((await f.run()).code, 500);
+});
+
+test('duplicate archive fixture rows fail before another upload or recognition', async () => {
+  const f = setup(); assert.equal((await f.run()).code, 200);
+  f.rows.push([...f.rows[0]]);
+  assert.equal((await f.run()).code, 500); assert.equal(f.stats().recognizes, 1);
+});
+
+test('production health routing rejects an anonymous smoke instead of returning generic healthy status', async () => {
+  const { default: health } = await import('../api/health.js');
+  const res = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
+  await health({ url: '/api/health', method: 'POST', headers: {}, body: JSON.stringify({ mode: 'cash_photo_smoke' }) }, res);
+  assert.equal(res.code, 403); assert.equal(res.body.error, 'forbidden');
+  assert.equal(res.headers['Cache-Control'], 'no-store');
+});

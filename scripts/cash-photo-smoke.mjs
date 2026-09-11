@@ -47,7 +47,10 @@ export async function runCashPhotoSmoke({ env = process.env, fetchImpl = fetch, 
       throw new Error('cash_photo_smoke_attestation_invalid');
     }
     // Only fixed, checked fields are logged. Never echo an arbitrary server body.
-    const result = { ok: true, deploymentSha: env.GITHUB_SHA, newUpload: body.newUpload === true, checks };
+    const result = {
+      ok: true, deploymentSha: env.GITHUB_SHA, newUpload: body.newUpload === true,
+      checks: { driveReadback: true, archiveReadback: true, duplicatePrevented: true, operations: 0 }
+    };
     write(JSON.stringify(result));
     return result;
   }
