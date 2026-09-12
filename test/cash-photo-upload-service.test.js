@@ -68,7 +68,7 @@ test('recognized duplicate is idempotent and does not store or recognize again',
   let recognized = 0;
   const service = createCashPhotoUploadService({
     store: {
-      async findByHash() { return { photoId: 'PHOTO-old', status: 'Распознано — ожидает обработки' }; },
+      async findByHash() { return { photoId: 'PHOTO-old', branch: 'Ямская', status: 'Распознано — ожидает обработки' }; },
       async persistPhoto() { persisted += 1; }
     },
     recognize: async () => { recognized += 1; }
@@ -95,6 +95,22 @@ test('storage failure stops before recognition', async () => {
 
   await assert.rejects(service.upload(validInput()), /drive unavailable/);
   assert.equal(recognized, 0);
+});
+
+test('same photo submitted under a different or unknown stored branch cannot be relabeled or re-recognized', async () => {
+  for (const branch of ['Герцена', '']) {
+    for (const status of ['Распознано — ожидает обработки', 'Ожидает распознавания', 'Ошибка распознавания']) {
+      let effects = 0;
+      const service = createCashPhotoUploadService({ store: {
+        async findByHash() { return { photoId: 'PHOTO-other', branch, status }; },
+        async persistPhoto() { effects++; }, async markRecognizing() { effects++; }, async markRecognized() { effects++; }
+      }, recognize: async () => { effects++; return { data: { operations: [] } }; } });
+      const result = await service.upload(validInput());
+      assert.equal(result.statusCode, 409);
+      assert.equal(result.body.error, 'photo_branch_mismatch');
+      assert.equal(effects, 0);
+    }
+  }
 });
 
 test('rejects unsupported or oversized uploads before storage', async () => {

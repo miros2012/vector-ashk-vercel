@@ -2,7 +2,17 @@
 
 The backend now uses a user OAuth credential to create photos. Google service accounts cannot own files in My Drive. Existing photos are still read with the existing service account; the setup grants that account **reader** access to the new folder. Sheets and direct Gemini authentication are unchanged.
 
-Branch authentication now reads SHA-256 hashes and branch identities only from the private `CASH_PHOTO_ACCESS_JSON` Vercel variable. It never reads authentication data from the publicly shared finance spreadsheet. Keep the generated branch links private and distribute each branch's link only to that branch. Revocation means disabling that registry entry or replacing its hash, then redeploying.
+Branch authentication reads SHA-256 hashes and branch identities from the private `CASH_PHOTO_ACCESS_JSON` Vercel variable. It never reads authentication data from the publicly shared finance spreadsheet. Existing branch links remain fixed to their branch. Revocation means disabling that registry entry or replacing its hash, then redeploying.
+
+## One shared employee link
+
+The owner requested one durable link for all managers, independent of employee turnover. The shared link opens the same mobile form and requires an explicit branch selection before sending a photo. Its random 256-bit credential stays in the URL fragment and is sent only in the authentication header. Only its SHA-256 verifier is committed in `lib/cash-photo-shared-key.js`; the credential itself must never enter the repository, logs, public pages or finance spreadsheet.
+
+The server builds the branch picker from active entries of the existing private registry. Missing or invalid registry data denies shared access. The shared credential grants only cash-photo configuration, upload and branch-scoped recognition retry. It grants no finance, banking or archive-reading API access. Existing branch credentials cannot use the selector to change their scope. Re-sending a photo with another selected branch returns a conflict without modifying its original archive row.
+
+Distribute the same shared link once through the internal staff instructions. Managers select their branch, choose a photo and press **Отправить журнал**. A new manager uses the same link; there is no account creation or per-employee link issue. This is a shared credential: individual holders cannot be revoked separately. If it leaks, rotate its random credential and verifier. `CASH_PHOTO_SHARED_TOKEN_SHA256` may override the committed verifier; setting it to an empty value disables the shared entry. Changing the verifier requires deployment. Branch links remain independently managed.
+
+For production acceptance, use a clearly marked synthetic photo with no personal data or financial operations through the shared browser form. Verify the selected branch, saved bytes and recognized archive row, then repeat the same file to verify no duplicate. The existing automated service smoke remains a separate regression check. Do not claim browser acceptance from the service smoke alone.
 
 ## One-time owner setup
 
