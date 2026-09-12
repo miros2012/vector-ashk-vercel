@@ -1,3 +1,4 @@
+import { createOwnerDashboardApi } from '../lib/owner-dashboard-api.js';
 import { google } from 'googleapis';
 import { createDecisionEffectivenessApi } from '../lib/decision-effectiveness-api.js';
 import { createDecisionEffectivenessSheetAdapter } from '../lib/decision-effectiveness-sheet-adapter.js';
@@ -120,34 +121,39 @@ export async function processOwnerActionQueue() {
   return response.body;
 }
 
-function createOwnerPackageHandler() {
+async function readLiveOwnerPackage() {
   const sheets = sheetsClient(true);
-  return createOwnerReadonlyApi({
-    configuredKey: ownerPackageKey(),
-    readOwnerPackage: async () => {
-      const generatedAt = new Date().toISOString();
-      const reader = createOwnerLiveSourceReader({
-        sheets,
-        spreadsheetId: SPREADSHEET_ID,
-        now: () => new Date(generatedAt)
-      });
-      const [facts, operatingReserve] = await Promise.all([
-        reader.readOwnerLiveFacts(),
-        readOwnerOperatingReserve({ sheets, spreadsheetId: SPREADSHEET_ID })
-      ]);
-      return runOwnerPackageStage('PACKAGE_BUILD', () => buildOwnerLivePackage({
-        facts,
-        generatedAt,
-        operatingReserve,
-        verificationSlaHours: 24
-      }));
-    }
+  const generatedAt = new Date().toISOString();
+  const reader = createOwnerLiveSourceReader({
+    sheets,
+    spreadsheetId: SPREADSHEET_ID,
+    now: () => new Date(generatedAt)
   });
+  const [facts, operatingReserve] = await Promise.all([
+    reader.readOwnerLiveFacts(),
+    readOwnerOperatingReserve({ sheets, spreadsheetId: SPREADSHEET_ID })
+  ]);
+  return runOwnerPackageStage('PACKAGE_BUILD', () => buildOwnerLivePackage({
+    facts,
+    generatedAt,
+    operatingReserve,
+    verificationSlaHours: 24
+  }));
+}
+
+function createOwnerPackageHandler() {
+  return createOwnerReadonlyApi({configuredKey: ownerPackageKey(), readOwnerPackage: readLiveOwnerPackage});
 }
 
 export default async function handler(req, res) {
   try {
     const ownerRoute = firstRequestQueryValue(req, 'ownerRoute');
+    if (ownerRoute === 'dashboard-session' || ownerRoute === 'dashboard-data') {
+      return await createOwnerDashboardApi({
+        secret: process.env.VECTOR_OWNER_DASHBOARD_SECRET || '',
+        readPackage: readLiveOwnerPackage
+      })(req, res);
+    }
     if (ownerRoute === 'action') {
       ownerActionHandler ||= createOwnerActionHandler();
       return await ownerActionHandler(req, res);

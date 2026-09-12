@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="robots" content="noindex,nofollow"><title>Вектор · Собственник</title><link rel="stylesheet" href="/owner/styles.css"><script type="module" src="/owner/app.js"></script></head>
+<body>
+<header><a class="brand" href="/owner/" aria-label="Вектор — дашборд собственника"><span class="mark">В</span>ВЕКТОР<span class="brand-note">ФИНСИСТЕМА</span></a><span class="role">Кабинет собственника</span><button id="logout" class="quiet" hidden>Выйти</button></header>
+<main>
+<section id="login" class="login"><div class="eyebrow">ТОЛЬКО ДЛЯ СОБСТВЕННИКА</div><h1>Бизнес.<br>В одном экране.</h1><p>Деньги, обязательства и решения —<br>на основе финансовой системы Вектора.</p><form id="login-form"><label for="secret">Ключ доступа собственника</label><input id="secret" name="secret" type="password" autocomplete="current-password" required maxlength="512"><button type="submit" class="primary">Открыть дашборд <span aria-hidden="true">↗</span></button></form><p class="hint">Защищённый доступ · Только просмотр</p></section>
+<p id="message" role="status" aria-live="polite" hidden></p>
+<section id="dashboard" hidden>
+<div class="heading"><div><div class="eyebrow">ОБЗОР БИЗНЕСА</div><h1>Контроль в цифрах</h1><p id="updated" class="muted"></p></div><button id="refresh" class="secondary">Обновить данные ↻</button></div>
+<div id="health-banner" class="banner"></div>
+<section aria-labelledby="money-title"><div class="section-title"><h2 id="money-title">Деньги сейчас</h2><span>₽ · Российский рубль</span></div><div id="money" class="cards money"></div></section>
+<section class="panel" aria-labelledby="forecast-title"><div class="section-title"><div><div class="eyebrow">ВЗГЛЯД ВПЕРЁД</div><h2 id="forecast-title">Прогноз денег</h2></div><div id="horizons" class="segmented" aria-label="Горизонт прогноза"><button data-days="7" aria-pressed="true">7 дней</button><button data-days="14" aria-pressed="false">14 дней</button><button data-days="30" aria-pressed="false">30 дней</button></div></div><p id="forecast-note" class="muted"></p><div class="table-wrap"><table><thead><tr><th>Сценарий</th><th>Остаток на дату</th><th>Дата</th><th>Минимум за весь прогноз</th></tr></thead><tbody id="forecast"></tbody></table></div><p class="hint">Расчёт финансовой системы. Горизонт ограничен датами источника.</p></section>
+<div class="two-column"><section class="panel"><div class="eyebrow">КОММЕРЦИЯ</div><h2>Продажи и дебиторка</h2><dl id="sales"></dl><p class="hint">Продажи показаны за месяц на отчётную дату. Это не прибыль.</p></section><section class="panel"><div class="eyebrow">ПЛАТЁЖНАЯ НАГРУЗКА</div><h2>Обязательства</h2><dl id="obligations"></dl><p class="hint">Агрегаты действующих обязательств из финансовой системы.</p></section></div>
+<div class="two-column"><section class="panel"><div class="eyebrow">ЗАЩИЩЁННЫЙ РЕЗЕРВ</div><h2>Фонд вождения</h2><dl id="fund"></dl><p class="hint">Дефицит фонда — финансовый риск; качество данных показано отдельно.</p></section><section class="panel"><div class="eyebrow">КОНТРОЛЬ РЕЗУЛЬТАТА</div><h2>Проверка решений</h2><dl id="verification"></dl><p class="hint">Выполненное действие требует подтверждения результата.</p></section></div>
+<section class="panel"><div class="section-title"><div><div class="eyebrow">ФОКУС СОБСТВЕННИКА</div><h2>Приоритетные действия</h2></div><span>Только просмотр</span></div><ol id="actions" class="actions"></ol></section>
+<section class="panel"><div class="eyebrow">ПРОЗРАЧНОСТЬ ДАННЫХ</div><h2>Что влияет на достоверность</h2><ul id="health-details"></ul><p class="hint">Время обновления экрана не означает, что все исходные данные обновлены. Ориентируйтесь на отчётную дату и замечания источников.</p></section>
+</section>
+<footer>ВЕКТОР <span>Финансовая система · Кабинет собственника</span></footer>
+</main></body></html>

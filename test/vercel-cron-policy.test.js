@@ -70,6 +70,8 @@ test('owner dashboard URLs rewrite to the existing decision-event function', () 
     { source: '/api/owner-action', destination: '/api/decision-event?ownerRoute=action' },
     { source: '/api/decision-effectiveness', destination: '/api/decision-event?ownerRoute=effectiveness' },
     { source: '/api/owner-action-queue', destination: '/api/decision-event?ownerRoute=queue' },
-    { source: '/api/owner-package', destination: '/api/decision-event?ownerRoute=package' }
+    { source: '/api/owner-package', destination: '/api/decision-event?ownerRoute=package' },
+    { source: '/api/owner-dashboard-session', destination: '/api/decision-event?ownerRoute=dashboard-session' },
+    { source: '/api/owner-dashboard-data', destination: '/api/decision-event?ownerRoute=dashboard-data' }
   ]);
 });
