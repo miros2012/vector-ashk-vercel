@@ -12,7 +12,7 @@ function decisionEventSource() {
 }
 
 function ownerPackageHandlerBlock(source) {
-  const start = source.indexOf('function createOwnerPackageHandler');
+  const start = source.indexOf('async function readLiveOwnerPackage');
   assert.notEqual(start, -1, 'createOwnerPackageHandler must exist');
   const boundaries = [
     source.indexOf('\nfunction ', start + 1),
@@ -34,7 +34,7 @@ test('wires owner package through the existing decision-event function with read
   assert.match(block, /sheetsClient\(true\)/);
   assert.match(block, /createOwnerLiveSourceReader/);
   assert.match(block, /readOwnerOperatingReserve/);
-  assert.match(block, /createOwnerReadonlyApi/);
+  assert.match(source, /createOwnerReadonlyApi\(\{configuredKey: ownerPackageKey\(\), readOwnerPackage: readLiveOwnerPackage\}\)/);
   assert.match(block, /buildOwnerLivePackage/);
   assert.match(block, /const generatedAt\s*=\s*new Date\(\)\.toISOString\(\)/);
   assert.match(block, /now:\s*\(\)\s*=>\s*new Date\(generatedAt\)/);
