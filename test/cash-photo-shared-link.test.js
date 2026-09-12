@@ -82,7 +82,9 @@ test('missing, unknown, disabled and malformed branch selections cannot upload o
   for (const handler of [createCashPhotoUploadHttpHandler(dependencies), createCashPhotoRetryHttpHandler(dependencies)]) {
     for (const branch of ['', 'Другой', 'Закрытый', '%broken']) {
       const res = response();
-      await handler(request(branch), res);
+      const req = request(branch);
+      if (branch === '%broken') req.headers['x-cash-branch'] = '%';
+      await handler(req, res);
       assert.equal(res.code, 403);
     }
   }
