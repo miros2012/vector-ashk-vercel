@@ -13,7 +13,7 @@
     h1{font-size:24px;line-height:1.1;margin:0}.sub{color:#6b7280;font-size:14px;margin-top:4px}
     .card{background:white;border-radius:22px;padding:20px;box-shadow:0 10px 32px rgba(0,0,0,.06)}
     .branch{background:#f7f7f8;border-radius:15px;padding:14px 16px;margin-bottom:18px}.branch b{display:block;font-size:18px}.branch span{font-size:13px;color:#6b7280}
-    label{display:block;font-weight:750;margin:15px 0 8px}.field,input[type=number],input[type=file]{width:100%;border:1px solid #d5d7dc;border-radius:14px;padding:13px 14px;background:white;font-size:16px}
+    label{display:block;font-weight:750;margin:15px 0 8px}.field,select,input[type=number],input[type=file]{width:100%;border:1px solid #d5d7dc;border-radius:14px;padding:13px 14px;background:white;font-size:16px}
     input[type=file]{padding:12px}.hint{font-size:13px;color:#777;margin:7px 2px 0;line-height:1.45}
     button{width:100%;margin-top:20px;border:0;border-radius:15px;padding:15px 18px;background:#e42b21;color:white;font-weight:800;font-size:17px;cursor:pointer}
     button:disabled{opacity:.5;cursor:wait}.status{display:none;margin-top:16px;padding:14px 16px;border-radius:15px;white-space:pre-line;line-height:1.45;font-size:15px}
@@ -27,7 +27,12 @@
     <div class="brand"><div class="mark">V</div><div><h1>ВЕКТОР</h1><div class="sub">Кассовый журнал</div></div></div>
     <section id="loading" class="card loading">Проверяем ссылку…</section>
     <section id="app" class="card hidden">
-      <div class="branch"><span>Филиал</span><b id="branch">—</b></div>
+      <div id="fixed-branch" class="branch"><span>Филиал</span><b id="branch">—</b></div>
+      <div id="branch-choice" class="hidden">
+        <label for="branch-select">Филиал</label>
+        <select id="branch-select" required aria-label="Филиал"></select>
+        <div class="hint">Выберите филиал, чей журнал отправляете.</div>
+      </div>
       <label for="year">Год журнала</label>
       <input id="year" type="number" min="2020" max="2100">
       <label for="photo">Фотография страницы</label>
@@ -46,11 +51,15 @@
   const app = document.getElementById('app');
   const invalid = document.getElementById('invalid');
   const branchEl = document.getElementById('branch');
+  const branchSelect = document.getElementById('branch-select');
   const yearEl = document.getElementById('year');
   const photoEl = document.getElementById('photo');
   const sendBtn = document.getElementById('send');
   const statusEl = document.getElementById('status');
   let maxBytes = 4 * 1024 * 1024;
+  let fixedBranch = '';
+  let sharedAccess = false;
+  function selectedBranch() { return sharedAccess ? branchSelect.value : fixedBranch; }
 
   function tokenFromHash() {
     const raw = String(location.hash || '').replace(/^#/, '');
@@ -94,21 +103,21 @@
     return blob;
   }
 
-  async function retryPhoto(photoId, attempt = 0, silent = false) {
+  async function retryPhoto(photoId, branch, attempt = 0, silent = false) {
     try {
-      const headers = { 'x-cash-photo-token': token };
+      const headers = { 'x-cash-photo-token': token, 'x-cash-branch': encodeURIComponent(branch) };
       if (photoId) headers['x-cash-photo-id'] = photoId;
       const response = await fetch('/api/health?cashPhotoRoute=retry', {
         method: 'POST', cache: 'no-store', headers
       });
       if (!response.ok) return;
       const data = await response.json().catch(() => ({}));
-      if (data.recognized > 0 && !silent) {
+      if (data.recognized > 0 && !silent && selectedBranch() === branch) {
         showStatus('Фото распознано. Данные сохранены для последующей финансовой обработки.', 'ok');
         return;
       }
       if (data.stillPending > 0 && photoId && attempt < 1) {
-        setTimeout(() => retryPhoto(photoId, attempt + 1, silent), 60000);
+        setTimeout(() => retryPhoto(photoId, branch, attempt + 1, silent), 60000);
       }
     } catch (_) {
       // Повтор распознавания не должен превращать сохранённое фото в ошибку загрузки.
@@ -122,18 +131,39 @@
     });
     if (!response.ok) throw new Error('invalid link');
     const data = await response.json();
-    branchEl.textContent = data.label || data.branch;
+    sharedAccess = Array.isArray(data.branches) && data.branches.length > 0;
+    if (sharedAccess) {
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Выберите филиал';
+      branchSelect.replaceChildren(placeholder);
+      for (const item of data.branches) {
+        const option = document.createElement('option');
+        option.value = item.branch;
+        option.textContent = item.label || item.branch;
+        branchSelect.appendChild(option);
+      }
+      document.getElementById('fixed-branch').classList.add('hidden');
+      document.getElementById('branch-choice').classList.remove('hidden');
+    } else {
+      fixedBranch = data.branch;
+      branchEl.textContent = data.label || data.branch;
+    }
     yearEl.value = data.year;
     maxBytes = Number(data.maxBytes) || maxBytes;
     loading.classList.add('hidden');
     app.classList.remove('hidden');
-    setTimeout(() => retryPhoto('', 0, true), 1500);
+    if (!sharedAccess) setTimeout(() => retryPhoto('', fixedBranch, 0, true), 1500);
   }
 
   sendBtn.addEventListener('click', async () => {
+    const branch = selectedBranch();
+    if (!branch) { showStatus('Выберите филиал.', 'err'); return; }
     const file = photoEl.files && photoEl.files[0];
     if (!file) { showStatus('Выберите фотографию страницы.', 'err'); return; }
     sendBtn.disabled = true;
+    branchSelect.disabled = true;
+    yearEl.disabled = true;
     showStatus('Сохраняем фото и распознаём страницу…', 'info');
     try {
       const upload = await shrinkIfNeeded(file);
@@ -142,6 +172,7 @@
         cache: 'no-store',
         headers: {
           'x-cash-photo-token': token,
+          'x-cash-branch': encodeURIComponent(branch),
           'x-cash-year': String(Number(yearEl.value)),
           'x-cash-file-name': encodeURIComponent(fileNameFor(upload, file)),
           'content-type': upload.type || 'image/jpeg'
@@ -152,7 +183,7 @@
       if (response.status === 202 && data.saved) {
         showStatus(data.message || 'Фото сохранено. Распознавание продолжится автоматически.', 'ok');
         photoEl.value = '';
-        if (data.photoId) setTimeout(() => retryPhoto(data.photoId, 0, false), 30000);
+        if (data.photoId) setTimeout(() => retryPhoto(data.photoId, branch, 0, false), 30000);
       } else if (response.ok) {
         showStatus(data.message || 'Фото принято.', 'ok');
         photoEl.value = '';
@@ -163,6 +194,8 @@
       showStatus('Не удалось отправить фото. Проверьте интернет и попробуйте ещё раз.', 'err');
     } finally {
       sendBtn.disabled = false;
+      branchSelect.disabled = false;
+      yearEl.disabled = false;
     }
   });
 

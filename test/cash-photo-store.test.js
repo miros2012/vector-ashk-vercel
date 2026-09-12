@@ -47,7 +47,7 @@ test('findByHash returns archive identity and parses Drive file id from URL', as
   const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder', now: () => new Date('2026-09-10T10:00:00Z') });
   const found = await store.findByHash('hash1');
   assert.deepEqual(found, {
-    photoId: 'PHOTO-old', archiveRow: 2, fileId: 'abc123',
+    photoId: 'PHOTO-old', archiveRow: 2, fileId: 'abc123', branch: 'Ямская',
     photoUrl: 'https://drive.google.com/file/d/abc123/view', status: 'Ожидает распознавания', hash: 'hash1'
   });
 });
@@ -72,7 +72,7 @@ test('findByHash resolves a legacy rich-text Drive hyperlink instead of trusting
   const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
   const found = await store.findByHash('legacy-hash');
   assert.deepEqual(found, {
-    photoId: 'PHOTO-legacy', archiveRow: 2, fileId: 'legacy-file-id',
+    photoId: 'PHOTO-legacy', archiveRow: 2, fileId: 'legacy-file-id', branch: 'Ямская',
     photoUrl: 'https://drive.google.com/file/d/legacy-file-id/view?usp=drivesdk',
     status: 'Ошибка распознавания', hash: 'legacy-hash'
   });
