@@ -1,3 +1,5 @@
+import { createOwnerGoogleApi, googleSessionSecret } from '../lib/owner-google-auth.js';
+import { OWNER_GOOGLE_CLIENT_ID, OWNER_GOOGLE_EMAIL_HASH } from '../lib/owner-google-config.js';
 import { createOwnerDashboardApi } from '../lib/owner-dashboard-api.js';
 import { google } from 'googleapis';
 import { createDecisionEffectivenessApi } from '../lib/decision-effectiveness-api.js';
@@ -148,9 +150,23 @@ function createOwnerPackageHandler() {
 export default async function handler(req, res) {
   try {
     const ownerRoute = firstRequestQueryValue(req, 'ownerRoute');
+    const googleClientId = process.env.VECTOR_OWNER_GOOGLE_CLIENT_ID || OWNER_GOOGLE_CLIENT_ID;
+    const dashboardSecret = process.env.VECTOR_OWNER_DASHBOARD_SECRET || '';
+    const googleSigningSecret = process.env.VECTOR_OWNER_GOOGLE_SESSION_SECRET || '';
+    if (ownerRoute === 'dashboard-google') {
+      return await createOwnerGoogleApi({
+        secret: googleSigningSecret, clientId: googleClientId, ownerHash: OWNER_GOOGLE_EMAIL_HASH,
+        verifyIdToken: async (idToken, audience) => {
+          const client = new google.auth.OAuth2();
+          const ticket = await client.verifyIdToken({ idToken, audience });
+          return ticket.getPayload();
+        }
+      })(req, res);
+    }
     if (ownerRoute === 'dashboard-session' || ownerRoute === 'dashboard-data') {
       return await createOwnerDashboardApi({
-        secret: process.env.VECTOR_OWNER_DASHBOARD_SECRET || '',
+        secret: googleClientId ? googleSessionSecret(googleSigningSecret, googleClientId, OWNER_GOOGLE_EMAIL_HASH) : dashboardSecret,
+        googleOnly: Boolean(googleClientId),
         readPackage: readLiveOwnerPackage
       })(req, res);
     }
