@@ -5,6 +5,8 @@ const date=value=>{if(!value)return 'Дата не подтверждена';con
 const healthNames={OK:'Данные подтверждены',WARNING:'Есть замечания к данным',BLOCKED:'Достоверность данных не подтверждена'};
 const reasonNames={OPERATING_RESERVE_UNDEFINED:'Не задан операционный резерв — доступная сумма к выводу не подтверждена.',UNCONFIRMED_OBLIGATION_AMOUNT_MISSING:'У неподтверждённых обязательств отсутствует сумма.',DATA_HEALTH_BLOCKED:'Источники данных требуют проверки.'};
 let dashboard=null,days=7,generation=0;
+let googleLibrary;
+let googleSetupGeneration=0;
 function node(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function message(text){$('message').textContent=text;$('message').hidden=!text;}
 function clearData(){dashboard=null;$('dashboard').hidden=true;for(const id of ['money','forecast','sales','obligations','fund','verification','actions','health-details','health-banner','updated','forecast-note'])$(id).replaceChildren();}
@@ -18,11 +20,61 @@ function render(data){dashboard=data;const m=data.metrics;$('login').hidden=true
  rows('sales',[['План на отчётную дату',m.salesPlanToDate],['Факт продаж за месяц',m.salesFact],['Дебиторская задолженность',m.receivables]]);rows('obligations',[['Открытые обязательства',m.openObligations],['Из них неподтверждённые',m.unconfirmedObligations]]);rows('fund',[['Требуемый резерв',m.drivingFundReserve],['Дефицит фонда',m.drivingFundDeficit]]);rows('verification',[['Ожидают проверки',data.verification.pending,true],['Просрочена проверка',data.verification.overdue,true]]);
  $('actions').replaceChildren();for(const action of data.actions){const li=node('li');li.append(node('h3',action.action || 'Действие без описания'),node('p',[action.responsible,date(action.deadline),money(action.amount),action.overdue?'Срок прошёл':null,action.blocked?'Действие заблокировано качеством данных':null].filter(Boolean).join(' · ')));$('actions').append(li);}if(!data.actions.length)$('actions').append(node('li','В текущем пакете нет приоритетных действий.','empty'));
  $('health-details').replaceChildren();const reasons=[...data.health.reasons,...data.blockers];for(const reason of reasons)$('health-details').append(node('li',reasonNames[reason] || reason));if(!reasons.length)$('health-details').append(node('li',data.health.status==='OK'?'Источник не сообщил замечаний.':'Подробные причины не получены.'));renderForecast();}
-async function load(){const current=++generation;$('refresh').disabled=true;message('');try{const body=await api('data');if(current===generation)render(body.dashboard);}catch(error){if(current!==generation)return;clearData();if(error.status===401){showLogin();message('Войдите, чтобы увидеть финансовые данные.');}else if(error.message==='authentication_unavailable'){showLogin();message('Доступ собственника ещё не активирован на сервере.');}else{ $('logout').hidden=false;message('Не удалось получить подтверждённые данные. Попробуйте обновить страницу.');}}finally{if(current===generation)$('refresh').disabled=false;}}
+async function load(){const current=++generation;$('refresh').disabled=true;message('');try{const body=await api('data');if(current===generation)render(body.dashboard);}catch(error){if(current!==generation)return;clearData();if(error.status===401){showLogin();await setupGoogle();}else if(error.message==='authentication_unavailable'){showLogin();message('Доступ собственника ещё не активирован на сервере.');}else{ $('logout').hidden=false;message('Не удалось получить подтверждённые данные. Попробуйте обновить страницу.');}}finally{if(current===generation)$('refresh').disabled=false;}}
 $('login-form').addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;message('');let secret=$('secret').value;$('secret').value='';try{await api('session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({secret})});secret='';await load();}catch(error){message(error.message==='authentication_unavailable'?'Доступ собственника ещё не активирован на сервере.':error.status===403?'Ключ не подошёл. Проверьте и попробуйте снова.':'Не удалось войти. Проверьте соединение и повторите.');}finally{secret='';button.disabled=false;}});
-$('logout').addEventListener('click',async()=>{generation++;clearData();try{await api('session',{method:'DELETE'});showLogin();message('Вы вышли из кабинета.');}catch{message('Данные скрыты, но сервер не подтвердил выход. Повторите выход при восстановлении связи.');}});
+$('logout').addEventListener('click',async()=>{generation++;clearData();try{await api('session',{method:'DELETE'});showLogin();await setupGoogle();message('Вы вышли из кабинета.');}catch{message('Данные скрыты, но сервер не подтвердил выход. Повторите выход при восстановлении связи.');}});
 $('refresh').addEventListener('click',load);
 $('horizons').addEventListener('click',event=>{const button=event.target.closest('button[data-days]');if(!button||!dashboard)return;days=Number(button.dataset.days);for(const b of $('horizons').querySelectorAll('button'))b.setAttribute('aria-pressed',String(b===button));renderForecast();});
 window.addEventListener('pagehide',()=>{generation++;clearData();$('secret').value='';});
 window.addEventListener('pageshow',event=>{if(event.persisted)load();});
 load();
+
+
+function loadGoogleLibrary() {
+  if (!googleLibrary) {
+    googleLibrary = new Promise((resolve,reject) => {
+      const script=document.createElement('script');
+      script.src='https://accounts.google.com/gsi/client';
+      script.async=true;
+      const failed=()=>{clearTimeout(timer);script.remove();googleLibrary=null;reject(new Error('google_library_unavailable'));};
+      const timer=setTimeout(failed,15000);
+      script.onload=()=>{clearTimeout(timer);resolve();};
+      script.onerror=failed;
+      document.head.append(script);
+    });
+  }
+  return googleLibrary;
+}
+async function setupGoogle() {
+  const attempt=++googleSetupGeneration;
+  $('google-retry').hidden=true;
+  $('login-form').hidden=true;
+  try {
+    const config=await api('google');
+    if(attempt!==googleSetupGeneration)return;
+    if(!config.enabled){$('google-login').hidden=true;$('login-form').hidden=false;return;}
+    $('google-login').hidden=false;
+    await loadGoogleLibrary();
+    if(attempt!==googleSetupGeneration)return;
+    $('google-button').replaceChildren();
+    window.google.accounts.id.initialize({
+      client_id:config.clientId,nonce:config.nonce,auto_select:false,
+      callback:async result=>{
+        message('Проверяю вход…');
+        try {
+          await api('google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:result.credential})});
+          await load();
+        } catch {
+          message('Не удалось войти. Выберите аккаунт собственника и повторите попытку.');
+          await setupGoogle();
+        }
+      }
+    });
+    window.google.accounts.id.renderButton($('google-button'),{theme:'outline',size:'large',text:'signin_with',locale:'ru',width:300});
+  } catch {
+    if(attempt!==googleSetupGeneration)return;
+    $('google-retry').hidden=false;
+    message('Не удалось подключить вход через Google. Проверьте соединение и повторите.');
+  }
+}
+$('google-retry').addEventListener('click',setupGoogle);
