@@ -37,7 +37,7 @@ test('nightly orchestrator runs current-month payments before receivables', asyn
   assert.equal(res.body.stages.payments.ok, true);
 });
 
-test('nightly orchestrator stops before receivables when payments sync fails', async () => {
+test('nightly orchestrator still refreshes receivables when payments sync fails', async () => {
   const calls = [];
   const handler = createNightlyFinanceOrchestrator({
     cronSecret: 'secret',
@@ -50,7 +50,7 @@ test('nightly orchestrator stops before receivables when payments sync fails', a
   await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
 
   assert.equal(res.statusCode, 502);
-  assert.deepEqual(calls.map(item => item.name), ['hours','payments']);
-  assert.equal(res.body.stages.receivables.skipped, true);
+  assert.deepEqual(calls.map(item => item.name), ['hours','payments','receivables']);
+  assert.equal(res.body.stages.receivables.ok, true);
   assert.equal(res.body.stages.decisions.skipped, true);
 });
