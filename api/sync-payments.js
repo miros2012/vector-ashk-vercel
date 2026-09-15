@@ -317,6 +317,11 @@ export default async function handler(req, res) {
       sameDebit: Math.abs(stagingExpected.debitTotal - live.debitTotal) < 0.01
     };
     console.log(JSON.stringify({
+      event: 'ashk-cashier-candidates-diagnostic',
+      cashierCandidates: cashboxDirect.cashierTotals.filter(item => /Алина|Кумаритова/i.test(item.cashier)),
+      cashierUnattributedRows: cashboxDirect.cashierUnattributedRows
+    }));
+    console.log(JSON.stringify({
       event: 'sync-payments-staging',
       staging: stagingExpected,
       verified: true,
