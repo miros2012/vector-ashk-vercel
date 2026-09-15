@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { buildMasterReportUrl, extractReportRows } from '../lib/master-hours.js';
 import { masterReportPeriodForMonth } from '../lib/hours-sync.js';
 import { createSyncHoursHandler } from '../lib/sync-hours-handler.js';
+import { fetchAshkWithRetry } from '../lib/ashk-transient-fetch.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
@@ -85,14 +86,20 @@ async function fetchReport(month) {
     startDate,
     endDate
   });
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      api_key: process.env.ASHK_API_KEY,
-      'X-Requested-With': 'XMLHttpRequest',
-      'Content-Type': 'application/json'
+  const response = await fetchAshkWithRetry({
+    fetchFn: fetch,
+    url,
+    options: {
+      method: 'GET',
+      headers: {
+        api_key: process.env.ASHK_API_KEY,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(55_000)
     },
-    signal: AbortSignal.timeout(55_000)
+    maxAttempts: 2,
+    retryDelayMs: 350
   });
   const body = await response.text();
   if (!response.ok) throw new Error(`ASHK MasterWorkReportDetails returned HTTP ${response.status}`);
