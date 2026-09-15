@@ -48,6 +48,61 @@ test('consumes and strips the one-time token before running the existing nightly
   assert.match(req.url, /finance_run_token=single-use/);
 });
 
+test('payments stage consumes the token and runs only the payment sync as an authorized POST', async () => {
+  const events = [];
+  const handler = createManualFinanceRunHandler({
+    cronSecret: 'cron-secret',
+    consumeToken: async token => {
+      events.push(`consume:${token}`);
+      return { ok: true, reason: 'consumed' };
+    },
+    runNightly: async () => { events.push('nightly'); },
+    runPayments: async (req, res) => {
+      events.push('payments');
+      assert.equal(req.method, 'POST');
+      assert.equal(req.headers.authorization, 'Bearer cron-secret');
+      assert.deepEqual(req.query, { stage: 'payments' });
+      assert.equal(req.url, '/api/nightly-finance-orchestrator?stage=payments');
+      return res.status(200).json({ ok: true, stage: 'payments' });
+    }
+  });
+  const req = {
+    method: 'GET',
+    headers: {},
+    query: { finance_run_token: 'single-use', stage: 'payments' },
+    url: '/api/nightly-finance-orchestrator?finance_run_token=single-use&stage=payments'
+  };
+  const res = responseRecorder();
+
+  await handler(req, res);
+
+  assert.deepEqual(events, ['consume:single-use', 'payments']);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { ok: true, stage: 'payments' });
+});
+
+test('rejects unsupported manual stages before consuming the token', async () => {
+  let consumes = 0;
+  const handler = createManualFinanceRunHandler({
+    cronSecret: 'cron-secret',
+    consumeToken: async () => { consumes += 1; return { ok: true }; },
+    runNightly: async () => {},
+    runPayments: async () => {}
+  });
+  const res = responseRecorder();
+
+  await handler({
+    method: 'GET',
+    headers: {},
+    query: { finance_run_token: 'single-use', stage: 'unknown' },
+    url: '/api/nightly-finance-orchestrator?finance_run_token=single-use&stage=unknown'
+  }, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { ok: false, error: 'Unsupported manual finance stage' });
+  assert.equal(consumes, 0);
+});
+
 test('rejects wrong, expired or replayed tokens without invoking finance stages', async () => {
   let runs = 0;
   const handler = createManualFinanceRunHandler({
