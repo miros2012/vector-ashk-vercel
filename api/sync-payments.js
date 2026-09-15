@@ -6,6 +6,7 @@ import {
   createAshkSaleSource
 } from '../lib/ashk-sale-attribution.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
+import { fetchAshkWithRetry } from '../lib/ashk-transient-fetch.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
@@ -62,7 +63,13 @@ function ashkHeaders() {
   };
 }
 async function fetchAshkData(path) {
-  const r = await fetch(`${ASHK_BASE_URL}${path}`, { headers: ashkHeaders() });
+  const r = await fetchAshkWithRetry({
+    fetchFn: fetch,
+    url: `${ASHK_BASE_URL}${path}`,
+    options: { headers: ashkHeaders() },
+    maxAttempts: 2,
+    retryDelayMs: 350
+  });
   const responseText = await r.text();
   if (!r.ok) throw new Error(`АШК HTTP ${r.status}: ${responseText.slice(0, 500)}`);
   let json;
@@ -303,7 +310,7 @@ export default async function handler(req, res) {
       note: 'Рабочий лист не изменён.'
     });
   } catch (error) {
-    console.error(error?.name || 'Error');
+    console.error('sync-payments:', error?.name || 'Error', String(error?.message || '').slice(0, 240));
     return res.status(500).json({ ok: false, error: 'Payment staging sync failed' });
   }
 }
