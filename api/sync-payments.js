@@ -122,29 +122,37 @@ function operationMatchKey(date, amount) {
   return timestamp ? `${timestamp}\u0000${moneyKey(amount)}` : '';
 }
 
+function addDimensionTotal(map, name, key, amount) {
+  const current = map.get(name) || { [key]: name, rows: 0, positive: 0, negative: 0, net: 0 };
+  current.rows += 1;
+  if (amount > 0) current.positive = roundMoney(current.positive + amount);
+  if (amount < 0) current.negative = roundMoney(current.negative + amount);
+  current.net = roundMoney(current.net + amount);
+  map.set(name, current);
+}
+
 export function summarizeCashboxOperations(operations) {
   const fields = new Set();
-  const totals = new Map();
+  const employeeTotals = new Map();
+  const cashierTotals = new Map();
   let unattributedRows = 0;
+  let cashierUnattributedRows = 0;
   for (const operation of Array.isArray(operations) ? operations : []) {
     for (const field of Object.keys(operation || {})) fields.add(field);
-    const employee = String(operation?.EmployeeName ?? '').trim();
-    if (!employee) {
-      unattributedRows += 1;
-      continue;
-    }
     const amount = toNumber(operation?.Amount);
-    const current = totals.get(employee) || { employee, rows: 0, positive: 0, negative: 0, net: 0 };
-    current.rows += 1;
-    if (amount > 0) current.positive = roundMoney(current.positive + amount);
-    if (amount < 0) current.negative = roundMoney(current.negative + amount);
-    current.net = roundMoney(current.net + amount);
-    totals.set(employee, current);
+    const employee = String(operation?.EmployeeName ?? '').trim();
+    const cashier = String(operation?.CashierName ?? '').trim();
+    if (employee) addDimensionTotal(employeeTotals, employee, 'employee', amount);
+    else unattributedRows += 1;
+    if (cashier) addDimensionTotal(cashierTotals, cashier, 'cashier', amount);
+    else cashierUnattributedRows += 1;
   }
   return {
     fields: [...fields].sort(),
-    employeeTotals: [...totals.values()].sort((a, b) => a.employee.localeCompare(b.employee, 'ru-RU')),
-    unattributedRows
+    employeeTotals: [...employeeTotals.values()].sort((a, b) => a.employee.localeCompare(b.employee, 'ru-RU')),
+    cashierTotals: [...cashierTotals.values()].sort((a, b) => a.cashier.localeCompare(b.cashier, 'ru-RU')),
+    unattributedRows,
+    cashierUnattributedRows
   };
 }
 
