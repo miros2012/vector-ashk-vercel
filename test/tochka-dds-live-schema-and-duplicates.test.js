@@ -94,7 +94,7 @@ test('fails closed when an eligible key already exists more than once in DDS', a
     spreadsheetId: 'sheet-id',
     businessDate: BUSINESS_DATE,
     now: () => NOW
-  }), /DDS readback verification failed/i);
+  }), /DDS (?:duplicate key before import|readback verification failed)/i);
 
   assert.equal(mock.calls.some(call => call[0] === 'append'), false);
   assert.equal(mock.leaseState, 'IDLE');
@@ -108,7 +108,7 @@ test('fails closed when an eligible key already exists more than once in the jou
     spreadsheetId: 'sheet-id',
     businessDate: BUSINESS_DATE,
     now: () => NOW
-  }), /Journal readback verification failed/i);
+  }), /Journal (?:duplicate key before import|readback verification failed)/i);
 
   assert.equal(mock.calls.some(call => call[0] === 'append'), false);
   assert.equal(mock.leaseState, 'IDLE');

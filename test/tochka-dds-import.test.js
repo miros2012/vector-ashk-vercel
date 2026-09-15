@@ -16,6 +16,7 @@ const BUSINESS_DATE_SERIAL = 46269;
 const NOW = new Date('2026-09-04T15:00:00.000Z');
 const K1 = '40702810212500010112|cbs-tb;2480375816;1';
 const K2 = '40702810212500010112|cbs-tb;2480375884;1';
+const K3 = '40702810212500010112|cbs-tb;2480000001;1';
 
 function readyRow({
   date = BUSINESS_DATE_SERIAL,
@@ -117,12 +118,20 @@ function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsRead
   return { sheets, calls, state, get leaseState() { return leaseState; } };
 }
 
-test('plan imports only the current Tyumen business date and ignores malformed old backlog', () => {
+test('plan catches up valid older ready rows while ignoring malformed old backlog', () => {
   const oldMalformed = readyRow({
     date: BUSINESS_DATE_SERIAL - 1,
     amount: 'not-a-number',
     key: 'old-key',
     transactionId: 'old-transaction'
+  });
+  const oldValid = readyRow({
+    date: BUSINESS_DATE_SERIAL - 1,
+    amount: -4875,
+    key: K3,
+    transactionId: 'cbs-tb;2480000001;1',
+    category: 'Возвраты курсантам',
+    flow: 'Выбытие'
   });
   const currentDebit = readyRow({
     amount: -9.2,
@@ -133,18 +142,26 @@ test('plan imports only the current Tyumen business date and ignores malformed o
   });
 
   const plan = buildCurrentDayTochkaDdsPlan({
-    readyValues: [HEADER, oldMalformed, readyRow(), currentDebit],
+    readyValues: [HEADER, oldMalformed, oldValid, readyRow(), currentDebit],
     ddsCommentValues: [[`Точка API | ${K1}`]],
     journalValues: [],
     businessDate: BUSINESS_DATE,
     now: NOW
   });
 
-  assert.deepEqual(plan.eligibleKeys, [K1, K2]);
-  assert.equal(plan.ddsRows.length, 1);
-  assert.deepEqual(plan.ddsRows[0], currentDebit.slice(0, 13));
-  assert.equal(plan.journalRows.length, 2);
+  assert.deepEqual(plan.eligibleKeys, [K3, K1, K2]);
+  assert.equal(plan.ddsRows.length, 2);
+  assert.deepEqual(plan.ddsRows[0], oldValid.slice(0, 13));
+  assert.deepEqual(plan.ddsRows[1], currentDebit.slice(0, 13));
+  assert.equal(plan.journalRows.length, 3);
   assert.deepEqual(plan.journalRows[0], [
+    K3,
+    'cbs-tb;2480000001;1',
+    '03.09.2026',
+    '04.09.2026 20:00:00',
+    'Импортировано'
+  ]);
+  assert.deepEqual(plan.journalRows[1], [
     K1,
     'cbs-tb;2480375816;1',
     '04.09.2026',
