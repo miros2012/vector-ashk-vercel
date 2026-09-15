@@ -32,7 +32,7 @@ const CONTRACTS = new Map([[10, [
     State: 'DRV',
     ContractName: 'SEP-SALE'
   }
-]]);
+]]]);
 
 const PAYMENT_VALUES = [
   [
