@@ -95,9 +95,9 @@ test('intraday orchestrator runs full verified finance decision pipeline in orde
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(calls, [
+    ['tochkaDds', 'GET', 'Bearer secret'],
     ['payments', 'POST', 'Bearer secret'],
     ['rop', 'internal'],
-    ['tochkaDds', 'GET', 'Bearer secret'],
     ['balances', 'GET', 'Bearer secret'],
     ['dataHealth', 'GET', 'Bearer secret'],
     ['decisions', 'GET', 'Bearer secret'],
@@ -205,7 +205,7 @@ test('intraday orchestrator stops before decision writes when Data Health fails'
   await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
 
   assert.equal(res.statusCode, 503);
-  assert.deepEqual(calls.map(call => call[0]), ['payments', 'tochkaDds', 'balances', 'dataHealth']);
+  assert.deepEqual(calls.map(call => call[0]), ['tochkaDds', 'payments', 'balances', 'dataHealth']);
   assert.deepEqual(res.body.stages.dataHealth, { ok: false, statusCode: 503 });
   assert.equal(res.body.stages.decisions.skipped, true);
   assert.equal(res.body.stages.ownerActionQueue.skipped, true);
