@@ -235,7 +235,7 @@ async function persistRopOutputs({
     planValues,
     limitPerBranch: 5
   });
-  debtorPriority.values = mergeDebtorManualFields(debtorPriority.values, existingDebtorValues);
+  debtorPriority.values = mergeRopDebtorManualFields(debtorPriority.values, existingDebtorValues);
 
   await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:V', debtorPriority.values, 22);
   await formatDebtorPrioritySheet({ sheets: await getSheets(), spreadsheetId: SPREADSHEET_ID });
@@ -488,6 +488,7 @@ const nightlyHandler = createNightlyFinanceOrchestrator({
 const intradayHandler = createIntradayRopOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runPayments: syncPayments,
+  runReceivables: syncReceivables,
   refreshRop: refreshRopFromStagingAndPublish,
   runTochkaDds: tochkaDdsHandler,
   runBalances: refreshBalancesMirrorOnly,
