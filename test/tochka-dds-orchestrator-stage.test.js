@@ -38,7 +38,7 @@ function intradayTail(calls) {
   };
 }
 
-test('nightly finance imports current-day Tochka DDS after source refresh and before balances', async () => {
+test('nightly finance imports current-day Tochka DDS before ASHK sources and balances', async () => {
   const calls = [];
   const handler = createNightlyFinanceOrchestrator({
     cronSecret: 'secret',
@@ -56,15 +56,35 @@ test('nightly finance imports current-day Tochka DDS after source refresh and be
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(calls, [
+    ['tochkaDds', 'GET'],
     ['hours', 'GET'],
     ['payments', 'POST'],
     ['receivables', 'GET'],
-    ['tochkaDds', 'GET'],
     ['balances', 'GET'],
     ['dataHealth', 'GET'],
     ['decisions', 'GET']
   ]);
   assert.deepEqual(res.body.stages.tochkaDds, { ok: true, statusCode: 200 });
+});
+
+test('nightly finance attempts DDS before a failed HOURS source', async () => {
+  const calls = [];
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret',
+    runHours: child(calls, 'hours', 502),
+    runReceivables: child(calls, 'receivables'),
+    runTochkaDds: child(calls, 'tochkaDds'),
+    runDecisions: child(calls, 'decisions')
+  });
+  const res = responseRecorder();
+
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(calls.map(call => call[0]), ['tochkaDds', 'hours']);
+  assert.deepEqual(res.body.stages.tochkaDds, { ok: true, statusCode: 200 });
+  assert.equal(res.body.stages.receivables.skipped, true);
+  assert.equal(res.body.stages.decisions.skipped, true);
 });
 
 test('nightly finance refreshes balances but still blocks decisions when current-day DDS import fails', async () => {
@@ -83,14 +103,14 @@ test('nightly finance refreshes balances but still blocks decisions when current
   await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
 
   assert.equal(res.statusCode, 502);
-  assert.deepEqual(calls.map(call => call[0]), ['hours', 'receivables', 'tochkaDds', 'balances']);
+  assert.deepEqual(calls.map(call => call[0]), ['tochkaDds', 'hours', 'receivables', 'balances']);
   assert.deepEqual(res.body.stages.tochkaDds, { ok: false, statusCode: 502 });
   assert.deepEqual(res.body.stages.balances, { ok: true, statusCode: 200 });
   assert.equal(res.body.stages.dataHealth.skipped, true);
   assert.equal(res.body.stages.decisions.skipped, true);
 });
 
-test('intraday ROP imports current-day Tochka DDS before refreshing balances and decision state', async () => {
+test('intraday ROP imports current-day Tochka DDS before ASHK and ROP refresh', async () => {
   const calls = [];
   const handler = createIntradayRopOrchestrator({
     cronSecret: 'secret',
@@ -109,15 +129,37 @@ test('intraday ROP imports current-day Tochka DDS before refreshing balances and
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(calls, [
+    ['tochkaDds', 'GET'],
     ['payments', 'POST'],
     ['rop', 'internal'],
-    ['tochkaDds', 'GET'],
     ['balances', 'GET'],
     ['dataHealth', 'GET'],
     ['decisions', 'GET'],
     ['ownerActionQueue', 'internal']
   ]);
   assert.deepEqual(res.body.stages.tochkaDds, { ok: true, statusCode: 200 });
+});
+
+test('intraday ROP attempts DDS before a failed ASHK payments source', async () => {
+  const calls = [];
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runPayments: child(calls, 'payments', 502),
+    refreshRop: async () => {
+      calls.push(['rop', 'internal']);
+      return { ok: true, liveDate: '2026-09-09' };
+    },
+    runTochkaDds: child(calls, 'tochkaDds'),
+    ...intradayTail(calls)
+  });
+  const res = responseRecorder();
+
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(calls.map(call => call[0]), ['tochkaDds', 'payments']);
+  assert.deepEqual(res.body.stages.tochkaDds, { ok: true, statusCode: 200 });
+  assert.equal(res.body.stages.rop.skipped, true);
 });
 
 test('intraday ROP preserves refreshed sales data but blocks all later stages when DDS import fails', async () => {
@@ -138,7 +180,7 @@ test('intraday ROP preserves refreshed sales data but blocks all later stages wh
   await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
 
   assert.equal(res.statusCode, 502);
-  assert.deepEqual(calls.map(call => call[0]), ['payments', 'rop', 'tochkaDds']);
+  assert.deepEqual(calls.map(call => call[0]), ['tochkaDds', 'payments', 'rop']);
   assert.equal(res.body.stages.rop.ok, true);
   assert.deepEqual(res.body.stages.tochkaDds, { ok: false, statusCode: 502 });
   assert.equal(res.body.stages.balances.skipped, true);
