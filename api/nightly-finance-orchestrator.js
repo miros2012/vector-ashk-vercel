@@ -235,7 +235,7 @@ async function persistRopOutputs({
     planValues,
     limitPerBranch: 5
   });
-  debtorPriority.values = mergeRopDebtorManualFields(debtorPriority.values, existingDebtorValues);
+  debtorPriority.values = mergeDebtorManualFields(debtorPriority.values, existingDebtorValues);
 
   await writeValues(ROP_DEBTOR_PRIORITY_SHEET, 'A:V', debtorPriority.values, 22);
   await formatDebtorPrioritySheet({ sheets: await getSheets(), spreadsheetId: SPREADSHEET_ID });
