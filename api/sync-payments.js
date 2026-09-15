@@ -21,6 +21,9 @@ function toNumber(value) {
   const n = Number(String(value ?? '').replace(/\s/g, '').replace(/\u00A0/g, '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
 }
+function roundMoney(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
 function tyumenParts() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
@@ -119,6 +122,32 @@ function operationMatchKey(date, amount) {
   return timestamp ? `${timestamp}\u0000${moneyKey(amount)}` : '';
 }
 
+export function summarizeCashboxOperations(operations) {
+  const fields = new Set();
+  const totals = new Map();
+  let unattributedRows = 0;
+  for (const operation of Array.isArray(operations) ? operations : []) {
+    for (const field of Object.keys(operation || {})) fields.add(field);
+    const employee = String(operation?.EmployeeName ?? '').trim();
+    if (!employee) {
+      unattributedRows += 1;
+      continue;
+    }
+    const amount = toNumber(operation?.Amount);
+    const current = totals.get(employee) || { employee, rows: 0, positive: 0, negative: 0, net: 0 };
+    current.rows += 1;
+    if (amount > 0) current.positive = roundMoney(current.positive + amount);
+    if (amount < 0) current.negative = roundMoney(current.negative + amount);
+    current.net = roundMoney(current.net + amount);
+    totals.set(employee, current);
+  }
+  return {
+    fields: [...fields].sort(),
+    employeeTotals: [...totals.values()].sort((a, b) => a.employee.localeCompare(b.employee, 'ru-RU')),
+    unattributedRows
+  };
+}
+
 export function attributePaymentsToCashboxOperations(payments, operations) {
   const operationsByKey = new Map();
   for (const operation of Array.isArray(operations) ? operations : []) {
@@ -194,6 +223,7 @@ export default async function handler(req, res) {
     }
     const [rawItems, sheets] = await Promise.all([fetchAshkMonth(), sheetsClient()]);
     const operations = await fetchAshkCashboxOperations();
+    const cashboxDirect = summarizeCashboxOperations(operations);
     const comparisonAttribution = attributePaymentsToCashboxOperations(rawItems, operations);
     const { year, month, day } = tyumenParts();
     const session = createAshkWebSession({
@@ -288,6 +318,7 @@ export default async function handler(req, res) {
       saleSource: saleResult.metrics,
       saleAttribution: saleAttribution.metrics,
       cashboxComparison: comparisonAttribution.metrics,
+      cashboxDirect,
       credentials: 'configured'
     }));
     return res.status(200).json({
