@@ -81,6 +81,56 @@ test('payments stage consumes the token and runs only the payment sync as an aut
   assert.deepEqual(res.body, { ok: true, stage: 'payments' });
 });
 
+test('payment report probe runs only on the explicit manual payments query', async () => {
+  const events = [];
+  const handler = createManualFinanceRunHandler({
+    cronSecret: 'cron-secret',
+    consumeToken: async () => ({ ok: true, reason: 'consumed' }),
+    runNightly: async () => { events.push('nightly'); },
+    runPaymentProbe: async () => {
+      events.push('probe');
+      return [{ endpoint: '/api/PaymentRecordList', ok: true, status: 200, schema: { rowCount: 1 } }];
+    },
+    runPayments: async (req, res) => {
+      events.push('payments');
+      return res.status(200).json({ ok: true });
+    }
+  });
+  const res = responseRecorder();
+
+  await handler({
+    method: 'GET',
+    headers: {},
+    query: { finance_run_token: 'single-use', stage: 'payments', probe: 'payment-report' },
+    url: '/api/nightly-finance-orchestrator?finance_run_token=single-use&stage=payments&probe=payment-report'
+  }, res);
+
+  assert.deepEqual(events, ['probe', 'payments']);
+  assert.equal(res.statusCode, 200);
+});
+
+test('rejects unsupported payment probes before consuming the token', async () => {
+  let consumes = 0;
+  const handler = createManualFinanceRunHandler({
+    cronSecret: 'cron-secret',
+    consumeToken: async () => { consumes += 1; return { ok: true }; },
+    runNightly: async () => {},
+    runPayments: async () => {}
+  });
+  const res = responseRecorder();
+
+  await handler({
+    method: 'GET',
+    headers: {},
+    query: { finance_run_token: 'single-use', stage: 'payments', probe: 'other' },
+    url: '/api/nightly-finance-orchestrator?finance_run_token=single-use&stage=payments&probe=other'
+  }, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { ok: false, error: 'Unsupported manual finance probe' });
+  assert.equal(consumes, 0);
+});
+
 test('rejects unsupported manual stages before consuming the token', async () => {
   let consumes = 0;
   const handler = createManualFinanceRunHandler({
