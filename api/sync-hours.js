@@ -89,7 +89,7 @@ async function fetchReport(month) {
   const response = await fetchAshkWithRetry({
     fetchFn: fetch,
     url,
-    options: {
+    options: () => ({
       method: 'GET',
       headers: {
         api_key: process.env.ASHK_API_KEY,
@@ -97,7 +97,7 @@ async function fetchReport(month) {
         'Content-Type': 'application/json'
       },
       signal: AbortSignal.timeout(55_000)
-    },
+    }),
     maxAttempts: 2,
     retryDelayMs: 350
   });
