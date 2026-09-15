@@ -3,7 +3,7 @@ name: Hourly project continuation
 on:
   schedule:
     - cron: '23 * * * *'
-    - cron: '23 23 * * *'
+    - cron: '30 3 * * *'
   workflow_dispatch:
     inputs:
       action:
@@ -30,7 +30,8 @@ jobs:
     name: Guarded PR-only continuation
     if: >-
       (github.event_name == 'schedule' && github.event.schedule == '23 * * * *') ||
-      (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch' && inputs.action == 'continue') ||
+      (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch' &&
+       inputs.action != 'owner-package-smoke' && inputs.action != 'finance-sync') ||
       (github.actor_id == 46207692 && github.event_name == 'issues' &&
        github.event.issue.user.id == 46207692 && startsWith(github.event.issue.title, '[agent-ready]'))
     permissions:
@@ -68,9 +69,9 @@ jobs:
         run: node scripts/hourly-project-agent.mjs
 
   finance-sync:
-    name: Finance data sync
+    name: Finance morning sync
     if: >-
-      github.event_name == 'schedule' ||
+      (github.event_name == 'schedule' && github.event.schedule == '30 3 * * *') ||
       (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch' && inputs.action == 'finance-sync')
     permissions:
       contents: read
@@ -81,8 +82,7 @@ jobs:
     steps:
       - name: Refresh finance sources through signed OIDC request
         env:
-          FINANCE_SYNC_ENDPOINT: https://vector-ashk-backend.vercel.app/api/github-finance-sync
-          FINANCE_SCHEDULE: ${{ github.event.schedule }}
+          FINANCE_SYNC_ENDPOINT: https://vector-ashk-backend.vercel.app/api/master-hours-diagnostic
         run: |
           node --input-type=module <<'NODE'
           const requestUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
@@ -95,7 +95,7 @@ jobs:
           const token = String(tokenPayload?.value || '').trim();
           if (!token) throw new Error('OIDC token missing');
 
-          const kind = process.env.FINANCE_SCHEDULE === '23 23 * * *' ? 'full' : 'intraday';
+          const kind = process.env.GITHUB_EVENT_NAME === 'schedule' ? 'full' : 'intraday';
           const response = await fetch(process.env.FINANCE_SYNC_ENDPOINT, {
             method: 'POST',
             headers: {
