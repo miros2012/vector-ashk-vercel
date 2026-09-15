@@ -488,6 +488,7 @@ const nightlyHandler = createNightlyFinanceOrchestrator({
 const intradayHandler = createIntradayRopOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runPayments: syncPayments,
+  runReceivables: syncReceivables,
   refreshRop: refreshRopFromStagingAndPublish,
   runTochkaDds: tochkaDdsHandler,
   runBalances: refreshBalancesMirrorOnly,

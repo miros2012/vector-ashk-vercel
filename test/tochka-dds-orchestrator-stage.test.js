@@ -67,7 +67,7 @@ test('nightly finance imports current-day Tochka DDS after source refresh and be
   assert.deepEqual(res.body.stages.tochkaDds, { ok: true, statusCode: 200 });
 });
 
-test('nightly finance stops before balances and decisions when current-day DDS import fails', async () => {
+test('nightly finance refreshes balances but still blocks decisions when current-day DDS import fails', async () => {
   const calls = [];
   const handler = createNightlyFinanceOrchestrator({
     cronSecret: 'secret',
@@ -83,9 +83,9 @@ test('nightly finance stops before balances and decisions when current-day DDS i
   await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
 
   assert.equal(res.statusCode, 502);
-  assert.deepEqual(calls.map(call => call[0]), ['hours', 'receivables', 'tochkaDds']);
+  assert.deepEqual(calls.map(call => call[0]), ['hours', 'receivables', 'tochkaDds', 'balances']);
   assert.deepEqual(res.body.stages.tochkaDds, { ok: false, statusCode: 502 });
-  assert.equal(res.body.stages.balances.skipped, true);
+  assert.deepEqual(res.body.stages.balances, { ok: true, statusCode: 200 });
   assert.equal(res.body.stages.dataHealth.skipped, true);
   assert.equal(res.body.stages.decisions.skipped, true);
 });
