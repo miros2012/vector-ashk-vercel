@@ -3,6 +3,7 @@ name: Hourly project continuation
 on:
   schedule:
     - cron: '23 * * * *'
+    - cron: '30 3 * * *'
   workflow_dispatch:
     inputs:
       action:
@@ -12,6 +13,7 @@ on:
         type: choice
         options:
           - continue
+          - finance-sync
           - owner-package-smoke
   issues:
     types: [opened, edited, reopened]
@@ -27,8 +29,9 @@ jobs:
   continue-project:
     name: Guarded PR-only continuation
     if: >-
-      github.event_name == 'schedule' ||
-      (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch' && inputs.action != 'owner-package-smoke') ||
+      (github.event_name == 'schedule' && github.event.schedule == '23 * * * *') ||
+      (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch' &&
+       inputs.action != 'owner-package-smoke' && inputs.action != 'finance-sync') ||
       (github.actor_id == 46207692 && github.event_name == 'issues' &&
        github.event.issue.user.id == 46207692 && startsWith(github.event.issue.title, '[agent-ready]'))
     permissions:
@@ -64,6 +67,58 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOURLY_AGENT_ENDPOINT: https://vector-ashk-backend.vercel.app/api/health
         run: node scripts/hourly-project-agent.mjs
+
+  finance-sync:
+    name: Finance morning sync
+    if: >-
+      (github.event_name == 'schedule' && github.event.schedule == '30 3 * * *') ||
+      (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch' && inputs.action == 'finance-sync')
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+
+    steps:
+      - name: Refresh finance sources through signed OIDC request
+        env:
+          FINANCE_SYNC_ENDPOINT: https://vector-ashk-backend.vercel.app/api/master-hours-diagnostic
+        run: |
+          node --input-type=module <<'NODE'
+          const requestUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          requestUrl.searchParams.set('audience', 'vector-finance-sync-v1');
+          const tokenResponse = await fetch(requestUrl, {
+            headers: { authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` }
+          });
+          if (!tokenResponse.ok) throw new Error(`OIDC token request failed with ${tokenResponse.status}`);
+          const tokenPayload = await tokenResponse.json();
+          const token = String(tokenPayload?.value || '').trim();
+          if (!token) throw new Error('OIDC token missing');
+
+          const kind = process.env.GITHUB_EVENT_NAME === 'schedule' ? 'full' : 'intraday';
+          const response = await fetch(process.env.FINANCE_SYNC_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${token}`,
+              'content-type': 'application/json',
+              accept: 'application/json'
+            },
+            body: JSON.stringify({ mode: 'finance_sync', kind })
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || body?.ok !== true) {
+            const stages = body?.stages && typeof body.stages === 'object'
+              ? Object.fromEntries(Object.entries(body.stages).map(([name, stage]) => [name, {
+                  ok: stage?.ok === true,
+                  statusCode: stage?.statusCode ?? null,
+                  skipped: stage?.skipped === true,
+                  errorClass: stage?.errorClass ?? null
+                }]))
+              : null;
+            throw new Error(`finance sync failed with ${response.status}; kind=${kind}; stages=${JSON.stringify(stages)}`);
+          }
+          console.log(JSON.stringify({ ok: true, kind, mode: body.mode || null, stages: body.stages || null }));
+          NODE
 
   owner-package-smoke:
     name: Owner package production smoke

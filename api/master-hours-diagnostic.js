@@ -3,6 +3,9 @@ import {
   extractReportRows,
   summarizeMasterHours
 } from '../lib/master-hours.js';
+import financeHandler from './nightly-finance-orchestrator.js';
+import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
+import { createGitHubFinanceSyncHandler } from '../lib/github-finance-sync.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const START_DATE = '2026-08-01T00:00:00';
@@ -46,8 +49,25 @@ async function getReport(buildMode) {
   };
 }
 
+const githubFinanceSyncHandler = createGitHubFinanceSyncHandler({
+  verifyToken: verifyGitHubActionsOidcToken,
+  cronSecret: process.env.CRON_SECRET || '',
+  runIntraday: financeHandler,
+  runFull: financeHandler
+});
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
+
+  if (req.method === 'POST') {
+    const mode = req?.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? String(req.body.mode || '')
+      : '';
+    if (mode === 'finance_sync') {
+      return githubFinanceSyncHandler(req, res);
+    }
+  }
+
   if (req.method !== 'GET') {
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
   }
@@ -74,4 +94,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
