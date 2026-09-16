@@ -5,6 +5,7 @@ import {
   recognizeCashPhotoViaGateway,
   recognizeCashPhotoWithGatewayFallback
 } from '../lib/cash-photo-gateway-fallback.js';
+import { recognizeWithFallback } from '../lib/cash-photo-recognizer.js';
 
 function geminiPayload() {
   return {
@@ -155,4 +156,54 @@ test('provider fallback never hides a permanent recognition error', async () => 
     error => error === permanent
   );
   assert.equal(gatewayCalls, 0);
+});
+
+test('production recognizer falls back from direct Gemini 429 to AI Gateway success', async () => {
+  const directCalls = [];
+  const gatewayCalls = [];
+  const expected = {
+    initialBalance: 3000,
+    visibleMoneyRowCount: 2,
+    finalBalance: 4200,
+    finalBalanceReadable: true,
+    pageNote: 'gateway recovered',
+    operations: []
+  };
+  const directFetch = async (url) => {
+    directCalls.push(String(url));
+    return jsonResponse(429, { error: { status: 'RESOURCE_EXHAUSTED' } });
+  };
+  const gatewayFetch = async (url, options = {}) => {
+    gatewayCalls.push({ url: String(url), options });
+    if (String(url).endsWith('/v1/models')) {
+      return jsonResponse(200, {
+        data: [
+          { id: 'openai/gpt-5.6-luna', modalities: { input: ['text', 'image'], output: ['text'] } },
+          { id: 'anthropic/claude-sonnet-5', modalities: { input: ['text', 'image'], output: ['text'] } }
+        ]
+      });
+    }
+    return jsonResponse(200, {
+      choices: [{ message: { content: JSON.stringify(expected) } }]
+    });
+  };
+
+  const result = await recognizeWithFallback({
+    apiKey: 'gemini-key',
+    payload: geminiPayload(),
+    models: ['gemini-3.8-flash', 'gemini-3.5-flash'],
+    fetchImpl: directFetch,
+    maxAttemptsPerModel: 1,
+    baseDelayMs: 0,
+    gatewayEnabled: true,
+    getGatewayToken: async () => 'oidc-token',
+    gatewayFetchImpl: gatewayFetch
+  });
+
+  assert.equal(directCalls.length, 2);
+  assert.equal(gatewayCalls.length, 2);
+  assert.equal(result.model, 'openai/gpt-5.6-luna');
+  assert.deepEqual(result.data, expected);
+  assert.ok(result.diagnostics.some(item => item.includes('HTTP 429')));
+  assert.ok(result.diagnostics.includes('gateway fallback: openai/gpt-5.6-luna'));
 });
