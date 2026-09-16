@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   attributePaymentsToSales,
   createAshkSaleSource,
-  normalizeSaleId
+  normalizeSaleId,
+  summarizeSaleStaffCandidates
 } from '../lib/ashk-sale-attribution.js';
 
 test('normalizes numeric SaleId without fuzzy matching', () => {
@@ -55,6 +56,44 @@ test('reports empty and unknown SaleId without guessing', () => {
     saleNotFound: 1,
     employeeEmpty: 0
   });
+});
+
+test('sale staff diagnostic aggregates payment debit by every staff-like sale field', () => {
+  const result = summarizeSaleStaffCandidates([
+    { SaleId: 77, Debit: 100 },
+    { SaleId: 77, Debit: 50 },
+    { SaleId: 88, Debit: 20 },
+    { SaleId: 999, Debit: 999 }
+  ], [
+    {
+      Id: 77,
+      EmployeeName: 'Продавец',
+      StudentOwnerName: 'Ответственный',
+      CreatorName: 'Создатель',
+      Comment: 'Не персонал'
+    },
+    {
+      Id: 88,
+      EmployeeName: 'Другой продавец',
+      StudentOwnerName: 'Ответственный',
+      CreatorName: 'Создатель 2'
+    }
+  ]);
+
+  assert.deepEqual(result.fields, ['CreatorName', 'EmployeeName', 'StudentOwnerName']);
+  assert.deepEqual(result.totals.EmployeeName, [
+    { name: 'Другой продавец', amount: 20 },
+    { name: 'Продавец', amount: 150 }
+  ]);
+  assert.deepEqual(result.totals.StudentOwnerName, [
+    { name: 'Ответственный', amount: 170 }
+  ]);
+  assert.deepEqual(result.totals.CreatorName, [
+    { name: 'Создатель', amount: 150 },
+    { name: 'Создатель 2', amount: 20 }
+  ]);
+  assert.equal(result.unresolvedPayments, 1);
+  assert.equal(result.unresolvedAmount, 999);
 });
 
 test('loads period sales and resolves older referenced sales through SaleGet', async () => {

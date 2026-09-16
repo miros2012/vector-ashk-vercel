@@ -3,7 +3,8 @@ import { paymentMetrics, paymentMetricsMatch } from '../lib/payments-staging-ver
 import { createAshkWebSession } from '../lib/ashk-web-session.js';
 import {
   attributePaymentsToSales,
-  createAshkSaleSource
+  createAshkSaleSource,
+  summarizeSaleStaffCandidates
 } from '../lib/ashk-sale-attribution.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import { fetchAshkWithRetry } from '../lib/ashk-transient-fetch.js';
