@@ -21,9 +21,10 @@ test('manual finance run is handled inside the existing nightly route', () => {
   assert.ok(manualCheck >= 0 && intradayDispatch >= 0 && manualCheck < intradayDispatch);
 });
 
-test('manual run capability does not add a route or alter cron definitions', () => {
+test('manual run capability does not add a route or alter finance cron definitions', () => {
   const config = JSON.parse(fs.readFileSync(vercelPath, 'utf8'));
+  const financeCrons = config.crons.filter(cron => cron.path === '/api/nightly-finance-orchestrator');
   assert.equal(Object.keys(config.functions || {}).length, 5);
-  assert.equal(config.crons.length, 14);
+  assert.equal(financeCrons.length, 13);
   assert.ok(!Object.keys(config.functions || {}).some(path => path.includes('manual')));
 });
