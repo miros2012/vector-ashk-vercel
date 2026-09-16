@@ -14,7 +14,8 @@
     { "source": "/api/owner-package", "destination": "/api/decision-event?ownerRoute=package" },
     { "source": "/api/owner-dashboard-session", "destination": "/api/decision-event?ownerRoute=dashboard-session" },
     { "source": "/api/owner-dashboard-data", "destination": "/api/decision-event?ownerRoute=dashboard-data" },
-    { "source": "/api/owner-dashboard-google", "destination": "/api/decision-event?ownerRoute=dashboard-google" }
+    { "source": "/api/owner-dashboard-google", "destination": "/api/decision-event?ownerRoute=dashboard-google" },
+    { "source": "/api/cash-photo-retry-cron", "destination": "/api/health?cashPhotoRoute=retry-cron" }
   ],
   "headers": [
     {
@@ -65,18 +66,18 @@
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 14 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 15 * * *" },
     { "path": "/api/health", "schedule": "35 21 * * *" },
-    { "path": "/api/health", "schedule": "45 21 * * *" },
-    { "path": "/api/health", "schedule": "15 4 * * *" },
-    { "path": "/api/health", "schedule": "15 5 * * *" },
-    { "path": "/api/health", "schedule": "15 6 * * *" },
-    { "path": "/api/health", "schedule": "15 7 * * *" },
-    { "path": "/api/health", "schedule": "15 8 * * *" },
-    { "path": "/api/health", "schedule": "15 9 * * *" },
-    { "path": "/api/health", "schedule": "15 10 * * *" },
-    { "path": "/api/health", "schedule": "15 11 * * *" },
-    { "path": "/api/health", "schedule": "15 12 * * *" },
-    { "path": "/api/health", "schedule": "15 13 * * *" },
-    { "path": "/api/health", "schedule": "15 14 * * *" },
-    { "path": "/api/health", "schedule": "15 15 * * *" }
+    { "path": "/api/cash-photo-retry-cron", "schedule": "45 21 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 4 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 5 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 6 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 7 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 8 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 9 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 10 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 11 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 12 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 13 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 14 * * *" },
+    { "path": "/api/cash-photo-retry-cron", "schedule": "15 15 * * *" }
   ]
 }
