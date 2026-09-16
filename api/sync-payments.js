@@ -246,6 +246,7 @@ export default async function handler(req, res) {
       startDate: `${year}-${pad2(month)}-01`,
       endDate: `${year}-${pad2(month)}-${pad2(day)}`
     });
+    const saleStaffCandidates = summarizeSaleStaffCandidates(rawItems, saleResult.sales);
     const saleAttribution = attributePaymentsToSales(comparisonAttribution.items, saleResult.sales);
     const items = saleAttribution.items;
 
@@ -321,6 +322,21 @@ export default async function handler(req, res) {
       event: 'ashk-cashier-candidates-diagnostic',
       cashierCandidates: cashboxDirect.cashierTotals.filter(item => /Алина|Кумаритова/i.test(item.cashier)),
       cashierUnattributedRows: cashboxDirect.cashierUnattributedRows
+    }));
+    const alinaCandidates = Object.fromEntries(
+      Object.entries(saleStaffCandidates.totals)
+        .map(([field, values]) => [
+          field,
+          values.filter(item => /Алина|Кумаритова/i.test(item.name))
+        ])
+        .filter(([, values]) => values.length)
+    );
+    console.log(JSON.stringify({
+      event: 'ashk-sale-staff-candidates-diagnostic',
+      fields: saleStaffCandidates.fields,
+      alinaCandidates,
+      unresolvedPayments: saleStaffCandidates.unresolvedPayments,
+      unresolvedAmount: saleStaffCandidates.unresolvedAmount
     }));
     console.log(JSON.stringify({
       event: 'sync-payments-staging',
