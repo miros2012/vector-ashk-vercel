@@ -106,15 +106,28 @@ test('server retry processes three pending photos concurrently to stay inside th
   assert.deepEqual(result, { attempted: 3, recognized: 3, stillPending: 0, failed: 0 });
 });
 
-test('Vercel schedules Hobby-safe server recovery independently of the manager browser', async () => {
+test('Vercel schedules Hobby-safe recovery on an explicit cron URL independent of the manager browser', async () => {
   const health = await readFile(new URL('../api/health.js', import.meta.url), 'utf8');
   const vercel = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8'));
 
-  assert.match(health, /CASH_PHOTO_RETRY_SCHEDULES/);
+  assert.match(health, /retry-cron/);
   assert.match(health, /createCashPhotoRetryCronHttpHandler/);
-  const healthSchedules = vercel.crons
-    .filter(item => item.path === '/api/health')
-    .map(item => item.schedule);
-  for (const schedule of retrySchedules) assert.ok(healthSchedules.includes(schedule), schedule);
+  const rewrite = vercel.rewrites.find(item => item.source === '/api/cash-photo-retry-cron');
+  assert.deepEqual(rewrite, {
+    source: '/api/cash-photo-retry-cron',
+    destination: '/api/health?cashPhotoRoute=retry-cron'
+  });
+  const retryCrons = vercel.crons.filter(item => item.path === '/api/cash-photo-retry-cron');
+  assert.deepEqual(retryCrons.map(item => item.schedule).sort(), [...retrySchedules].sort());
   assert.ok(retrySchedules.every(schedule => !schedule.includes('/')));
+});
+
+test('cash photo cron authorizes before initializing Google-backed services', async () => {
+  const health = await readFile(new URL('../api/health.js', import.meta.url), 'utf8');
+  const start = health.indexOf('async function handleCashPhotoCronRoute');
+  const end = health.indexOf('async function handleHourlyProjectAgent', start);
+  const block = health.slice(start, end);
+  const authAt = block.indexOf('isAuthorizedCron(req)');
+  const servicesAt = block.indexOf('getCashPhotoServices()');
+  assert.ok(authAt >= 0 && servicesAt >= 0 && authAt < servicesAt);
 });
