@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PAYMENT_REPORT_CANDIDATES,
+  probeAshkPaymentReportDiagnostics,
   probeAshkPaymentReportEndpoints,
   summarizePayloadShape
 } from '../lib/ashk-payment-report-probe.js';
@@ -69,4 +70,53 @@ test('probe returns only endpoint status and schema and continues after unsuppor
   assert.equal(result.slice(1).every(item => item.ok === false && item.status === 404), true);
   assert.equal(calls.every(call => call.params.StartDate === '2026-09-01' && call.params.EndDate === '2026-09-15'), true);
   assert.equal(JSON.stringify(result).includes('Кумаритова Алина'), false);
+});
+
+test('full diagnostic compares complete internal payment set and exposes only Alina aggregate', async () => {
+  const session = {
+    requestJson: async (path, params) => {
+      if (path !== '/api/PaymentRecordDebitList') throw new Error('ASHK web request failed: 404');
+      if (!Object.hasOwn(params, 'start')) {
+        return {
+          success: true,
+          data: [{ Id: 1, Debit: 100, EmployeeName: 'Кумаритова Алина' }],
+          pos: 0,
+          total_count: 3
+        };
+      }
+      if (params.start === 0) {
+        return {
+          success: true,
+          data: [
+            { Id: 1, PayDate: '2026-09-01 10:00:00', Debit: 100, EmployeeName: 'Кумаритова Алина' },
+            { Id: 2, PayDate: '2026-09-01 11:00:00', Debit: 200, EmployeeName: 'Другой сотрудник' }
+          ],
+          pos: 0,
+          total_count: 3
+        };
+      }
+      return {
+        success: true,
+        data: [{ Id: 3, PayDate: '2026-09-02 12:00:00', Debit: 50, EmployeeName: 'Кумаритова Алина' }],
+        pos: 2,
+        total_count: 3
+      };
+    }
+  };
+
+  const result = await probeAshkPaymentReportDiagnostics({
+    session,
+    startDate: '2026-09-01',
+    endDate: '2026-09-16',
+    pageSize: 2
+  });
+
+  assert.equal(result.endpoints.find(item => item.endpoint === '/api/PaymentRecordDebitList').ok, true);
+  assert.deepEqual(result.employeeSource, {
+    metrics: { rows: 3, totalCount: 3, pages: 2, debitTotal: 350, minPayDate: '2026-09-01 10:00:00', maxPayDate: '2026-09-02 12:00:00' },
+    alinaCandidates: [{ employee: 'Кумаритова Алина', positive: 150, negative: 0, net: 150, rows: 2 }],
+    unattributedRows: 0,
+    unattributedAmount: 0
+  });
+  assert.equal(JSON.stringify(result.employeeSource).includes('Другой сотрудник'), false);
 });
