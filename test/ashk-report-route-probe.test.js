@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   extractAshkAssetPaths,
   extractAshkReportRouteCandidates,
-  extractAshkRouteStrings
+  extractAshkRouteStrings,
+  probeAshkReportRoutes
 } from '../lib/ashk-report-route-probe.js';
 
 test('extracts only report and finance links and strips query strings', () => {
@@ -44,5 +45,27 @@ test('extracts safe report-like internal route strings from inline html or javas
   assert.deepEqual(extractAshkRouteStrings(source), [
     '/Reports/EmployeeActivity',
     '/Finance/Payments'
+  ]);
+});
+
+test('discovers report routes from authenticated page and internal javascript assets', async () => {
+  const calls = [];
+  const session = {
+    requestText: async path => {
+      calls.push(path);
+      if (path === '/') {
+        return '<script src="/dist/app.js?v=1"></script><a href="/Finance/Payments">Оплаты</a>';
+      }
+      assert.equal(path, '/dist/app.js');
+      return 'const employeeActivity = "/Reports/EmployeeActivity?tenant=private";';
+    }
+  };
+
+  const result = await probeAshkReportRoutes({ session });
+
+  assert.deepEqual(calls, ['/', '/dist/app.js']);
+  assert.deepEqual(result, [
+    { href: '/Finance/Payments', text: 'Оплаты' },
+    { href: '/Reports/EmployeeActivity', text: '' }
   ]);
 });
