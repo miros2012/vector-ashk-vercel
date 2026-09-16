@@ -128,6 +128,38 @@ test('gateway recognition falls through from a rate-limited model to a second in
   assert.equal(result.model, 'anthropic/claude-sonnet-5');
 });
 
+test('gateway recognition also falls through when one provider rejects request options', async () => {
+  const attempted = [];
+  const fetchImpl = async (url, options = {}) => {
+    if (String(url).endsWith('/v1/models')) {
+      return jsonResponse(200, {
+        data: [
+          { id: 'openai/gpt-5.6-luna', modalities: { input: ['text', 'image'], output: ['text'] } },
+          { id: 'anthropic/claude-sonnet-5', modalities: { input: ['text', 'image'], output: ['text'] } }
+        ]
+      });
+    }
+    const request = JSON.parse(options.body);
+    attempted.push(request.model);
+    if (request.model === 'openai/gpt-5.6-luna') return jsonResponse(400, { error: { type: 'invalid_request_error' } });
+    return jsonResponse(200, {
+      choices: [{ message: { content: JSON.stringify({
+        initialBalance: 10,
+        visibleMoneyRowCount: 0,
+        finalBalance: 10,
+        finalBalanceReadable: true,
+        pageNote: '',
+        operations: []
+      }) } }]
+    });
+  };
+
+  const result = await recognizeCashPhotoViaGateway({ gatewayToken: 'oidc-token', payload: geminiPayload(), fetchImpl });
+
+  assert.deepEqual(attempted, ['openai/gpt-5.6-luna', 'anthropic/claude-sonnet-5']);
+  assert.equal(result.model, 'anthropic/claude-sonnet-5');
+});
+
 test('provider fallback uses AI Gateway only for retryable direct Gemini failures', async () => {
   let gatewayCalls = 0;
   const retryable = Object.assign(new Error('temporary'), { retryable: true, diagnostics: ['gemini: HTTP 429'] });
