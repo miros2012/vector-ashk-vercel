@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   extractDefinedModule,
   extractAdminKpiReportConfig,
+  extractTemplateStoreConfig,
   probeAshkAdminKpiModule
 } from '../lib/ashk-adminkpi-module-probe.js';
 
@@ -32,11 +33,26 @@ test('extracts report template and loadWith parameter names from admin KPI modul
   assert.match(result.context, /loadWith/);
 });
 
-test('scans authenticated assets and returns only the admin KPI module diagnostic', async () => {
+test('extracts template-store server commands used to resolve template ids', () => {
+  const source = `define("models/templates",[],function(){
+    var list = Dsc.server.query("DocTemplateList", {});
+    function getByName(name){ return list.find(x => x.Name === name); }
+    return { getByName:getByName };
+  }),define("after",[],function(){})`;
+  const result = extractTemplateStoreConfig(source);
+  assert.deepEqual(result.commands, ['DocTemplateList']);
+  assert.match(result.context, /getByName/);
+});
+
+test('scans authenticated assets and returns admin KPI and template-store diagnostics', async () => {
   const session = {
     requestText: async path => {
       if (path === '/') return '<script src="/app.js"></script>';
-      if (path === '/app.js') return 'define("views/reports/adminkpi",[],function(){return {view:"reportpanel",templateName:"_SYSADMINKPI"}}),define("after",[],function(){})';
+      if (path === '/app.js') return [
+        'define("models/templates",[],function(){return Dsc.server.query("DocTemplateList",{})}),',
+        'define("views/reports/adminkpi",[],function(){return {view:"reportpanel",templateName:"_SYSADMINKPI"}}),',
+        'define("after",[],function(){})'
+      ].join('');
       throw new Error(`unexpected ${path}`);
     }
   };
@@ -44,4 +60,5 @@ test('scans authenticated assets and returns only the admin KPI module diagnosti
   assert.equal(result.asset, '/app.js');
   assert.equal(result.templateName, '_SYSADMINKPI');
   assert.ok(result.context.length > 0);
+  assert.deepEqual(result.templateStore.commands, ['DocTemplateList']);
 });
