@@ -39,8 +39,8 @@ const PAYMENT_VALUES = [
     'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
     'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
   ],
-  [1,'2026-09-07 10:00:00',101,7001,1,'Курс',49650,49650,'','Антонова Карина','OK_SALE_EMPLOYEE'],
-  [2,'2026-09-14 10:00:00',100,7000,1,'Курс',48267,-48267,'','Антонова Карина','OK_SALE_EMPLOYEE']
+  [1,'2026-09-07 10:00:00',101,7001,1,'Курс',49650,49650,'Антонова Карина','Антонова Карина','OK_SALE_EMPLOYEE'],
+  [2,'2026-09-14 10:00:00',100,7000,1,'Курс',48267,-48267,'Антонова Карина','Антонова Карина','OK_SALE_EMPLOYEE']
 ];
 
 test('refund stays in branch cash fact but does not reduce manager personal KPI', () => {
