@@ -72,8 +72,16 @@ test('probe returns only endpoint status and schema and continues after unsuppor
   assert.equal(JSON.stringify(result).includes('Кумаритова Алина'), false);
 });
 
-test('full diagnostic compares complete internal payment set and exposes only Alina aggregate', async () => {
+test('full diagnostic compares complete internal payment set and exposes only compact period hints plus Alina aggregate', async () => {
   const session = {
+    requestText: async path => {
+      if (path === '/') return '<script src="/app.js"></script>';
+      if (path === '/app.js') return [
+        'define("views/paymentrecord/filter",[],function(){return {rows:[{name:"Start",label:"Дата с"},{name:"Finish",label:"Дата по"}]}}),',
+        'define("views/paymentrecord/list",[],function(){return {command:"PaymentRecordDebitList",queryParams:function(){return {Start:1,Finish:2}}}})'
+      ].join('');
+      throw new Error('unexpected asset');
+    },
     requestJson: async (path, params) => {
       if (path !== '/api/PaymentRecordDebitList') throw new Error('ASHK web request failed: 404');
       if (!Object.hasOwn(params, 'start')) {
@@ -112,6 +120,17 @@ test('full diagnostic compares complete internal payment set and exposes only Al
   });
 
   assert.equal(result.endpoints.find(item => item.endpoint === '/api/PaymentRecordDebitList').ok, true);
+  assert.deepEqual(result.periodHints, {
+    asset: '/app.js',
+    found: true,
+    candidateKeys: ['Finish', 'Start'],
+    filterFields: [
+      { name: 'Finish', label: 'Дата по' },
+      { name: 'Start', label: 'Дата с' }
+    ]
+  });
+  assert.equal(Object.hasOwn(result.periodHints, 'context'), false);
+  assert.equal(Object.hasOwn(result.periodHints, 'filterContext'), false);
   assert.deepEqual(result.employeeSource, {
     metrics: { rows: 3, totalCount: 3, pages: 2, debitTotal: 350, minPayDate: '2026-09-01 10:00:00', maxPayDate: '2026-09-02 12:00:00' },
     alinaCandidates: [{ employee: 'Кумаритова Алина', positive: 150, negative: 0, net: 150, rows: 2 }],
