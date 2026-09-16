@@ -46,7 +46,8 @@ test('native recognition writes archive only and duplicate upload creates no new
   assert.equal(first.code,200);assert.equal(first.body.rowsRecognized,1);assert.equal(first.body.reviewCount,1);
   assert.equal(again.body.alreadyStored,true);assert.equal(f.rows.length,1);assert.equal(f.requests.length,1);
   assert.equal(f.events.filter(x=>x==='drive').length,1);
-  assert.equal(f.rows[0][7],'Распознано — ожидает обработки');assert.equal(f.rows[0][10],'');
+  assert.equal(f.rows[0][7],'Распознано — требуется проверка');assert.equal(f.rows[0][10],'');
+  assert.match(f.rows[0][12],/\[QUALITY\]/);
   assert.equal(JSON.parse(f.rows[0][13]).operations.length,1);
   assert.ok(f.writes.every(range=>range.startsWith("'Архив кассовых фото'!")));
   assert.ok(f.requests[0].url.startsWith('https://generativelanguage.googleapis.com/'));
