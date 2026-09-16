@@ -56,8 +56,7 @@ test('cash photo gateway preserves only a sanitized standard 403 reason in diagn
     error => {
       assert.equal(error.retryable, true);
       assert.deepEqual(error.diagnostics, [
-        'openai/gpt-5.6-luna: HTTP 403 customer_verification_required',
-        'anthropic/claude-sonnet-5: HTTP 403 no_providers_available'
+        'openai/gpt-5.6-luna: HTTP 403 customer_verification_required'
       ]);
       assert.doesNotMatch(JSON.stringify(error.diagnostics), /Sensitive upstream|Another sensitive/i);
       return true;
