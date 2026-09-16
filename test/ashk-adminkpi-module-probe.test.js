@@ -44,6 +44,18 @@ test('extracts template-store server commands used to resolve template ids', () 
   assert.match(result.context, /getByName/);
 });
 
+test('ignores unrelated root server actions when models/templates is absent', () => {
+  const source = `
+    Dsc.server.action("MobilePersonalData", {}, dash);
+    define("views/other",[],function(){ return Dsc.server.query("OtherList", {}); });
+  `;
+  assert.deepEqual(extractTemplateStoreConfig(source), {
+    commands: [],
+    apiPaths: [],
+    context: ''
+  });
+});
+
 test('scans authenticated assets and returns admin KPI and template-store diagnostics', async () => {
   const session = {
     requestText: async path => {
