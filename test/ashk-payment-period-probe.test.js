@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   extractPaymentRecordDebitListHints,
+  extractPaymentRecordFilterHints,
   probeAshkPaymentRecordDebitListHints
 } from '../lib/ashk-payment-period-probe.js';
 
@@ -25,6 +26,29 @@ test('extracts bounded query/filter context around PaymentRecordDebitList withou
   assert.ok(result.context.length <= 5000);
 });
 
+test('extracts paymentrecord filter field names and labels from its own AMD module', () => {
+  const source = `
+    define("views/paymentrecord/filter",[],function(){
+      return {view:"form",rows:[
+        {name:"Start",label:"Дата оплаты с"},
+        {name:"Finish",label:"Дата оплаты по"},
+        {name:"EmployeeIds",label:"Сотрудник"},
+        {name:"Confirmed",label:"Проведён"}
+      ]};
+    }),
+    define("after",[],function(){return {name:"Ignore"}});
+  `;
+  const result = extractPaymentRecordFilterHints(source);
+  assert.equal(result.found, true);
+  assert.deepEqual(result.fields, [
+    { name: 'Confirmed', label: 'Проведён' },
+    { name: 'EmployeeIds', label: 'Сотрудник' },
+    { name: 'Finish', label: 'Дата оплаты по' },
+    { name: 'Start', label: 'Дата оплаты с' }
+  ]);
+  assert.doesNotMatch(result.context, /Ignore/);
+});
+
 test('returns an empty safe diagnostic when payment command is absent', () => {
   assert.deepEqual(extractPaymentRecordDebitListHints('define("x",[],function(){})'), {
     found: false,
@@ -33,14 +57,17 @@ test('returns an empty safe diagnostic when payment command is absent', () => {
   });
 });
 
-test('scans authenticated internal javascript assets until PaymentRecordDebitList is found', async () => {
+test('scans authenticated internal javascript assets and includes payment filter fields', async () => {
   const calls = [];
   const session = {
     requestText: async path => {
       calls.push(path);
       if (path === '/') return '<script src="/a.js"></script><script src="/b.js"></script>';
       if (path === '/a.js') return 'define("x",[],function(){})';
-      if (path === '/b.js') return 'define("payments",[],function(){return {command:"PaymentRecordDebitList",queryParams:function(){return {PayDateFrom:1,PayDateTo:2}}}})';
+      if (path === '/b.js') return [
+        'define("views/paymentrecord/filter",[],function(){return {rows:[{name:"Start",label:"Дата с"},{name:"Finish",label:"Дата по"}]}}),',
+        'define("payments",[],function(){return {command:"PaymentRecordDebitList",queryParams:function(){return {PayDateFrom:1,PayDateTo:2}}}})'
+      ].join('');
       throw new Error('unexpected');
     }
   };
@@ -48,5 +75,9 @@ test('scans authenticated internal javascript assets until PaymentRecordDebitLis
   assert.deepEqual(calls, ['/', '/a.js', '/b.js']);
   assert.equal(result.asset, '/b.js');
   assert.deepEqual(result.candidateKeys, ['PayDateFrom','PayDateTo']);
+  assert.deepEqual(result.filterFields, [
+    { name: 'Finish', label: 'Дата по' },
+    { name: 'Start', label: 'Дата с' }
+  ]);
   assert.equal(result.found, true);
 });
