@@ -8,20 +8,29 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(fs.readFileSync(path.join(here, '..', 'vercel.json'), 'utf8'));
 const apiDirectory = path.join(here, '..', 'api');
 const financePath = '/api/nightly-finance-orchestrator';
-const publishPath = '/api/health';
+const healthPath = '/api/health';
+const cashPhotoRetryPath = '/api/cash-photo-retry-cron';
 const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
 const publishSchedules = ['35 21 * * *'];
+const cashPhotoRetrySchedules = [
+  '45 21 * * *',
+  ...Array.from({ length: 12 }, (_, index) => `15 ${index + 4} * * *`)
+];
 
-test('Hobby deployment uses only once-per-day cron expressions on finance and ROP publisher routes', () => {
+test('Hobby deployment uses once-per-day cron expressions on bounded routes', () => {
   assert.ok(Array.isArray(config.crons), 'vercel.json must define crons');
   const financeCrons = config.crons.filter((cron) => cron.path === financePath);
-  const publishCrons = config.crons.filter((cron) => cron.path === publishPath);
+  const healthCrons = config.crons.filter((cron) => cron.path === healthPath);
+  const cashPhotoCrons = config.crons.filter((cron) => cron.path === cashPhotoRetryPath);
   assert.equal(financeCrons.length, 13, 'expected nightly full sync plus 12 daily intraday ROP schedules');
-  assert.equal(publishCrons.length, 1, 'expected one nightly standalone ROP fallback');
-  assert.equal(config.crons.length, 14, 'only finance schedules and one ROP fallback should be configured');
+  assert.equal(healthCrons.length, 1, 'expected one ROP fallback schedule');
+  assert.equal(cashPhotoCrons.length, 13, 'expected 13 server-side cash-photo recovery schedules');
+  assert.equal(config.crons.length, 27, 'only finance, ROP fallback, and cash-photo recovery routes should be scheduled');
   assert.deepEqual(financeCrons.map((cron) => cron.schedule).sort(), ['30 21 * * *', ...intradaySchedules].sort());
-  assert.deepEqual(publishCrons.map((cron) => cron.schedule).sort(), publishSchedules.sort());
-  assert.ok(!config.crons.some((cron) => cron.schedule.includes('-')), 'Hobby cron expressions must not run multiple times per day');
+  assert.deepEqual(healthCrons.map((cron) => cron.schedule).sort(), publishSchedules.sort());
+  assert.deepEqual(cashPhotoCrons.map((cron) => cron.schedule).sort(), cashPhotoRetrySchedules.sort());
+  assert.ok(!config.crons.some((cron) => cron.schedule.includes('-')), 'Hobby cron expressions must not use ranges');
+  assert.ok(!config.crons.some((cron) => cron.schedule.includes('/')), 'Hobby cron expressions must not use interval syntax');
 });
 
 test('nightly finance cron schedule is daily at 02:30 Tyumen', () => {
@@ -38,13 +47,23 @@ test('intraday ROP uses twelve once-daily UTC schedules covering 09:00 through 2
 });
 
 test('ROP publisher keeps a nightly fallback after immediate source-to-target publishing', () => {
-  const schedules = config.crons.filter((item) => item.path === publishPath).map((item) => item.schedule);
-  assert.deepEqual(schedules.sort(), publishSchedules.sort());
+  const schedules = config.crons.filter((item) => item.path === healthPath).map((item) => item.schedule);
+  assert.deepEqual(schedules, publishSchedules);
+});
+
+test('cash photo recovery runs independently after intraday finance and once overnight', () => {
+  const schedules = config.crons.filter((item) => item.path === cashPhotoRetryPath).map((item) => item.schedule);
+  assert.deepEqual(schedules.sort(), cashPhotoRetrySchedules.sort());
 });
 
 test('nightly orchestrator has enough duration for sequential HOURS and decisions stages', () => {
   const duration = Number(config.functions?.['api/nightly-finance-orchestrator.js']?.maxDuration || 0);
   assert.ok(duration >= 120, `nightly orchestrator maxDuration must be at least 120s, got ${duration}s`);
+});
+
+test('health function has enough duration for one bounded concurrent cash-photo recovery batch', () => {
+  const duration = Number(config.functions?.['api/health.js']?.maxDuration || 0);
+  assert.ok(duration >= 60, `health maxDuration must be at least 60s, got ${duration}s`);
 });
 
 test('Hobby Vercel auto-deploys only main to avoid preview build-rate exhaustion', () => {
@@ -64,7 +83,7 @@ test('Hobby deployment stays within the 12 Serverless Function limit', () => {
   );
 });
 
-test('owner dashboard URLs rewrite to the existing decision-event function', () => {
+test('friendly URLs rewrite to existing serverless functions only', () => {
   const rewrites = config.rewrites || [];
   assert.deepEqual(rewrites, [
     { source: '/api/owner-action', destination: '/api/decision-event?ownerRoute=action' },
@@ -73,6 +92,7 @@ test('owner dashboard URLs rewrite to the existing decision-event function', () 
     { source: '/api/owner-package', destination: '/api/decision-event?ownerRoute=package' },
     { source: '/api/owner-dashboard-session', destination: '/api/decision-event?ownerRoute=dashboard-session' },
     { source: '/api/owner-dashboard-data', destination: '/api/decision-event?ownerRoute=dashboard-data' },
-    { source: '/api/owner-dashboard-google', destination: '/api/decision-event?ownerRoute=dashboard-google' }
+    { source: '/api/owner-dashboard-google', destination: '/api/decision-event?ownerRoute=dashboard-google' },
+    { source: '/api/cash-photo-retry-cron', destination: '/api/health?cashPhotoRoute=retry-cron' }
   ]);
 });

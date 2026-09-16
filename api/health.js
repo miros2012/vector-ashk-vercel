@@ -18,7 +18,10 @@ import { createCashPhotoStore } from '../lib/cash-photo-store.js';
 import { createCashPhotoUploadHttpHandler } from '../lib/cash-photo-upload-http.js';
 import { createCashPhotoUploadService } from '../lib/cash-photo-upload-service.js';
 import { createCashPhotoConfigHttpHandler } from '../lib/cash-photo-config-http.js';
-import { createCashPhotoRetryHttpHandler } from '../lib/cash-photo-retry-http.js';
+import {
+  createCashPhotoRetryCronHttpHandler,
+  createCashPhotoRetryHttpHandler
+} from '../lib/cash-photo-retry-http.js';
 import { createCashPhotoRetryService } from '../lib/cash-photo-retry-service.js';
 import { buildCashPhotoGeminiPayload } from '../lib/cash-photo-prompt.js';
 import { recognizeWithFallback, probeGeminiModels, DEFAULT_CASH_PHOTO_MODELS } from '../lib/cash-photo-recognizer.js';
@@ -34,7 +37,7 @@ const TOCHKA_HEARTBEAT_KEY_HASH_MARKER = 'tochka_operations_heartbeat_key_sha256
 const CASH_PHOTO_SPREADSHEET_ID = process.env.CASH_PHOTO_SPREADSHEET_ID || SOURCE_SPREADSHEET_ID;
 const CASH_PHOTO_DRIVE_FOLDER_ID = process.env.CASH_PHOTO_DRIVE_FOLDER_ID || '1PHTv_r47ZEbnH76I7zbC5YgphpELpkfG';
 const CASH_PHOTO_MODELS = DEFAULT_CASH_PHOTO_MODELS;
-const CASH_PHOTO_ROUTES = new Set(['config', 'upload', 'retry', 'probe']);
+const CASH_PHOTO_ROUTES = new Set(['config', 'upload', 'retry', 'retry-cron', 'probe']);
 const RANGES = {
   'РОП_Штаб_Утро': 'A:X',
   'РОП_Задачи_Сегодня': 'A:P',
@@ -297,6 +300,11 @@ async function getCashPhotoServices() {
         retryHandler: createCashPhotoRetryHttpHandler({
           authorize: token => access.authorize(token),
           retryService
+        }),
+        cronRetryHandler: createCashPhotoRetryCronHttpHandler({
+          authorizeCron: isAuthorizedCron,
+          retryService,
+          batchLimit: 3
         })
       };
     })();
@@ -355,6 +363,29 @@ async function handleCashPhotoRoute(req, res, route) {
       ok: false,
       error: 'cash_photo_service_unavailable',
       message: 'Сервис загрузки временно недоступен. Попробуйте ещё раз позже.'
+    });
+  }
+}
+
+async function handleCashPhotoCronRoute(req, res) {
+  res.setHeader?.('Cache-Control', 'no-store');
+  const method = String(req?.method || '').toUpperCase();
+  if (method !== 'GET') {
+    res.setHeader?.('Allow', 'GET');
+    return res.status(405).json({ ok: false, error: 'method_not_allowed' });
+  }
+  if (!isAuthorizedCron(req)) {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
+  }
+  try {
+    const services = await getCashPhotoServices();
+    return await services.cronRetryHandler(req, res);
+  } catch (error) {
+    console.error('cash-photo-cron-retry:', error?.name || 'Error');
+    return res.status(503).json({
+      ok: false,
+      error: 'cash_photo_retry_unavailable',
+      message: 'Распознавание временно недоступно. Фото сохранено.'
     });
   }
 }
@@ -448,6 +479,7 @@ const handleCashPhotoSmoke = createCashPhotoSmokeHandler({
 
 export default async function handler(req, res) {
   const route = cashPhotoRoute(req);
+  if (route === 'retry-cron') return handleCashPhotoCronRoute(req, res);
   if (route) return handleCashPhotoRoute(req, res, route);
 
   const body = requestBody(req);

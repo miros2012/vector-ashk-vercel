@@ -62,8 +62,10 @@ test('health route reserves authenticated mirror cron schedules without changing
   assert.match(health, new RegExp(TARGET));
 });
 
-test('Vercel keeps only one nightly standalone ROP fallback after immediate publishing', () => {
+test('Vercel keeps exactly one nightly standalone ROP fallback after immediate publishing', () => {
   const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
-  const healthCrons = config.crons.filter(cron => cron.path === '/api/health').map(cron => cron.schedule).sort();
-  assert.deepEqual(healthCrons, ['35 21 * * *']);
+  const ropFallbacks = config.crons.filter(cron =>
+    cron.path === '/api/health' && cron.schedule === '35 21 * * *'
+  );
+  assert.equal(ropFallbacks.length, 1);
 });
