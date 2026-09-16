@@ -286,6 +286,7 @@ async function getCashPhotoServices() {
       return {
         store,
         uploadService,
+        retryService,
         sheets,
         spreadsheetId: CASH_PHOTO_SPREADSHEET_ID,
         driveWriter,
