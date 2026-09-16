@@ -109,7 +109,7 @@ test('separate OAuth writer owns new uploads while legacy reader remains availab
   assert.equal(calls.at(-1)[0], 'drive.get');
 });
 
-test('markRecognized updates only cash photo archive fields and never DDS', async () => {
+test('markRecognized routes flagged OCR to review and never DDS', async () => {
   const { drive, sheets, calls } = makeClients();
   const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
   await store.markRecognized({ photoId: 'PHOTO-1', archiveRow: 302 }, {
@@ -119,7 +119,7 @@ test('markRecognized updates only cash photo archive fields and never DDS', asyn
 
   const update = calls.find((c) => c[0] === 'sheets.update')[1];
   assert.equal(update.range, "'Архив кассовых фото'!H302:N302");
-  assert.equal(update.requestBody.values[0][0], 'Распознано — ожидает обработки');
+  assert.equal(update.requestBody.values[0][0], 'Распознано — требуется проверка');
   assert.equal(update.requestBody.values[0][1], 2);
   assert.equal(update.requestBody.values[0][2], 1);
   assert.equal(update.requestBody.values[0][4], 'google/gemini-3.8-flash');
