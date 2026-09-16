@@ -18,7 +18,10 @@ import { createCashPhotoStore } from '../lib/cash-photo-store.js';
 import { createCashPhotoUploadHttpHandler } from '../lib/cash-photo-upload-http.js';
 import { createCashPhotoUploadService } from '../lib/cash-photo-upload-service.js';
 import { createCashPhotoConfigHttpHandler } from '../lib/cash-photo-config-http.js';
-import { createCashPhotoRetryHttpHandler } from '../lib/cash-photo-retry-http.js';
+import {
+  createCashPhotoRetryCronHttpHandler,
+  createCashPhotoRetryHttpHandler
+} from '../lib/cash-photo-retry-http.js';
 import { createCashPhotoRetryService } from '../lib/cash-photo-retry-service.js';
 import { buildCashPhotoGeminiPayload } from '../lib/cash-photo-prompt.js';
 import { recognizeWithFallback, probeGeminiModels, DEFAULT_CASH_PHOTO_MODELS } from '../lib/cash-photo-recognizer.js';
@@ -26,6 +29,10 @@ import { recognizeWithFallback, probeGeminiModels, DEFAULT_CASH_PHOTO_MODELS } f
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
 const PUBLISH_SCHEDULES = new Set(['35 21 * * *']);
+const CASH_PHOTO_RETRY_SCHEDULES = new Set([
+  '45 21 * * *',
+  ...Array.from({ length: 12 }, (_, index) => `15 ${index + 4} * * *`)
+]);
 const HOURLY_AGENT_MODES = new Set(['hourly_agent_probe', 'hourly_agent_patch']);
 const OWNER_PACKAGE_SMOKE_MODE = 'owner_package_smoke';
 const CONTROL_SHEET = '__vercel_control';
@@ -297,6 +304,11 @@ async function getCashPhotoServices() {
         retryHandler: createCashPhotoRetryHttpHandler({
           authorize: token => access.authorize(token),
           retryService
+        }),
+        cronRetryHandler: createCashPhotoRetryCronHttpHandler({
+          authorizeCron: isAuthorizedCron,
+          retryService,
+          batchLimit: 3
         })
       };
     })();
@@ -473,6 +485,26 @@ export default async function handler(req, res) {
   }
 
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
+  if (CASH_PHOTO_RETRY_SCHEDULES.has(schedule)) {
+    res.setHeader?.('Cache-Control', 'no-store');
+    if (method !== 'GET') {
+      return res.status(405).json({ ok: false, error: 'Use GET' });
+    }
+    if (!isAuthorizedCron(req)) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
+    try {
+      const services = await getCashPhotoServices();
+      return await services.cronRetryHandler(req, res);
+    } catch (error) {
+      console.error('cash-photo-cron-retry:', error?.name || 'Error');
+      return res.status(503).json({
+        ok: false,
+        error: 'cash_photo_retry_unavailable',
+        message: 'Распознавание временно недоступно. Фото сохранено.'
+      });
+    }
+  }
   if (PUBLISH_SCHEDULES.has(schedule)) {
     res.setHeader?.('Cache-Control', 'no-store');
     if (method !== 'GET') {
