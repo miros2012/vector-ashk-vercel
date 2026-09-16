@@ -35,16 +35,20 @@ test('extracts only internal js resources and strips query strings', () => {
   ]);
 });
 
-test('extracts safe report-like internal route strings from inline html or javascript', () => {
+test('extracts safe report and navigation route strings from inline html or javascript', () => {
   const source = `
     window.menu = { employee: '/Reports/EmployeeActivity?school=secret' };
     const payments = "/Finance/Payments#today";
+    const menu = '/api/MenuGet?tenant=private';
+    const analytics = '/Analytics/StaffStatistics';
     const student = '/Student/List';
     const external = 'https://other.example.com/Reports/Leak';
   `;
   assert.deepEqual(extractAshkRouteStrings(source), [
     '/Reports/EmployeeActivity',
-    '/Finance/Payments'
+    '/Finance/Payments',
+    '/api/MenuGet',
+    '/Analytics/StaffStatistics'
   ]);
 });
 
@@ -68,4 +72,18 @@ test('discovers report routes from authenticated page and internal javascript as
     { href: '/Finance/Payments', text: 'Оплаты' },
     { href: '/Reports/EmployeeActivity', text: '' }
   ]);
+});
+
+test('scans at least twelve internal javascript assets by default', async () => {
+  const scripts = Array.from({ length: 12 }, (_, index) => `<script src="/js/${index + 1}.js"></script>`).join('');
+  const session = {
+    requestText: async path => {
+      if (path === '/') return scripts;
+      if (path === '/js/12.js') return 'const menu = "/api/MenuGet";';
+      return 'const noop = true;';
+    }
+  };
+
+  const result = await probeAshkReportRoutes({ session });
+  assert.deepEqual(result, [{ href: '/api/MenuGet', text: '' }]);
 });
