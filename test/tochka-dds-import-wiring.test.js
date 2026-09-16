@@ -20,8 +20,10 @@ test('existing finance route wires protected current-day Tochka DDS import into 
   assert.ok(dateAt >= 0 && importAt >= 0);
 });
 
-test('current-day DDS import adds no API route, function or cron', () => {
+test('current-day DDS import adds no API route, function or dedicated cron', () => {
+  const financeCrons = config.crons.filter(cron => cron.path === '/api/nightly-finance-orchestrator');
   assert.equal(Object.keys(config.functions || {}).length, 5);
-  assert.equal(config.crons.length, 14);
+  assert.equal(financeCrons.length, 13);
   assert.ok(!Object.keys(config.functions || {}).some(file => file.includes('tochka-dds')));
+  assert.ok(!config.crons.some(cron => cron.path.includes('tochka-dds')));
 });
