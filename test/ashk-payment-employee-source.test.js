@@ -41,7 +41,14 @@ test('loads every PaymentRecordDebitList page with stable start/count pagination
     { path: '/api/PaymentRecordDebitList', params: { StartDate: '2026-09-01', EndDate: '2026-09-16', start: 2, count: 2 } }
   ]);
   assert.deepEqual(result.rows.map(row => row.Id), [1, 2, 3]);
-  assert.deepEqual(result.metrics, { rows: 3, totalCount: 3, pages: 2 });
+  assert.deepEqual(result.metrics, {
+    rows: 3,
+    totalCount: 3,
+    pages: 2,
+    debitTotal: 600,
+    minPayDate: '2026-09-01 10:00:00',
+    maxPayDate: '2026-09-02 12:00:00'
+  });
 });
 
 test('fails closed when PaymentRecordDebitList pagination repeats without progress', async () => {
