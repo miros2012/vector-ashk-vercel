@@ -70,6 +70,32 @@ test('logs in and reads SaleList with session cookies', async () => {
   assert.match(calls[2].url, /Period=Today/);
 });
 
+test('reads authenticated HTML with the same session cookies', async () => {
+  const calls = [];
+  const replies = [
+    response({
+      body: '<input name="__RequestVerificationToken" value="csrf">',
+      cookies: ['anti=a; path=/'],
+      contentType: 'text/html'
+    }),
+    response({ body: { success: true, data: {} }, cookies: ['session=b; path=/'] }),
+    response({ body: '<a href="/reports/employees">Активность сотрудников</a>', contentType: 'text/html' })
+  ];
+  const session = createAshkWebSession({
+    baseUrl: 'https://app.dscontrol.ru',
+    login: 'current-user',
+    password: 'secret',
+    fetchFn: async (url, options = {}) => {
+      calls.push({ url: String(url), options });
+      return replies.shift();
+    }
+  });
+
+  const html = await session.requestText('/');
+  assert.match(html, /Активность сотрудников/);
+  assert.match(calls[2].options.headers.Cookie, /session=b/);
+});
+
 test('re-authenticates only once after an expired session', async () => {
   let loginGets = 0;
   let apiCalls = 0;
