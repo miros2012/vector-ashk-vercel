@@ -10,12 +10,13 @@ const health = fs.readFileSync(path.join(root, 'api', 'health.js'), 'utf8');
 const config = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
 const apiFiles = fs.readdirSync(path.join(root, 'api')).filter((name) => name.endsWith('.js'));
 
-test('cash photo surface is multiplexed through existing health function without adding Hobby functions or crons', () => {
+test('cash photo surface and recovery stay multiplexed through the existing health function', () => {
   assert.match(health, /cashPhotoRoute/);
   assert.match(health, /createCashPhotoUploadService/);
   assert.match(health, /createCashPhotoRetryService/);
+  assert.match(health, /createCashPhotoRetryCronHttpHandler/);
   assert.equal(apiFiles.some((name) => name.startsWith('cash-photo-')), false);
-  assert.equal(config.crons.length, 14);
+  assert.equal(config.crons.filter((cron) => cron.path === '/api/health').length, 14);
   assert.equal(Object.keys(config.functions || {}).length, 5);
 });
 
