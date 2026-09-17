@@ -11,6 +11,11 @@ const HEADER = [
   'Контрагент','Назначение платежа','Статья','Платеж/поступл','Вид д-ти',
   'Месяц P&L','Комментарий P&L','Ключ дубля','transactionId'
 ];
+const CONTROL_HEADER = [
+  'Дата операции','Фонд','Счёт','Тип движения','Сумма со знаком','Контрагент',
+  'ИНН','Назначение платежа','Тип операции','transactionId','Ключ дубля',
+  'Статус интеграции','Статья ДДС авто','Вид д-ти','Месяц P&L','Готовность'
+];
 const BUSINESS_DATE = '2026-09-04';
 const BUSINESS_DATE_SERIAL = 46269;
 const NOW = new Date('2026-09-04T15:00:00.000Z');
@@ -32,6 +37,21 @@ function readyRow({
   ];
 }
 
+function importedControlRow({
+  date = BUSINESS_DATE_SERIAL,
+  amount = 5000,
+  key = K1,
+  transactionId = 'cbs-tb;2480375816;1',
+  category = 'Продажи',
+  movement = 'Приход'
+} = {}) {
+  return [
+    date, 'Общий', 112, movement, amount, 'ООО "Банк Точка"', 9721194461,
+    'QR операция', 'Банковский ордер', transactionId, key, 'К импорту',
+    category, 'Операционная', 9, 'Импортировано ранее'
+  ];
+}
+
 function responseRecorder() {
   return {
     statusCode: 200,
@@ -43,7 +63,7 @@ function responseRecorder() {
   };
 }
 
-function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsReadbackFails = false } = {}) {
+function sheetsMock({ readyValues, controlValues = [CONTROL_HEADER], ddsComments = [], journalValues = [], ddsReadbackFails = false } = {}) {
   const calls = [];
   let leaseState = 'IDLE';
   const state = {
@@ -62,7 +82,8 @@ function sheetsMock({ readyValues, ddsComments = [], journalValues = [], ddsRead
                 { values: readyValues.map(row => [...row]) },
                 { values: state.ddsComments.map(row => [...row]) },
                 { values: state.journalValues.map(row => [...row]) },
-                { values: state.ddsAnchorValues.map(row => [...row]) }
+                { values: state.ddsAnchorValues.map(row => [...row]) },
+                { values: controlValues.map(row => [...row]) }
               ]
             }
           };
@@ -186,6 +207,25 @@ test('plan fails closed on a malformed or duplicate current-day ready row', () =
     businessDate: BUSINESS_DATE,
     now: NOW
   }), /duplicate Tochka key/i);
+});
+
+test('plan repairs a journal-only imported control row that is missing from DDS', () => {
+  const plan = buildCurrentDayTochkaDdsPlan({
+    readyValues: [HEADER],
+    controlValues: [CONTROL_HEADER, importedControlRow()],
+    ddsCommentValues: [],
+    journalValues: [[K1, 'cbs-tb;2480375816;1', '04.09.2026', '04.09.2026 09:00:00', 'Импортировано']],
+    businessDate: BUSINESS_DATE,
+    now: NOW
+  });
+
+  assert.deepEqual(plan.eligibleKeys, [K1]);
+  assert.deepEqual(plan.ddsRows, [[
+    'Сентябрь', 9, BUSINESS_DATE_SERIAL, 5000, 1, '', 'ООО "Банк Точка"',
+    'QR операция', 'Продажи', 'Поступление', 'Операционная', 9,
+    `Точка API | ${K1}`
+  ]]);
+  assert.deepEqual(plan.journalRows, []);
 });
 
 test('sync writes DDS first, verifies it, then appends and verifies the journal', async () => {
