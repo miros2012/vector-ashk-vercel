@@ -121,6 +121,38 @@ test('intraday orchestrator runs full verified finance decision pipeline in orde
   });
 });
 
+test('intraday orchestrator reuses the verified ROP publish returned by receivables', async () => {
+  const calls = [];
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runPayments: child(calls, 'payments'),
+    runReceivables: child(calls, 'receivables', {
+      ok: true,
+      verified: true,
+      afterVerified: {
+        ok: true,
+        liveDate: '2026-09-17',
+        standalonePublished: true,
+        standaloneSheets: 5
+      }
+    }),
+    refreshRop: async () => {
+      calls.push(['rop', 'internal']);
+      return { ok: true, liveDate: '2026-09-17' };
+    },
+    ...requiredTail(calls)
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls.map(call => call[0]), [
+    'payments', 'receivables', 'dataHealth', 'decisions', 'ownerActionQueue'
+  ]);
+  assert.deepEqual(res.body.stages.rop, { ok: true, liveDate: '2026-09-17' });
+});
+
 test('intraday orchestrator fails closed when payment sync fails', async () => {
   let refreshed = false;
   const calls = [];
