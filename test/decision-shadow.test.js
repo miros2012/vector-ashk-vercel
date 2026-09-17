@@ -4,6 +4,7 @@ import {
   buildDecisionFinancialSnapshot,
   compareDecisionShadow
 } from '../lib/decision-shadow.js';
+import { evaluateDecisionRule } from '../lib/decision-rule-evaluators.js';
 
 const now = new Date('2026-08-31T17:00:00.000Z');
 
@@ -34,7 +35,7 @@ test('shadow mode reproduces all four current decision states from a standard fi
   const currentDecisions = [
     { ruleId: 'DEC-CASH-GAP', active: false, amount: 0, dueDate: null, linkedObjects: [] },
     { ruleId: 'DEC-EST-ADJ', active: true, amount: 857000, dueDate: null, linkedObjects: ['MASTERS-2026-08'] },
-    { ruleId: 'DEC-UNCONF-OBL', active: true, amount: 500000, dueDate: null, linkedObjects: ['ADMIN-2026-08', 'TAX-RESERVE'] },
+    { ruleId: 'DEC-UNCONF-OBL', active: true, amount: null, dueDate: null, linkedObjects: ['TAX-RESERVE'] },
     { ruleId: 'DEC-CRIT-DUE', active: true, amount: 1179607.46625, dueDate: '2026-09-03', linkedObjects: ['ROYALTY-2026-08'] }
   ];
 
@@ -46,12 +47,12 @@ test('shadow mode reproduces all four current decision states from a standard fi
   assert.equal(comparison.results.find((row) => row.ruleId === 'DEC-CRIT-DUE').shadow.amount, 1179607.46625);
   assert.equal(snapshot.obligations.estimatedAdjustments.count, 2);
   assert.equal(snapshot.obligations.estimatedAdjustments.amount, 857000);
-  assert.equal(snapshot.obligations.unconfirmed.count, 2);
-  assert.equal(snapshot.obligations.unconfirmed.amount, 500000);
-  assert.deepEqual(snapshot.obligations.unconfirmed.objectIds, ['ADMIN-2026-08', 'TAX-RESERVE']);
+  assert.equal(snapshot.obligations.unconfirmed.count, 1);
+  assert.equal(snapshot.obligations.unconfirmed.amount, null);
+  assert.deepEqual(snapshot.obligations.unconfirmed.objectIds, ['TAX-RESERVE']);
 });
 
-test('exact obligation estimate is treated as unconfirmed financial risk', () => {
+test('exact obligation estimate is planning information, not an unconfirmed obligation', () => {
   const snapshot = buildDecisionFinancialSnapshot({
     asOfDate: '2026-09-05',
     obligationRows: [
@@ -59,9 +60,53 @@ test('exact obligation estimate is treated as unconfirmed financial risk', () =>
     ]
   });
 
+  assert.equal(snapshot.obligations.unconfirmed.count, 0);
+  assert.equal(snapshot.obligations.unconfirmed.amount, 0);
+  assert.deepEqual(snapshot.obligations.unconfirmed.objectIds, []);
+});
+
+test('overdue open obligations remain payment candidates regardless of priority', () => {
+  const snapshot = buildDecisionFinancialSnapshot({
+    asOfDate: '2026-09-17',
+    obligationRows: [
+      { id: 'RENT-DEMOCHKINA', dueDate: '2026-09-08', remaining: 50718, priority: 'Высокий', status: 'Просрочено — частично оплачено' },
+      { id: 'RENT-NATCHUK', dueDate: '2026-09-12', remaining: 90000, priority: 'Высокий', status: 'Просрочено — частично оплачено' },
+      { id: 'PAID', dueDate: '2026-09-10', remaining: 1000, priority: 'Критический', status: 'Оплачено' }
+    ]
+  });
+
+  assert.deepEqual(snapshot.obligations.criticalPayments, [
+    { id: 'RENT-DEMOCHKINA', dueDate: '2026-09-08', amount: 50718, priority: 'Высокий' },
+    { id: 'RENT-NATCHUK', dueDate: '2026-09-12', amount: 90000, priority: 'Высокий' }
+  ]);
+});
+
+test('known unconfirmed overdue obligation activates both manual review and overdue payment risk', () => {
+  const snapshot = buildDecisionFinancialSnapshot({
+    asOfDate: '2026-09-17',
+    obligationRows: [
+      { id: 'REVIEW-OVERDUE', dueDate: '2026-09-10', remaining: 25000, priority: 'Высокий', status: 'Требует подтверждения' }
+    ]
+  });
+
   assert.equal(snapshot.obligations.unconfirmed.count, 1);
-  assert.equal(snapshot.obligations.unconfirmed.amount, 500000);
-  assert.deepEqual(snapshot.obligations.unconfirmed.objectIds, ['ADMIN-2026-08']);
+  assert.equal(snapshot.obligations.unconfirmed.amount, 25000);
+  const overdue = evaluateDecisionRule('critical_payment_due_3d', snapshot, new Date('2026-09-17T05:00:00.000Z'));
+  assert.equal(overdue.active, true);
+  assert.equal(overdue.amount, 25000);
+  assert.deepEqual(overdue.linkedObjects, ['REVIEW-OVERDUE']);
+});
+
+test('open estimated obligation without an amount fails decision reconciliation closed', () => {
+  assert.throws(
+    () => buildDecisionFinancialSnapshot({
+      asOfDate: '2026-09-17',
+      obligationRows: [
+        { id: 'ESTIMATE-MISSING', dueDate: '2026-09-10', remaining: null, priority: 'Высокий', status: 'Оценка' }
+      ]
+    }),
+    /open confirmed obligation amount is missing: ESTIMATE-MISSING/
+  );
 });
 
 test('shadow comparison reports a precise mismatch instead of silently accepting drift', () => {

@@ -248,3 +248,24 @@ test('does not guess an amount for an unconfirmed obligation with missing net ca
   assert.equal(result.obligations.unconfirmedCashNeed, 0);
   assert.equal(result.obligations.unconfirmedAmountMissing, true);
 });
+
+test('treats an estimated obligation with a known amount as confirmed planning cash need', async () => {
+  const estimated = obligationValues();
+  estimated.push([
+    46275, 'Оценочная аренда', 'Аренда', 70000, 0, 70000, 'Высокий', 'Оценка',
+    'Прогноз', 'Среднее', '', '', 'Да', 'ESTIMATE-1', 70000, 0, 70000
+  ]);
+  const createOwnerLiveSourceReader = await loadReader();
+  const { sheets } = makeSheets({ matrices: makeMatrices({ obligations: estimated }) });
+  const reader = createOwnerLiveSourceReader({
+    sheets,
+    spreadsheetId: 'sheet-123',
+    now: () => new Date('2026-09-07T10:00:00Z')
+  });
+
+  const result = await reader.readOwnerLiveFacts();
+  const row = result.obligations.rows.find(item => item.id === 'ESTIMATE-1');
+  assert.equal(row.unconfirmed, false);
+  assert.equal(result.obligations.confirmedCashNeed, 262403.74);
+  assert.equal(result.obligations.unconfirmedCashNeed, 500);
+});
