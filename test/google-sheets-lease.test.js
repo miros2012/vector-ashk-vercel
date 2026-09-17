@@ -104,3 +104,26 @@ test('missing or malformed lease marker fails closed', async () => {
     run: async () => true
   }), /lease state invalid/i);
 });
+
+test('lease acquisition fails within the request deadline when Google Sheets stalls', async () => {
+  const stalledSheets = {
+    spreadsheets: {
+      values: { get: async () => new Promise(() => {}) },
+      get: async () => ({ data: { sheets: [] } }),
+      batchUpdate: async () => ({ data: { replies: [] } })
+    }
+  };
+
+  const operation = withGoogleSheetsLease({
+    sheets: stalledSheets,
+    spreadsheetId: 'sheet-id',
+    key: KEY,
+    requestTimeoutMs: 5,
+    run: async () => true
+  });
+  const watchdog = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('test watchdog expired')), 200);
+  });
+
+  await assert.rejects(Promise.race([operation, watchdog]), /Google Sheets request timed out/i);
+});

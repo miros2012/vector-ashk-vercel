@@ -229,6 +229,25 @@ test('sync writes DDS first, verifies it, then appends and verifies the journal'
   assert.equal(mock.leaseState, 'IDLE');
 });
 
+test('sync times out a stalled snapshot read and releases the lease', async () => {
+  const mock = sheetsMock({ readyValues: [HEADER] });
+  mock.sheets.spreadsheets.values.batchGet = async () => new Promise(() => {});
+
+  const operation = syncCurrentDayTochkaDds({
+    sheets: mock.sheets,
+    spreadsheetId: 'sheet-id',
+    businessDate: BUSINESS_DATE,
+    now: () => NOW,
+    requestTimeoutMs: 5
+  });
+  const watchdog = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('test watchdog expired')), 200);
+  });
+
+  await assert.rejects(Promise.race([operation, watchdog]), /Google Sheets request timed out/i);
+  assert.equal(mock.leaseState, 'IDLE');
+});
+
 test('sync recovers after DDS was written but journal was not', async () => {
   const mock = sheetsMock({
     readyValues: [HEADER, readyRow()],
