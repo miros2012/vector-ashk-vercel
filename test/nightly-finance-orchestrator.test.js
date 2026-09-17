@@ -143,6 +143,65 @@ test('nightly orchestrator runs Data Health after refreshed sources and before d
   assert.deepEqual(res.body.stages.dataHealth, { ok: true, statusCode: 200 });
 });
 
+test('nightly production continues through Data Health and decisions after a transient source failure', async () => {
+  const calls = [];
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret-value',
+    runTochkaDds: handlerReturning(502, { ok: false, error: 'Google Sheets request timed out' }, calls, 'tochkaDds'),
+    runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runPayments: handlerReturning(200, { ok: true }, calls, 'payments'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
+    runBalances: handlerReturning(200, { ok: true }, calls, 'balances'),
+    runDataHealth: handlerReturning(200, { ok: true, status: 'WARNING' }, calls, 'dataHealth'),
+    runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
+
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(calls.map(item => item.name), [
+    'tochkaDds',
+    'hours',
+    'payments',
+    'receivables',
+    'balances',
+    'dataHealth',
+    'decisions'
+  ]);
+  assert.deepEqual(res.body.stages.dataHealth, { ok: true, statusCode: 200 });
+  assert.deepEqual(res.body.stages.decisions, { ok: true, statusCode: 200 });
+  assert.equal(res.body.ok, false);
+});
+
+test('nightly production still blocks decisions when Data Health rejects the snapshot after a source failure', async () => {
+  const calls = [];
+  const handler = createNightlyFinanceOrchestrator({
+    cronSecret: 'secret-value',
+    runTochkaDds: handlerReturning(502, { ok: false }, calls, 'tochkaDds'),
+    runHours: handlerReturning(200, { ok: true }, calls, 'hours'),
+    runPayments: handlerReturning(200, { ok: true }, calls, 'payments'),
+    runReceivables: handlerReturning(200, { ok: true }, calls, 'receivables'),
+    runBalances: handlerReturning(200, { ok: true }, calls, 'balances'),
+    runDataHealth: handlerReturning(503, { ok: false, error: 'stale core source' }, calls, 'dataHealth'),
+    runDecisions: handlerReturning(200, { ok: true }, calls, 'decisions')
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret-value' } }, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.deepEqual(calls.map(item => item.name), [
+    'tochkaDds',
+    'hours',
+    'payments',
+    'receivables',
+    'balances',
+    'dataHealth'
+  ]);
+  assert.equal(res.body.stages.decisions.skipped, true);
+});
+
 test('nightly orchestrator blocks decisions when Data Health rejects stale core sources', async () => {
   const calls = [];
   const handler = createNightlyFinanceOrchestrator({
