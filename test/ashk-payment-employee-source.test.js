@@ -5,7 +5,7 @@ import {
   summarizePaymentEmployeeTotals
 } from '../lib/ashk-payment-employee-source.js';
 
-test('loads every PaymentRecordDebitList page with stable start/count pagination', async () => {
+test('loads every PaymentRecordDebitList page with explicit Custom period and stable pagination', async () => {
   const calls = [];
   const session = {
     requestJson: async (path, params) => {
@@ -37,8 +37,8 @@ test('loads every PaymentRecordDebitList page with stable start/count pagination
   const result = await source.fetchPeriod({ startDate: '2026-09-01', endDate: '2026-09-16' });
 
   assert.deepEqual(calls, [
-    { path: '/api/PaymentRecordDebitList', params: { StartDate: '2026-09-01', EndDate: '2026-09-16', start: 0, count: 2 } },
-    { path: '/api/PaymentRecordDebitList', params: { StartDate: '2026-09-01', EndDate: '2026-09-16', start: 2, count: 2 } }
+    { path: '/api/PaymentRecordDebitList', params: { Period: 'Custom', StartDate: '2026-09-01', EndDate: '2026-09-16', start: 0, count: 2 } },
+    { path: '/api/PaymentRecordDebitList', params: { Period: 'Custom', StartDate: '2026-09-01', EndDate: '2026-09-16', start: 2, count: 2 } }
   ]);
   assert.deepEqual(result.rows.map(row => row.Id), [1, 2, 3]);
   assert.deepEqual(result.metrics, {
