@@ -68,7 +68,8 @@ async function runDataHealth(req, res) {
       ranges: [
         `'${DATA_HEALTH_SHEET}'!A1:H40`,
         `'Точка_API'!A2:P`,
-        `'ДДС: месяц'!M5:M30000`
+        `'ДДС: месяц'!M5:M30000`,
+        `'Контроль Точка → ДДС'!A5:P3000`
       ],
       valueRenderOption: 'UNFORMATTED_VALUE'
     });
@@ -78,6 +79,7 @@ async function runDataHealth(req, res) {
     const tochkaDds = evaluateTochkaDdsCoverage({
       tochkaRows: ranges[1]?.values || [],
       ddsSourceRows: ranges[2]?.values || [],
+      controlRows: ranges[3]?.values || [],
       businessDateSerial: currentBusinessDateSerial()
     });
 

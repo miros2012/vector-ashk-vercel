@@ -13,6 +13,13 @@ function op(key, { internal = 'Нет', signed = -100, date = day } = {}) {
   return row;
 }
 
+function control(key, readiness) {
+  const row = Array(16).fill('');
+  row[10] = key;
+  row[15] = readiness;
+  return row;
+}
+
 test('blocks when a current-day external Tochka operation has not propagated to DDS', () => {
   const result = evaluateTochkaDdsCoverage({
     tochkaRows: [op('key-a', { signed: -854277 }), op('key-b', { signed: 500 })],
@@ -49,4 +56,20 @@ test('only requires propagation for the selected business date', () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.eligibleCount, 1);
+});
+
+test('does not block on an operation explicitly awaiting manual classification', () => {
+  const result = evaluateTochkaDdsCoverage({
+    tochkaRows: [op('classified-key', { signed: 2700 }), op('manual-key', { signed: 3.01 })],
+    controlRows: [
+      control('classified-key', 'Импортировано ранее'),
+      control('manual-key', 'Ручная классификация')
+    ],
+    ddsSourceRows: [['Точка API | classified-key']],
+    businessDateSerial: day
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.eligibleCount, 1);
+  assert.equal(result.missingCount, 0);
 });
