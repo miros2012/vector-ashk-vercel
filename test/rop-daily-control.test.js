@@ -32,11 +32,11 @@ const PAYMENT_VALUES = [
     'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
     'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
   ],
-  [1,'2026-09-01 10:00:00',101,1,1,'Курс',30000,10000,'Кассир','','SALE_EMPLOYEE_EMPTY'],
-  [2,'2026-09-01 11:00:00',102,2,1,'Курс',50000,50000,'Кассир','Менеджер А','OK_SALE_EMPLOYEE'],
-  [3,'2026-09-01 12:00:00',201,3,1,'Курс',60000,30000,'Кассир','Менеджер Б','OK_SALE_EMPLOYEE'],
-  [4,'2026-09-01 13:00:00',202,4,1,'Курс',40000,20000,'Кассир','','SALE_EMPLOYEE_EMPTY'],
-  [5,'2026-09-02 09:00:00',201,3,1,'Курс',60000,10000,'Кассир','Менеджер Б','OK_SALE_EMPLOYEE']
+  [1,'2026-09-01 10:00:00',101,1,1,'Курс',30000,10000,'','','SALE_EMPLOYEE_EMPTY'],
+  [2,'2026-09-01 11:00:00',102,2,1,'Курс',50000,50000,'Менеджер А','Менеджер А','OK_SALE_EMPLOYEE'],
+  [3,'2026-09-01 12:00:00',201,3,1,'Курс',60000,30000,'Менеджер Б','Менеджер Б','OK_SALE_EMPLOYEE'],
+  [4,'2026-09-01 13:00:00',202,4,1,'Курс',40000,20000,'','','SALE_EMPLOYEE_EMPTY'],
+  [5,'2026-09-02 09:00:00',201,3,1,'Курс',60000,10000,'Менеджер Б','Менеджер Б','OK_SALE_EMPLOYEE']
 ];
 
 test('ROP workbook reconstructs day-by-day branch and manager performance from current-month ASHK data', () => {
@@ -49,7 +49,7 @@ test('ROP workbook reconstructs day-by-day branch and manager performance from c
     asOfDate: '2026-09-02'
   });
 
-  assert.equal(workbook.currentMonthContractsValues.length, 3); // header + 2 September contracts
+  assert.equal(workbook.currentMonthContractsValues.length, 3);
   assert.deepEqual(workbook.currentMonthContractsValues.slice(1).map(row => row[0]), [102, 201]);
 
   const headers = workbook.controlValues[0];
@@ -61,7 +61,7 @@ test('ROP workbook reconstructs day-by-day branch and manager performance from c
   assert.ok(aSep1);
   assert.equal(aSep1[idx('Факт филиала за день')], 60000);
   assert.equal(aSep1[idx('Факт филиала с начала месяца')], 60000);
-  assert.equal(aSep1[idx('Личный факт за день')], 50000); // personal fact follows the ASHK owner
+  assert.equal(aSep1[idx('Личный факт за день')], 50000);
   assert.equal(aSep1[idx('Новых договоров с начала месяца')], 1);
   assert.equal(aSep1[idx('100% оплаченных новых договоров')], 1);
   assert.equal(aSep1[idx('Текущая ДЗ филиала')], 10000);
@@ -86,7 +86,7 @@ test('ROP workbook exposes unmatched payment amount instead of silently assignin
     planValues: PLAN_VALUES,
     groups: GROUPS,
     contractsByGroup: CONTRACTS,
-    paymentValues: [...PAYMENT_VALUES, [6,'2026-09-01 14:00:00',999,9,1,'Курс',10000,7000,'Кассир','','SALE_NOT_FOUND']],
+    paymentValues: [...PAYMENT_VALUES, [6,'2026-09-01 14:00:00',999,9,1,'Курс',10000,7000,'','','SALE_NOT_FOUND']],
     month: '2026-09',
     asOfDate: '2026-09-02'
   });
@@ -98,7 +98,7 @@ test('ROP workbook exposes unmatched payment amount instead of silently assignin
 test('ROP workbook uses targeted student details only as fallback when current snapshot misses a StudentId', () => {
   const paymentValues = [
     ...PAYMENT_VALUES,
-    [6,'2026-09-01 14:00:00',999,9,1,'Дополнительное вождение',2700,2700,'Кассир','Менеджер В','OK_SALE_EMPLOYEE']
+    [6,'2026-09-01 14:00:00',999,9,1,'Дополнительное вождение',2700,2700,'Менеджер В','Менеджер В','OK_SALE_EMPLOYEE']
   ];
   const fallbackStudents = [{
     Id: 999,
@@ -136,7 +136,6 @@ test('ROP workbook uses targeted student details only as fallback when current s
   assert.equal(cSep1[idx('Факт филиала за день')], 52700);
   assert.equal(cSep1[idx('Личный факт за день')], 2700);
 
-  // Live current snapshot must win over fallback data for the same StudentId.
   const liveWins = buildRopDailyControlWorkbook({
     planValues: PLAN_VALUES,
     groups: GROUPS,
@@ -151,7 +150,7 @@ test('ROP workbook uses targeted student details only as fallback when current s
   assert.equal(liveBSep1[idx('Факт филиала за день')], 50000);
 });
 
-test('personal fact follows the ASHK seller even when the contract belongs to another branch', () => {
+test('personal fact follows the ASHK payment employee even when the contract belongs to another branch', () => {
   const planValues = [
     ...PLAN_VALUES,
     ['Кумаритова','Республики','Республика',300000,300000,'5/2','Да','']
@@ -176,8 +175,8 @@ test('personal fact follows the ASHK seller even when the contract belongs to an
       'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
       'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
     ],
-    [10,'2026-09-02 10:00:00',301,10,1,'Курс',50000,5000,'Кассир','Кумаритова Алина','OK_SALE_EMPLOYEE'],
-    [11,'2026-09-02 11:00:00',302,11,1,'Курс',70000,7000,'Кассир','Менеджер А','OK_SALE_EMPLOYEE']
+    [10,'2026-09-02 10:00:00',301,10,1,'Курс',50000,5000,'Кумаритова Алина','Менеджер А','OK_SALE_EMPLOYEE'],
+    [11,'2026-09-02 11:00:00',302,11,1,'Курс',70000,7000,'Менеджер А','Кумаритова Алина','OK_SALE_EMPLOYEE']
   ];
 
   const workbook = buildRopDailyControlWorkbook({
@@ -201,13 +200,13 @@ test('personal fact follows the ASHK seller even when the contract belongs to an
   assert.equal(row('Кумаритова')[idx('Личный факт за день')], 5000);
 
   assert.deepEqual(workbook.paymentAttributionValues, [
-    ['ID оплаты','Дата','StudentId','SaleId','Сумма','Филиал','Филиал АШК','Менеджер АШК','Сотрудник кассовой операции','Сотрудник продажи АШК','Зачтён менеджеру','Статус привязки'],
-    ['10','2026-09-02',301,'10',5000,'Зарека','Зарека','Кумаритова Алина','Кассир','Кумаритова Алина','Кумаритова','OK_SALE_EMPLOYEE'],
-    ['11','2026-09-02',302,'11',7000,'Герцена','Сити-Центр','Менеджер А','Кассир','Менеджер А','Менеджер А','OK_SALE_EMPLOYEE']
+    ['ID оплаты','Дата','StudentId','SaleId','Сумма','Филиал','Филиал АШК','Менеджер АШК','Сотрудник, принявший/выставивший оплату АШК','Сотрудник продажи АШК','Зачтён менеджеру','Статус привязки'],
+    ['10','2026-09-02',301,'10',5000,'Зарека','Зарека','Кумаритова Алина','Кумаритова Алина','Менеджер А','Кумаритова','OK_PAYMENT_EMPLOYEE'],
+    ['11','2026-09-02',302,'11',7000,'Герцена','Сити-Центр','Менеджер А','Менеджер А','Кумаритова Алина','Менеджер А','OK_PAYMENT_EMPLOYEE']
   ]);
 });
 
-test('personal fact follows only the ASHK sale employee, not owner or cashbox employee', () => {
+test('personal fact follows only the ASHK payment employee, not owner or sale employee', () => {
   const planValues = [
     ['Менеджер','Филиал','Филиал АШК','План филиала','План менеджера','График','Активен','Примечание'],
     ['Менеджер А','Зарека','Зарека',300000,150000,'5/2','Да',''],
@@ -218,10 +217,8 @@ test('personal fact follows only the ASHK sale employee, not owner or cashbox em
       'Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit',
       'PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'
     ],
-    [501,'2026-09-02 10:00:00',101,10,1,'Курс',50000,7000,
-      'Кассир','Менеджер Б','OK_SALE_EMPLOYEE'],
-    [502,'2026-09-02 11:00:00',101,11,1,'Курс',50000,3000,
-      'Менеджер Б','','SALE_EMPLOYEE_EMPTY']
+    [501,'2026-09-02 10:00:00',101,10,1,'Курс',50000,7000,'Менеджер А','Менеджер Б','OK_SALE_EMPLOYEE'],
+    [502,'2026-09-02 11:00:00',101,11,1,'Курс',50000,3000,'Менеджер Б','','SALE_EMPLOYEE_EMPTY']
   ];
   const workbook = buildRopDailyControlWorkbook({
     planValues,
@@ -246,11 +243,11 @@ test('personal fact follows only the ASHK sale employee, not owner or cashbox em
     item[idx('Дата')] === '2026-09-02' && item[idx('Менеджер')] === manager
   );
 
-  assert.equal(row('Менеджер А')[idx('Личный факт за день')], 0);
-  assert.equal(row('Менеджер Б')[idx('Личный факт за день')], 7000);
+  assert.equal(row('Менеджер А')[idx('Личный факт за день')], 7000);
+  assert.equal(row('Менеджер Б')[idx('Личный факт за день')], 3000);
   assert.equal(row('Менеджер А')[idx('Факт филиала за день')], 10000);
   assert.equal(row('Менеджер Б')[idx('Статус личный')], 'КРАСНЫЙ');
-  assert.match(JSON.stringify(workbook.paymentAttributionValues), /SALE_EMPLOYEE_EMPTY/);
+  assert.match(JSON.stringify(workbook.paymentAttributionValues), /OK_PAYMENT_EMPLOYEE/);
   assert.doesNotMatch(JSON.stringify(workbook.paymentAttributionValues), /LEGACY_OWNER_FALLBACK/);
 });
 
