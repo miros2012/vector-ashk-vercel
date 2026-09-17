@@ -6,6 +6,11 @@ import {
   createAshkSaleSource,
   summarizeSaleStaffCandidates
 } from '../lib/ashk-sale-attribution.js';
+import {
+  createAshkPaymentEmployeeSource,
+  summarizePaymentEmployeeTotals
+} from '../lib/ashk-payment-employee-source.js';
+import { reconcilePaymentEmployees } from '../lib/payment-employee-reconciliation.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import { fetchAshkWithRetry } from '../lib/ashk-transient-fetch.js';
 
@@ -109,20 +114,6 @@ async function fetchAshkCashboxOperations() {
   return fetchAshkData(path);
 }
 
-function dateTimeKey(value) {
-  const match = String(value ?? '').trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
-  return match ? `${match[1]}T${match[2]}` : '';
-}
-
-function moneyKey(value) {
-  return String(Math.round(toNumber(value) * 100));
-}
-
-function operationMatchKey(date, amount) {
-  const timestamp = dateTimeKey(date);
-  return timestamp ? `${timestamp}\u0000${moneyKey(amount)}` : '';
-}
-
 function addDimensionTotal(map, name, key, amount) {
   const current = map.get(name) || { [key]: name, rows: 0, positive: 0, negative: 0, net: 0 };
   current.rows += 1;
@@ -157,38 +148,6 @@ export function summarizeCashboxOperations(operations) {
   };
 }
 
-export function attributePaymentsToCashboxOperations(payments, operations) {
-  const operationsByKey = new Map();
-  for (const operation of Array.isArray(operations) ? operations : []) {
-    const key = operationMatchKey(operation?.Created, operation?.Amount);
-    if (!key) continue;
-    const list = operationsByKey.get(key) || [];
-    list.push(operation);
-    operationsByKey.set(key, list);
-  }
-
-  const metrics = { total: 0, attributed: 0, noMatch: 0, ambiguous: 0, employeeEmpty: 0 };
-  const items = (Array.isArray(payments) ? payments : []).map(payment => {
-    metrics.total += 1;
-    const candidates = operationsByKey.get(operationMatchKey(payment?.PayDate, payment?.Debit)) || [];
-    if (!candidates.length) {
-      metrics.noMatch += 1;
-      return { ...payment, PaymentEmployeeName: '' };
-    }
-    const employees = [...new Set(candidates.map(item => String(item?.EmployeeName ?? '').trim()).filter(Boolean))];
-    if (!employees.length) {
-      metrics.employeeEmpty += 1;
-      return { ...payment, PaymentEmployeeName: '' };
-    }
-    if (employees.length > 1) {
-      metrics.ambiguous += 1;
-      return { ...payment, PaymentEmployeeName: '' };
-    }
-    metrics.attributed += 1;
-    return { ...payment, PaymentEmployeeName: employees[0] };
-  });
-  return { items, metrics };
-}
 async function readMetrics(sheets, sheetName) {
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -231,24 +190,32 @@ export default async function handler(req, res) {
       throw new Error('Google service account secrets missing');
     }
     const [rawItems, sheets] = await Promise.all([fetchAshkMonth(), sheetsClient()]);
-    const operations = await fetchAshkCashboxOperations();
-    const cashboxDirect = summarizeCashboxOperations(operations);
-    const comparisonAttribution = attributePaymentsToCashboxOperations(rawItems, operations);
     const { year, month, day } = tyumenParts();
+    const startDate = `${year}-${pad2(month)}-01`;
+    const endDate = `${year}-${pad2(month)}-${pad2(day)}`;
     const session = createAshkWebSession({
       baseUrl: ASHK_BASE_URL,
       login: process.env['ASHK_WEB_LOGIN'],
       password: process.env['ASHK_WEB_PASSWORD']
     });
+
+    const paymentEmployeeSource = createAshkPaymentEmployeeSource({ session, pageSize: 500 });
+    const paymentEmployeeResult = await paymentEmployeeSource.fetchPeriod({ startDate, endDate });
+    const paymentEmployeeReconciliation = reconcilePaymentEmployees(rawItems, paymentEmployeeResult.rows);
+
     const saleSource = createAshkSaleSource({ session, concurrency: 4 });
     const saleResult = await saleSource.fetchForPayments({
       payments: rawItems,
-      startDate: `${year}-${pad2(month)}-01`,
-      endDate: `${year}-${pad2(month)}-${pad2(day)}`
+      startDate,
+      endDate
     });
     const saleStaffCandidates = summarizeSaleStaffCandidates(rawItems, saleResult.sales);
-    const saleAttribution = attributePaymentsToSales(comparisonAttribution.items, saleResult.sales);
-    const items = saleAttribution.items;
+    const saleAttribution = attributePaymentsToSales(paymentEmployeeReconciliation.items, saleResult.sales);
+    const items = [...saleAttribution.items];
+
+    const operations = await fetchAshkCashboxOperations();
+    const cashboxDirect = summarizeCashboxOperations(operations);
+    const directEmployeeSummary = summarizePaymentEmployeeTotals(paymentEmployeeResult.rows);
 
     await Promise.all([
       ensureSheet(sheets, STAGING_SHEET),
@@ -318,6 +285,15 @@ export default async function handler(req, res) {
       sameRows: stagingExpected.rows === live.rows,
       sameDebit: Math.abs(stagingExpected.debitTotal - live.debitTotal) < 0.01
     };
+    const directAlina = directEmployeeSummary.totals.filter(item => /Алина|Кумаритова/i.test(item.employee));
+    console.log(JSON.stringify({
+      event: 'ashk-payment-employee-direct',
+      source: paymentEmployeeResult.metrics,
+      reconciliation: paymentEmployeeReconciliation.metrics,
+      alinaCandidates: directAlina,
+      unattributedRows: directEmployeeSummary.unattributedRows,
+      unattributedAmount: directEmployeeSummary.unattributedAmount
+    }));
     console.log(JSON.stringify({
       event: 'ashk-cashier-candidates-diagnostic',
       cashierCandidates: cashboxDirect.cashierTotals.filter(item => /Алина|Кумаритова/i.test(item.cashier)),
@@ -325,10 +301,7 @@ export default async function handler(req, res) {
     }));
     const alinaCandidates = Object.fromEntries(
       Object.entries(saleStaffCandidates.totals)
-        .map(([field, values]) => [
-          field,
-          values.filter(item => /Алина|Кумаритова/i.test(item.name))
-        ])
+        .map(([field, values]) => [field, values.filter(item => /Алина|Кумаритова/i.test(item.name))])
         .filter(([, values]) => values.length)
     );
     console.log(JSON.stringify({
@@ -347,7 +320,8 @@ export default async function handler(req, res) {
       comparison,
       saleSource: saleResult.metrics,
       saleAttribution: saleAttribution.metrics,
-      cashboxComparison: comparisonAttribution.metrics,
+      paymentEmployeeSource: paymentEmployeeResult.metrics,
+      paymentEmployeeReconciliation: paymentEmployeeReconciliation.metrics,
       cashboxDirect,
       credentials: 'configured'
     }));
@@ -366,7 +340,8 @@ export default async function handler(req, res) {
       comparison,
       saleSource: saleResult.metrics,
       saleAttribution: saleAttribution.metrics,
-      cashboxComparison: comparisonAttribution.metrics,
+      paymentEmployeeSource: paymentEmployeeResult.metrics,
+      paymentEmployeeReconciliation: paymentEmployeeReconciliation.metrics,
       credentials: 'configured',
       note: 'Рабочий лист не изменён.'
     });
