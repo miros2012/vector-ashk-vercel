@@ -83,10 +83,10 @@ For the owner liquidity package:
 
 - `openObligations` = sum of positive finite `Net cash outflow` for obligations that are not paid/closed;
 - zero-cash-outflow reserve rows are excluded from cash needs;
-- `unconfirmedObligationReserve` = sum of positive finite cash need for rows whose status is `Оценка` or starts with `Требует`;
+- `unconfirmedObligationReserve` = sum of positive finite cash need only for rows whose status starts with `Требует`; `Оценка` remains planning information with a known amount and is included in confirmed planning cash need;
 - `confirmedObligations` = open cash needs excluding those unconfirmed rows;
 - if an unconfirmed open obligation exists without a usable finite amount, withdrawal is blocked rather than guessed;
-- paid obligations are never counted again;
+- paid/closed obligations are never counted again, while a `частично оплачено` status remains open until its remaining cash need reaches zero or the status is fully closed;
 - obligations already protected through a dedicated reserve must not be duplicated as another reserve component.
 
 ### Driving fund
