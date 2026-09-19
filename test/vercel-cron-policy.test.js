@@ -69,7 +69,12 @@ test('cash photo recovery runs independently after intraday finance and once ove
 
 test('nightly orchestrator has enough duration for sequential HOURS and decisions stages', () => {
   const duration = Number(config.functions?.['api/nightly-finance-orchestrator.js']?.maxDuration || 0);
-  assert.ok(duration >= 120, `nightly orchestrator maxDuration must be at least 120s, got ${duration}s`);
+  assert.equal(duration, 300, `nightly orchestrator must use the Hobby Fluid maximum, got ${duration}s`);
+  assert.equal(
+    Number(config.functions?.['api/master-hours-diagnostic.js']?.maxDuration || 0),
+    300,
+    'signed finance recovery endpoint must share the same runtime budget'
+  );
 });
 
 test('health function has enough duration for one bounded concurrent cash-photo recovery batch', () => {
