@@ -85,6 +85,7 @@ jobs:
       - name: Refresh finance sources through signed OIDC request
         env:
           FINANCE_SYNC_ENDPOINT: https://vector-ashk-backend.vercel.app/api/master-hours-diagnostic
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
         run: |
           node --input-type=module <<'NODE'
