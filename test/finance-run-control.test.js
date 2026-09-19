@@ -295,6 +295,41 @@ test('a recovered success whose retry clear fails leaves its durable claim block
   assert.equal(executions, 1);
 });
 
+test('a stale claimed retry is reclaimed only with proof from the expired lease owner', async () => {
+  const retryState = { value: {
+    finance_retry_stage: 'receivablesSource',
+    finance_retry_attempt: 2,
+    finance_retry_after_utc: 'CLAIMED',
+    finance_retry_origin_run_id: 'stale-run',
+    finance_retry_error_class: 'TIME_BUDGET'
+  } };
+  const store = storeFake({
+    retryState,
+    lease: {
+      ok: true,
+      leaseUntilUtc: '2026-09-18T00:04:00.000Z',
+      reclaimedLeaseOwner: 'stale-run',
+      reclaimedLeaseUntilUtc: '2026-09-17T23:59:00.000Z'
+    }
+  });
+  const runControl = control(store);
+  const context = await runControl.begin({ trigger: 'cron', mode: 'intraday' });
+
+  assert.deepEqual(await runControl.pendingRecovery(context), {
+    stage: 'receivablesSource',
+    attempt: 2,
+    originRunId: 'stale-run',
+    errorClass: 'TIME_BUDGET'
+  });
+  assert.deepEqual(retryState.value, {
+    finance_retry_stage: 'receivablesSource',
+    finance_retry_attempt: 2,
+    finance_retry_after_utc: 'CLAIMED',
+    finance_retry_origin_run_id: '2026-09-18T00:00:00.000Z-abcd',
+    finance_retry_error_class: 'TIME_BUDGET'
+  });
+});
+
 test('finish releases an acquired lease even after a stage result is returned', async () => {
   const store = storeFake();
   const runControl = control(store);
