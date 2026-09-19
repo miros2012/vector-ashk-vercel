@@ -4,7 +4,6 @@ on:
   schedule:
     - cron: '23 * * * *'
     - cron: '30 3 * * *'
-    - cron: '*/10 4-15 * * *'
   workflow_dispatch:
     inputs:
       action:
@@ -23,7 +22,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.event.schedule == '*/10 4-15 * * *' && 'finance-recovery' || 'hourly-project-continuation' }}
+  group: hourly-project-continuation
   cancel-in-progress: false
 
 jobs:
@@ -70,10 +69,9 @@ jobs:
         run: node scripts/hourly-project-agent.mjs
 
   finance-sync:
-    name: Finance sync and retry recovery
+    name: Finance morning sync
     if: >-
       (github.event_name == 'schedule' && github.event.schedule == '30 3 * * *') ||
-      (github.event_name == 'schedule' && github.event.schedule == '*/10 4-15 * * *') ||
       (github.actor_id == 46207692 && github.event_name == 'workflow_dispatch' && inputs.action == 'finance-sync')
     permissions:
       contents: read
