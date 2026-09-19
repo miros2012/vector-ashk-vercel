@@ -30,27 +30,29 @@ function summary() {
   ];
 }
 
-test('receivables sync calls afterVerified with the already-fetched raw ASHK contracts only after readback passes', async () => {
+test('verified receivables advances the source marker only after staging readback', async () => {
+  const calls = [];
   let hookPayload;
   const handler = createReceivablesSyncHandler({
     fetchCurrent: async () => ({ groups, contractsByGroup }),
     writeDetail: async () => {},
     writeSummary: async () => {},
-    readDetail: async () => detail(),
-    readSummary: async () => summary(),
-    afterVerified: async payload => { hookPayload = payload; return { ok: true, controlRows: 2 }; }
+    readDetail: async () => { calls.push('detail-readback'); return detail(); },
+    readSummary: async () => { calls.push('summary-readback'); return summary(); },
+    afterSourceVerified: async payload => { calls.push('marker'); hookPayload = payload; }
   });
   const res = responseRecorder();
   await handler({ method: 'GET' }, res);
 
   assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls, ['detail-readback', 'summary-readback', 'marker']);
   assert.equal(hookPayload.groups, groups);
   assert.equal(hookPayload.contractsByGroup, contractsByGroup);
   assert.equal(hookPayload.summary.total.debt, 30000);
-  assert.deepEqual(res.body.afterVerified, { ok: true, controlRows: 2 });
+  assert.equal('afterVerified' in res.body, false);
 });
 
-test('receivables sync never calls afterVerified when staging readback fails', async () => {
+test('receivables sync never advances the source marker when staging readback fails', async () => {
   let hookCalls = 0;
   const handler = createReceivablesSyncHandler({
     fetchCurrent: async () => ({ groups, contractsByGroup }),
@@ -58,7 +60,7 @@ test('receivables sync never calls afterVerified when staging readback fails', a
     writeSummary: async () => {},
     readDetail: async () => detail(),
     readSummary: async () => [['Тип','Объект','Договоров','Долг','Продажи','Оплачено'],['ИТОГО','',1,29999,100000,70000]],
-    afterVerified: async () => { hookCalls += 1; }
+    afterSourceVerified: async () => { hookCalls += 1; }
   });
   const res = responseRecorder();
   await handler({ method: 'GET' }, res);

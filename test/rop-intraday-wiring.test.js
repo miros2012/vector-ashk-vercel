@@ -1,12 +1,42 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { financeRouteHarness, response, cronRequest } from './helpers/finance-route-harness.js';
 
 const api = readFileSync(new URL('../api/nightly-finance-orchestrator.js', import.meta.url), 'utf8');
 const decisionEventApi = readFileSync(new URL('../api/decision-event.js', import.meta.url), 'utf8');
 const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
 const financePath = '/api/nightly-finance-orchestrator';
 const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
+
+test('all intraday schedules use one request-local controller and separate tracked stages', async t => {
+  const { route, events, entries, stores } = await financeRouteHarness(t);
+  for (const schedule of intradaySchedules) {
+    const res = response();
+    await route.default(cronRequest(schedule), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.stages.receivablesSource?.ok, true);
+    assert.equal(res.body.stages.ropPublish?.ok, true);
+  }
+  assert.equal(stores.length, 12);
+  assert.equal(entries.length, 24);
+  assert.equal(new Set(entries.map(entry => entry.runId)).size, 12);
+  assert.ok(entries.every(entry => entry.trigger === 'cron' && entry.mode === 'intraday'));
+  assert.equal(events.includes('hours'), false);
+  assert.equal(events.filter(event => event === 'ownerActionQueue').length, 12);
+});
+
+test('source-only callable marks its snapshot without invoking publication', async t => {
+  const { route, events, entries } = await financeRouteHarness(t);
+  const res = response();
+  await route.runReceivablesNow(cronRequest(), res);
+  assert.equal(res.statusCode, 200);
+  assert.ok(events.includes('marker:receivables_last_success_utc'));
+  assert.equal(events.includes('ropPublish'), false);
+  assert.equal(entries.length, 0);
+  await route.runIntradayRopNow();
+  assert.equal(events.at(-1), 'ropPublish');
+});
 
 test('same protected finance endpoint has nightly plus twelve daily intraday Tyumen schedules', () => {
   const financeCrons = config.crons.filter((cron) => cron.path === financePath);
@@ -39,9 +69,10 @@ test('intraday ROP refresh reconstructs debt from the full verified receivables 
   assert.match(api, /readValues\(RECEIVABLES_DETAIL_SHEET,\s*'A:N'\)/s);
 });
 
-test('every source refresh publishes the standalone ROP dashboard in the same execution', () => {
+test('receivables source marking and standalone ROP publication remain separate callables', () => {
   assert.match(api, /publishRopNow/);
   assert.match(api, /syncRopSourceThenPublishTarget/);
-  assert.match(api, /syncRopDailyControlAndPublish/);
+  assert.match(api, /markReceivablesSourceVerified/);
   assert.match(api, /refreshRopFromStagingAndPublish/);
+  assert.doesNotMatch(api, /syncRopDailyControlAndPublish/);
 });

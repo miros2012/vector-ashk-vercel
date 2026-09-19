@@ -43,6 +43,31 @@ function requiredTail(calls, decisionBody = verifiedDecisionBody(), queueBody = 
   };
 }
 
+function runControlFake({ begin = { ok: true, runId: 'intraday-run' }, recovery = null } = {}) {
+  const calls = [];
+  return {
+    calls,
+    async begin(input) {
+      calls.push(['begin', input]);
+      return begin;
+    },
+    async pendingRecovery(context) {
+      calls.push(['pendingRecovery', context]);
+      return recovery;
+    },
+    async runStage(context, input) {
+      calls.push(['runStage', { stage: input.stage, attempt: input.attempt }]);
+      const outcome = await input.execute();
+      calls.push(['stageOutcome', { stage: input.stage, outcome }]);
+      return outcome;
+    },
+    async finish(context) {
+      calls.push(['finish', context]);
+      return { ok: true };
+    }
+  };
+}
+
 test('intraday orchestrator requires final v1 Data Health, decisions, and Owner Action Queue stages', () => {
   const base = {
     cronSecret: 'secret',
@@ -121,23 +146,16 @@ test('intraday orchestrator runs full verified finance decision pipeline in orde
   });
 });
 
-test('intraday orchestrator reuses the verified ROP publish returned by receivables', async () => {
+test('intraday orchestrator explicitly runs receivables source then ROP publish', async () => {
   const calls = [];
+  const runControl = runControlFake();
   const handler = createIntradayRopOrchestrator({
     cronSecret: 'secret',
+    runControl,
     runPayments: child(calls, 'payments'),
-    runReceivables: child(calls, 'receivables', {
-      ok: true,
-      verified: true,
-      afterVerified: {
-        ok: true,
-        liveDate: '2026-09-17',
-        standalonePublished: true,
-        standaloneSheets: 5
-      }
-    }),
-    refreshRop: async () => {
-      calls.push(['rop', 'internal']);
+    runReceivablesSource: child(calls, 'receivablesSource', { ok: true, verified: true }),
+    runRopPublish: async () => {
+      calls.push(['ropPublish', 'internal']);
       return { ok: true, liveDate: '2026-09-17' };
     },
     ...requiredTail(calls)
@@ -148,9 +166,132 @@ test('intraday orchestrator reuses the verified ROP publish returned by receivab
 
   assert.equal(res.statusCode, 200);
   assert.deepEqual(calls.map(call => call[0]), [
-    'payments', 'receivables', 'dataHealth', 'decisions', 'ownerActionQueue'
+    'payments', 'receivablesSource', 'ropPublish', 'dataHealth', 'decisions', 'ownerActionQueue'
   ]);
-  assert.deepEqual(res.body.stages.rop, { ok: true, liveDate: '2026-09-17' });
+  assert.deepEqual(res.body.stages.receivablesSource, { ok: true, statusCode: 200 });
+  assert.deepEqual(res.body.stages.ropPublish, { ok: true, statusCode: 200, liveDate: '2026-09-17' });
+  assert.deepEqual(runControl.calls.filter(([name]) => name === 'runStage').map(([, input]) => input), [
+    { stage: 'receivablesSource', attempt: 1 },
+    { stage: 'ropPublish', attempt: 1 }
+  ]);
+});
+
+test('intraday receivables recovery reruns only source, publish, and gated tail', async () => {
+  const calls = [];
+  const runControl = runControlFake({ recovery: { stage: 'receivablesSource', attempt: 2 } });
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runControl,
+    runPayments: child(calls, 'payments'),
+    runTochkaDds: child(calls, 'tochkaDds'),
+    runBalances: child(calls, 'balances'),
+    runReceivablesSource: child(calls, 'receivablesSource', { ok: true, verified: true }),
+    runRopPublish: async () => { calls.push(['ropPublish', 'internal']); return { ok: true, liveDate: '2026-09-17' }; },
+    ...requiredTail(calls)
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.mode, 'recovery');
+  assert.equal(res.body.retriedStage, 'receivablesSource');
+  assert.deepEqual(calls.map(call => call[0]), [
+    'receivablesSource', 'ropPublish', 'dataHealth', 'decisions', 'ownerActionQueue'
+  ]);
+  assert.deepEqual(Object.keys(res.body.stages), [
+    'receivablesSource', 'ropPublish', 'dataHealth', 'decisions', 'ownerActionQueue'
+  ]);
+});
+
+test('intraday ROP recovery reruns only publish and gated tail', async () => {
+  const calls = [];
+  const runControl = runControlFake({ recovery: { stage: 'ropPublish', attempt: 3 } });
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runControl,
+    runPayments: child(calls, 'payments'),
+    runTochkaDds: child(calls, 'tochkaDds'),
+    runBalances: child(calls, 'balances'),
+    runReceivablesSource: child(calls, 'receivablesSource', { ok: true, verified: true }),
+    runRopPublish: async () => { calls.push(['ropPublish', 'internal']); return { ok: true, liveDate: '2026-09-17' }; },
+    ...requiredTail(calls)
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.mode, 'recovery');
+  assert.equal(res.body.retriedStage, 'ropPublish');
+  assert.deepEqual(calls.map(call => call[0]), ['ropPublish', 'dataHealth', 'decisions', 'ownerActionQueue']);
+  assert.deepEqual(Object.keys(res.body.stages), ['ropPublish', 'dataHealth', 'decisions', 'ownerActionQueue']);
+});
+
+test('intraday recovery runs Owner Action Queue only after healthy verified decisions', async () => {
+  const calls = [];
+  const runControl = runControlFake({ recovery: { stage: 'ropPublish', attempt: 2 } });
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runControl,
+    runPayments: child(calls, 'payments'),
+    runReceivablesSource: child(calls, 'receivablesSource', { ok: true }),
+    runRopPublish: async () => { calls.push(['ropPublish', 'internal']); return { ok: true }; },
+    runDataHealth: child(calls, 'dataHealth', { ok: false }, 503),
+    runDecisions: child(calls, 'decisions', verifiedDecisionBody()),
+    runOwnerActionQueue: async () => { calls.push(['ownerActionQueue', 'internal']); return { ok: true }; }
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.deepEqual(calls.map(call => call[0]), ['ropPublish', 'dataHealth']);
+  assert.equal(res.body.stages.decisions.skipped, true);
+  assert.equal(res.body.stages.ownerActionQueue.skipped, true);
+});
+
+test('intraday recovery skips Owner Action Queue when decision verification fails', async () => {
+  const calls = [];
+  const runControl = runControlFake({ recovery: { stage: 'ropPublish', attempt: 2 } });
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runControl,
+    runPayments: child(calls, 'payments'),
+    runReceivablesSource: child(calls, 'receivablesSource', { ok: true }),
+    runRopPublish: async () => { calls.push(['ropPublish', 'internal']); return { ok: true }; },
+    runDataHealth: child(calls, 'dataHealth', { ok: true }),
+    runDecisions: child(calls, 'decisions', verifiedDecisionBody({ verified: false })),
+    runOwnerActionQueue: async () => { calls.push(['ownerActionQueue', 'internal']); return { ok: true }; }
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(calls.map(call => call[0]), ['ropPublish', 'dataHealth', 'decisions']);
+  assert.equal(res.body.stages.ownerActionQueue.skipped, true);
+});
+
+test('intraday blocks normal work when recovery state cannot be read', async () => {
+  const calls = [];
+  const runControl = runControlFake({ recovery: { ok: false, statusCode: 500, errorClass: 'LEDGER_WRITE' } });
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    runControl,
+    runPayments: child(calls, 'payments'),
+    runReceivablesSource: child(calls, 'receivablesSource', { ok: true }),
+    runRopPublish: async () => { calls.push(['ropPublish', 'internal']); return { ok: true }; },
+    ...requiredTail(calls)
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 500);
+  assert.deepEqual(calls, []);
+  assert.equal(res.body.error, 'finance run control failed');
+  assert.deepEqual(runControl.calls.map(([name]) => name), ['begin', 'pendingRecovery', 'finish']);
 });
 
 test('intraday orchestrator fails closed when payment sync fails', async () => {
