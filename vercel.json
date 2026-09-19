@@ -46,10 +46,10 @@
   ],
   "functions": {
     "api/health.js": { "maxDuration": 60 },
-    "api/master-hours-diagnostic.js": { "maxDuration": 180 },
+    "api/master-hours-diagnostic.js": { "maxDuration": 300 },
     "api/sync-hours.js": { "maxDuration": 60 },
     "api/sync-payments.js": { "maxDuration": 60 },
-    "api/nightly-finance-orchestrator.js": { "maxDuration": 180 }
+    "api/nightly-finance-orchestrator.js": { "maxDuration": 300 }
   },
   "crons": [
     { "path": "/api/nightly-finance-orchestrator", "schedule": "30 21 * * *" },
