@@ -107,6 +107,23 @@ test('ensureSchema creates one hidden ledger sheet and verifies the exact 13 hea
   assert.equal(fake.calls.filter(([kind, payload]) => kind === 'batchUpdate' && payload.requestBody.requests[0].addSheet).length, 1);
 });
 
+test('ensureSchema provisions every missing retry and lease control marker without changing unrelated rows', async () => {
+  const fake = sheetsFake({ controlRows: [['unrelated_control', 'preserve']] });
+  const store = createGoogleSheetsFinanceRunStore({ sheets: fake.sheets, spreadsheetId: 'book' });
+
+  assert.deepEqual(await store.ensureSchema(), { ok: true });
+  assert.deepEqual(Object.fromEntries(fake.state.controlRows), {
+    unrelated_control: 'preserve',
+    finance_retry_stage: '',
+    finance_retry_attempt: '',
+    finance_retry_after_utc: '',
+    finance_retry_origin_run_id: '',
+    finance_retry_error_class: '',
+    finance_orchestrator_lock: 'IDLE',
+    finance_orchestrator_lock_until_utc: ''
+  });
+});
+
 test('appendAttempt writes one 13-column row and verifies a unique attempt key', async () => {
   const fake = sheetsFake();
   const store = createGoogleSheetsFinanceRunStore({ sheets: fake.sheets, spreadsheetId: 'book' });
