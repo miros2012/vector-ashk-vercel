@@ -18,6 +18,6 @@ test('finance recovery schedule cannot displace the hourly project continuation 
 test('finance sync script receives the GitHub event name before choosing recovery mode', () => {
   assert.match(
     workflow,
-    /GITHUB_EVENT_NAME:\\s*\\$\\{\\{\\s*github\\.event_name\\s*\\}\\}/
+    /GITHUB_EVENT_NAME:\s*\$\{\{\s*github\.event_name\s*\}\}/
   );
 });
