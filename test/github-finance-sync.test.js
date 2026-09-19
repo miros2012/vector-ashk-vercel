@@ -40,6 +40,10 @@ function runner(calls, name) {
 
 test('finance sync accepts only the exact signed main workflow identity', () => {
   assert.deepEqual(authorizeFinanceSyncClaims(CLAIMS), { eventName: 'schedule' });
+  assert.deepEqual(authorizeFinanceSyncClaims({
+    ...CLAIMS,
+    workflow_ref: 'miros2012/vector-ashk-vercel/.github/workflows/finance-recovery.yml@refs/heads/main'
+  }), { eventName: 'schedule' });
   assert.throws(
     () => authorizeFinanceSyncClaims({ ...CLAIMS, ref: 'refs/heads/feature' }),
     /forbidden finance sync claims/
