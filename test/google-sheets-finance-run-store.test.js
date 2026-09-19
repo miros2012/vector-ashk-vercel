@@ -173,7 +173,9 @@ test('acquireLease rejects a live foreign owner, takes an expired lease, and rel
   fake.state.controlRows[1][1] = '2026-09-17T23:59:59.000Z';
   assert.deepEqual(await store.acquireLease({ runId: 'r1', leaseMs: 30_000 }), {
     ok: true,
-    leaseUntilUtc: '2026-09-18T00:00:30.000Z'
+    leaseUntilUtc: '2026-09-18T00:00:30.000Z',
+    reclaimedLeaseOwner: 'other-run',
+    reclaimedLeaseUntilUtc: '2026-09-17T23:59:59.000Z'
   });
   assert.deepEqual(await store.releaseLease({ runId: 'other-run' }), { ok: true, released: false });
   assert.deepEqual(await store.releaseLease({ runId: 'r1' }), { ok: true, released: true });
