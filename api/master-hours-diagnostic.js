@@ -53,6 +53,7 @@ const githubFinanceSyncHandler = createGitHubFinanceSyncHandler({
   verifyToken: verifyGitHubActionsOidcToken,
   cronSecret: process.env.CRON_SECRET || '',
   runIntraday: financeHandler,
+  runRecovery: financeHandler,
   runFull: financeHandler
 });
 

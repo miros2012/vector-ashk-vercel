@@ -41,7 +41,9 @@ test('nightly route records separate source and publish attempts with deployment
     'runId', 'startedAtUtc', 'finishedAtUtc', 'trigger', 'mode', 'stage', 'attempt',
     'result', 'statusCode', 'errorClass', 'retryable', 'retryAfterUtc', 'deploymentSha'
   ].sort());
-  assert.doesNotMatch(JSON.stringify(entries), /PRIVATE_|999|route-secret/);
+  const serializedEntries = JSON.stringify(entries);
+  assert.doesNotMatch(serializedEntries, /PRIVATE_|route-secret/);
+  assert.doesNotMatch(serializedEntries, /"debt"\s*:\s*999/);
   assert.ok(events.indexOf('schema') < events.indexOf('acquire'));
   assert.ok(events.indexOf('acquire') < events.indexOf('tochkaDds'));
   assert.ok(events.indexOf('marker:receivables_last_success_utc') < events.indexOf('ropPublish'));
@@ -65,4 +67,21 @@ test('source failure never invokes the separate ROP publication dependency', asy
   assert.deepEqual(entries.map(entry => entry.stage), ['receivablesSource']);
   assert.equal(events.includes('ropPublish'), false);
   assert.equal(events.includes('marker:receivables_last_success_utc'), false);
+});
+
+test('signed recovery-only finance request does no source work when retry state is empty', async t => {
+  const { route, events, entries } = await financeRouteHarness(t);
+  const res = response();
+  await route.default({
+    ...cronRequest('0 7 * * *'),
+    headers: {
+      ...cronRequest('0 7 * * *').headers,
+      'x-vector-finance-recovery-only': 'true'
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { ok: true, mode: 'recovery_idle', stages: {} });
+  assert.deepEqual(entries, []);
+  assert.deepEqual(events, ['google-authorize', 'google-client', 'store', 'schema', 'acquire', 'release']);
 });

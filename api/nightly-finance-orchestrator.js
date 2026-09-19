@@ -484,7 +484,7 @@ const nightlyHandler = runControl => createNightlyFinanceOrchestrator({
   runControl
 });
 
-const intradayHandler = runControl => createIntradayRopOrchestrator({
+const intradayHandler = (runControl, { recoveryOnly = false } = {}) => createIntradayRopOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runPayments: syncPayments,
   runReceivablesSource: syncReceivables,
@@ -494,7 +494,8 @@ const intradayHandler = runControl => createIntradayRopOrchestrator({
   runDataHealth: reconcileDecisions.dataHealth,
   runDecisions: reconcileDecisions,
   runOwnerActionQueue: runOwnerActionQueueNow,
-  runControl
+  runControl,
+  recoveryOnly
 });
 
 const manualFinanceRunHandler = runControl => createManualFinanceRunHandler({
@@ -517,7 +518,8 @@ export default async function handler(req, res) {
   const runControl = createRequestRunControl('cron');
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (INTRADAY_SCHEDULES.has(schedule)) {
-    return intradayHandler(runControl)(req, res);
+    const recoveryOnly = String(req?.headers?.['x-vector-finance-recovery-only'] || '') === 'true';
+    return intradayHandler(runControl, { recoveryOnly })(req, res);
   }
   return nightlyHandler(runControl)(req, res);
 }
