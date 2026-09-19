@@ -85,3 +85,14 @@ test('signed recovery-only finance request does no source work when retry state 
   assert.deepEqual(entries, []);
   assert.deepEqual(events, ['google-authorize', 'google-client', 'store', 'schema', 'acquire', 'release']);
 });
+
+test('mid-hour Vercel finance cron is recovery-only without a private routing header', async t => {
+  const { route, events, entries } = await financeRouteHarness(t);
+  const res = response();
+  await route.default(cronRequest('30 4 * * *'), res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { ok: true, mode: 'recovery_idle', stages: {} });
+  assert.deepEqual(entries, []);
+  assert.deepEqual(events, ['google-authorize', 'google-client', 'store', 'schema', 'acquire', 'release']);
+});
