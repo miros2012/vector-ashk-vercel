@@ -298,7 +298,8 @@ test('a partial retry clear remains durably blocked at every failed write', asyn
     const store = createGoogleSheetsFinanceRunStore({ sheets: fake.sheets, spreadsheetId: 'book' });
     assert.deepEqual(await store.clearRetry(), { ok: false, errorClass: 'LEDGER_WRITE' }, `write ${failAt}`);
     const remaining = await store.readRetry();
-    assert.ok(remaining?.ok === false || remaining?.finance_retry_after_utc === 'CLAIMED', `write ${failAt} must block`);
+    if (failAt === 6) assert.equal(remaining, null, 'terminal CLEARING can be completed safely');
+    else assert.ok(remaining?.ok === false || remaining?.finance_retry_after_utc === 'CLAIMED', `write ${failAt} must block`);
   }
 });
 
@@ -313,6 +314,22 @@ test('readRetry rejects malformed or partial nonempty state instead of returning
     const store = createGoogleSheetsFinanceRunStore({ sheets: fake.sheets, spreadsheetId: 'book' });
     assert.deepEqual(await store.readRetry(), { ok: false, errorClass: 'LEDGER_WRITE' }, key);
   }
+});
+
+test('readRetry finishes a stranded terminal CLEARING sentinel', async () => {
+  const fake = sheetsFake({
+    controlRows: Object.keys(RETRY_STATE).map(key => [
+      key,
+      key === 'finance_retry_after_utc' ? 'CLEARING' : ''
+    ])
+  });
+  const store = createGoogleSheetsFinanceRunStore({ sheets: fake.sheets, spreadsheetId: 'book' });
+
+  assert.equal(await store.readRetry(), null);
+  assert.equal(
+    fake.state.controlRows.find(([key]) => key === 'finance_retry_after_utc')?.[1],
+    ''
+  );
 });
 
 test('duplicate retry control keys cannot hide nonempty partial state', async () => {
