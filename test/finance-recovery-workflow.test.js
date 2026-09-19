@@ -15,7 +15,6 @@ test('finance recovery schedule cannot displace the hourly project continuation 
   );
 });
 
-
 test('finance sync script receives the GitHub event name before choosing recovery mode', () => {
   assert.match(
     workflow,
