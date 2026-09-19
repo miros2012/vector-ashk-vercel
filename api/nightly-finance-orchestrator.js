@@ -39,6 +39,7 @@ const ROP_PAYMENT_ATTRIBUTION_SHEET = 'РОП_Привязка_Оплат__diag'
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
 const INTRADAY_SCHEDULES = new Set(Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`));
+const RECOVERY_SCHEDULES = new Set(Array.from({ length: 12 }, (_, index) => `30 ${index + 4} * * *`));
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -517,8 +518,9 @@ export default async function handler(req, res) {
   }
   const runControl = createRequestRunControl('cron');
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
-  if (INTRADAY_SCHEDULES.has(schedule)) {
-    const recoveryOnly = String(req?.headers?.['x-vector-finance-recovery-only'] || '') === 'true';
+  if (INTRADAY_SCHEDULES.has(schedule) || RECOVERY_SCHEDULES.has(schedule)) {
+    const recoveryOnly = RECOVERY_SCHEDULES.has(schedule)
+      || String(req?.headers?.['x-vector-finance-recovery-only'] || '') === 'true';
     return intradayHandler(runControl, { recoveryOnly })(req, res);
   }
   return nightlyHandler(runControl)(req, res);
