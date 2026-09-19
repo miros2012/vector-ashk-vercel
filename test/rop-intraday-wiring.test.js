@@ -38,12 +38,14 @@ test('source-only callable marks its snapshot without invoking publication', asy
   assert.equal(events.at(-1), 'ropPublish');
 });
 
-test('same protected finance endpoint has nightly plus twelve daily intraday Tyumen schedules', () => {
+test('same protected finance endpoint has nightly, intraday, and recovery schedules', () => {
   const financeCrons = config.crons.filter((cron) => cron.path === financePath);
-  assert.equal(financeCrons.length, 13);
+  assert.equal(financeCrons.length, 25);
   assert.ok(financeCrons.some((cron) => cron.schedule === '30 21 * * *'));
   for (const schedule of intradaySchedules) {
     assert.ok(financeCrons.some((cron) => cron.schedule === schedule), `missing ${schedule}`);
+    const recoverySchedule = schedule.replace(/^0 /, '30 ');
+    assert.ok(financeCrons.some((cron) => cron.schedule === recoverySchedule), `missing ${recoverySchedule}`);
   }
 });
 
