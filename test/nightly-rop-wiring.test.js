@@ -9,18 +9,24 @@ test('nightly route includes current-month payments before receivables', () => {
   assert.match(source, /runPayments:\s*syncPayments/);
 });
 
-test('verified receivables hook builds the live ROP control from the same ASHK contract fetch', () => {
+test('verified receivables hook records the source marker without rebuilding the ROP control', () => {
   assert.match(source, /buildRopDailyControlWorkbook/);
   assert.match(source, /РОП_План_Сентябрь/);
   assert.match(source, /РОП_Контроль_Дня/);
   assert.match(source, /АШК_Контракты_ТекущийМесяц__vercel/);
-  assert.match(source, /afterVerified/);
+  assert.match(source, /afterSourceVerified/);
+  assert.match(source, /markReceivablesSourceVerified/);
   assert.match(source, /АШК_Оплаты__vercel/);
+
+  const markerStart = source.indexOf('async function markReceivablesSourceVerified');
+  const markerEnd = source.indexOf('\n}', markerStart);
+  assert.ok(markerStart >= 0 && markerEnd >= 0);
+  assert.equal(source.slice(markerStart, markerEnd).includes('syncRopSourceThenPublishTarget'), false);
 });
 
-test('both ROP refresh paths read seller attribution columns from staging', () => {
+test('the independent ROP refresh reads seller attribution columns from staging', () => {
   const reads = source.match(/readValues\(PAYMENTS_STAGING_SHEET, 'A:K'\)/g) || [];
-  assert.equal(reads.length, 2);
+  assert.equal(reads.length, 1);
 });
 
 test('hourly ROP flow persists expanded seller diagnostics after payment sync', () => {

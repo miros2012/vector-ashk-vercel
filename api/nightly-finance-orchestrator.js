@@ -7,11 +7,14 @@ import { refreshBalancesMirrorOnly } from './balances.js';
 import { publishRopNow } from './health.js';
 import { createNightlyFinanceOrchestrator } from '../lib/nightly-finance-orchestrator.js';
 import { createIntradayRopOrchestrator } from '../lib/rop-intraday-orchestrator.js';
+import { createGoogleSheetsFinanceRunStore } from '../lib/google-sheets-finance-run-store.js';
+import { createFinanceRunControl } from '../lib/finance-run-control.js';
 import { mergeDebtorManualFields, syncRopSourceThenPublishTarget } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
 import { createAshkReceivablesSource } from '../lib/ashk-receivables-source.js';
 import { createReceivablesSyncHandler } from '../lib/receivables-sync-handler.js';
-import { buildRopDailyControlWorkbook, receivablesValuesToStudents } from '../lib/rop-daily-control.js';
+import { buildCurrentMonthContractStaging, buildRopDailyControlWorkbook, receivablesValuesToStudents } from '../lib/rop-daily-control.js';
+import { sanitizeFinanceStageFailure } from '../lib/finance-stage-result.js';
 import { buildRopMorningDashboard } from '../lib/rop-morning-dashboard.js';
 import { buildRopDebtorPriority, buildRopTasksToday } from '../lib/rop-tasks-today.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
@@ -306,60 +309,27 @@ async function persistRopOutputs({
     managerUnattributedAmount: workbook.metrics.managerUnattributedAmount,
     verified: true
   };
-  console.log(JSON.stringify({ event: 'rop-daily-control-sync', ...result }));
   return result;
 }
 
-async function syncRopDailyControl({ groups, contractsByGroup }) {
-  const { date, month } = tyumenToday();
-  const [planValues, paymentValues, receivablesValues] = await Promise.all([
-    readValues(ROP_PLAN_SHEET, 'A:H'),
-    readValues(PAYMENTS_STAGING_SHEET, 'A:K'),
-    readValues(RECEIVABLES_DETAIL_SHEET, 'A:N')
-  ]);
-  let fallbackStudents = receivablesValuesToStudents(receivablesValues);
-
-  let workbook = buildRopDailyControlWorkbook({
-    planValues,
-    groups,
-    contractsByGroup,
-    fallbackStudents,
-    paymentValues,
-    month,
-    asOfDate: date
-  });
-  const ids = missingStudentIds(workbook);
-  let fallbackLookupFailures = 0;
-  let resolved = [];
-  if (ids.length) {
-    const fallback = await fetchFallbackStudents(ids);
-    resolved = fallback.students;
-    fallbackStudents = [...fallbackStudents, ...resolved];
-    fallbackLookupFailures = fallback.failures;
-    if (resolved.length) {
-      workbook = buildRopDailyControlWorkbook({
-        planValues,
-        groups,
-        contractsByGroup,
-        fallbackStudents,
-        paymentValues,
-        month,
-        asOfDate: date
-      });
+async function refreshCurrentMonthContractStaging({ groups, contractsByGroup }) {
+  let errorClass = 'SHEETS_READBACK';
+  try {
+    const planValues = await readValues(ROP_PLAN_SHEET, 'A:H');
+    errorClass = 'VALIDATION';
+    const values = buildCurrentMonthContractStaging({ groups, contractsByGroup, planValues, month: tyumenToday().month });
+    errorClass = 'SHEETS_WRITE';
+    await writeValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J', values, 10);
+    errorClass = 'SHEETS_READBACK';
+    const readback = await readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J');
+    if (readback.length !== values.length || !values.every((row, index) =>
+      row.every((value, column) => String(value ?? '') === String(readback[index]?.[column] ?? '')))) {
+      errorClass = 'READBACK_MISMATCH';
+      throw new Error('Contract staging verification failed');
     }
+  } catch {
+    throw sanitizeFinanceStageFailure({ statusCode: 502, errorClass });
   }
-
-  return persistRopOutputs({
-    workbook,
-    planValues,
-    receivablesValues,
-    date,
-    month,
-    writeContracts: true,
-    fallbackRequested: ids.length,
-    fallbackResolved: resolved.length,
-    fallbackLookupFailures
-  });
 }
 
 async function refreshRopFromStaging() {
@@ -371,9 +341,9 @@ async function refreshRopFromStaging() {
     readValues(RECEIVABLES_DETAIL_SHEET, 'A:N')
   ]);
   const baseStudents = persistedContractsToStudents(currentContractsValues);
-  if (!baseStudents.length) throw new Error('Current-month ROP contract staging is empty');
+  if (currentContractsValues?.[0]?.[0] !== 'StudentId') throw new Error('Current-month ROP contract staging is unverified');
 
-  let fallbackStudents = [...receivablesValuesToStudents(receivablesValues), ...baseStudents];
+  let fallbackStudents = [...baseStudents, ...receivablesValuesToStudents(receivablesValues)];
   let workbook = buildRopDailyControlWorkbook({
     planValues,
     groups: [],
@@ -417,11 +387,8 @@ async function refreshRopFromStaging() {
   });
 }
 
-async function syncRopDailyControlAndPublish(payload) {
-  const result = await syncRopSourceThenPublishTarget({
-    refreshSource: () => syncRopDailyControl(payload),
-    publishTarget: publishRopNow
-  });
+async function markReceivablesSourceVerified(payload) {
+  await refreshCurrentMonthContractStaging(payload);
   const receivablesLastSuccessUtc = new Date().toISOString();
   await writeControlMarker({
     sheets: await getSheets(),
@@ -429,7 +396,6 @@ async function syncRopDailyControlAndPublish(payload) {
     key: 'receivables_last_success_utc',
     value: receivablesLastSuccessUtc
   });
-  return { ...result, sourceLastSuccessUtc: receivablesLastSuccessUtc };
 }
 
 async function refreshRopFromStagingAndPublish() {
@@ -456,7 +422,7 @@ const syncReceivables = createReceivablesSyncHandler({
   writeSummary: values => writeValues(RECEIVABLES_SUMMARY_SHEET, 'A:F', values, 6),
   readDetail: () => readValues(RECEIVABLES_DETAIL_SHEET, 'A:N'),
   readSummary: () => readValues(RECEIVABLES_SUMMARY_SHEET, 'A:F'),
-  afterVerified: syncRopDailyControlAndPublish
+  afterSourceVerified: markReceivablesSourceVerified
 });
 
 const tochkaDdsHandler = createTochkaDdsImportHandler({
@@ -475,45 +441,83 @@ export const runReceivablesNow = syncReceivables;
 export const runIntradayRopNow = refreshRopFromStagingAndPublish;
 export const runTochkaDdsNow = tochkaDdsHandler;
 
-const nightlyHandler = createNightlyFinanceOrchestrator({
+function createRequestRunControl(trigger) {
+  const requestStartedAt = new Date();
+  let controlPromise;
+  function getControl() {
+    if (!controlPromise) {
+      controlPromise = getSheets().then(sheets => createFinanceRunControl({
+        store: createGoogleSheetsFinanceRunStore({ sheets, spreadsheetId: SPREADSHEET_ID }),
+        requestStartedAt,
+        minimumRemainingMs: process.env.FINANCE_STAGE_MIN_REMAINING_MS,
+        deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA || ''
+      }));
+    }
+    return controlPromise;
+  }
+
+  return {
+    async begin({ mode }) {
+      try {
+        // Orchestrators call begin only after authentication. The controller
+        // verifies schema before acquiring the shared four-minute lease.
+        return await (await getControl()).begin({ trigger, mode });
+      } catch {
+        return { ok: false, statusCode: 500, errorClass: 'LEDGER_WRITE' };
+      }
+    },
+    async pendingRecovery(context) { return (await getControl()).pendingRecovery(context); },
+    async runStage(context, stage) { return (await getControl()).runStage(context, stage); },
+    async finish(context) { return (await getControl()).finish(context); }
+  };
+}
+
+const nightlyHandler = runControl => createNightlyFinanceOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runHours: syncHours,
   runPayments: syncPayments,
-  runReceivables: syncReceivables,
+  runReceivablesSource: syncReceivables,
+  runRopPublish: refreshRopFromStagingAndPublish,
   runTochkaDds: tochkaDdsHandler,
   runBalances: refreshBalancesMirrorOnly,
-  runDecisions: reconcileDecisions
+  runDecisions: reconcileDecisions,
+  runControl
 });
 
-const intradayHandler = createIntradayRopOrchestrator({
+const intradayHandler = runControl => createIntradayRopOrchestrator({
   cronSecret: process.env.CRON_SECRET || '',
   runPayments: syncPayments,
-  runReceivables: syncReceivables,
-  refreshRop: refreshRopFromStagingAndPublish,
+  runReceivablesSource: syncReceivables,
+  runRopPublish: refreshRopFromStagingAndPublish,
   runTochkaDds: tochkaDdsHandler,
   runBalances: refreshBalancesMirrorOnly,
   runDataHealth: reconcileDecisions.dataHealth,
   runDecisions: reconcileDecisions,
-  runOwnerActionQueue: runOwnerActionQueueNow
+  runOwnerActionQueue: runOwnerActionQueueNow,
+  runControl
 });
 
-const manualFinanceRunHandler = createManualFinanceRunHandler({
+const manualFinanceRunHandler = runControl => createManualFinanceRunHandler({
   cronSecret: process.env.CRON_SECRET || '',
   consumeToken: async providedToken => consumeOneTimeFinanceRunToken({
     sheets: await getSheets(),
     spreadsheetId: SPREADSHEET_ID,
     providedToken
   }),
-  runNightly: nightlyHandler
+  runNightly: nightlyHandler(runControl),
+  runPayments: syncPayments,
+  runControl
 });
 
 export default async function handler(req, res) {
   if (hasManualFinanceRunToken(req)) {
-    return manualFinanceRunHandler(req, res);
+    // Preserve consume-before-run token semantics, including lease conflicts.
+    return manualFinanceRunHandler(createRequestRunControl('manual'))(req, res);
   }
+  const runControl = createRequestRunControl('cron');
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (INTRADAY_SCHEDULES.has(schedule)) {
-    return intradayHandler(req, res);
+    return intradayHandler(runControl)(req, res);
   }
-  return nightlyHandler(req, res);
+  return nightlyHandler(runControl)(req, res);
 }

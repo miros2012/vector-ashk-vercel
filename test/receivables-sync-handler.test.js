@@ -57,7 +57,45 @@ test('receivables sync writes positive-debt detail, verifies readback, and retur
   assert.equal(writes.summary.some(row => row[0] === 'ФИЛИАЛ' && row[1] === 'Гондатти' && row[3] === 20000), true);
 });
 
-test('receivables sync fails closed when detail or summary readback does not match source totals', async () => {
+test('receivables sync classifies source boundary failures without exposing the exception', async () => {
+  const source = {
+    groups: [{ Id: 10, TrainingRoomName: 'Герцена' }],
+    contractsByGroup: new Map([[10, [
+      { Id: 101, OwnerName: 'Менеджер А', Debt: 30000, SalesSum: 100000, DebitSum: 70000 }
+    ]]])
+  };
+  const writeValues = [];
+  const validDeps = {
+    fetchCurrent: async () => source,
+    writeDetail: async values => { writeValues[0] = values; },
+    writeSummary: async values => { writeValues[1] = values; },
+    readDetail: async () => writeValues[0],
+    readSummary: async () => writeValues[1]
+  };
+  const cases = [
+    ['ASHK_FETCH', { fetchCurrent: async () => { throw new Error('ASHK private student detail'); } }],
+    ['SHEETS_WRITE', { writeDetail: async () => { throw new Error('Sheets write secret'); } }],
+    ['SHEETS_READBACK', { readDetail: async () => { throw new Error('Sheets readback secret'); } }]
+  ];
+
+  for (const [errorClass, overrides] of cases) {
+    const handler = createReceivablesSyncHandler({ ...validDeps, ...overrides });
+    const res = responseRecorder();
+    await handler({ method: 'GET' }, res);
+
+    assert.equal(res.statusCode, 502, errorClass);
+    assert.deepEqual(res.body, {
+      ok: false,
+      statusCode: 502,
+      errorClass,
+      retryable: true
+    });
+    assert.equal(JSON.stringify(res.body).includes('secret'), false, errorClass);
+    assert.equal(JSON.stringify(res.body).includes('student'), false, errorClass);
+  }
+});
+
+test('receivables sync makes a staging aggregate mismatch permanent without exposing details', async () => {
   const expectedDetail = [
     ['StudentId','GroupId','Филиал','Менеджер','Договор','Дата договора','Статус','Продажи','Оплачено','Долг','Долг основной услуги','Основная услуга','Последняя оплата'],
     [101,10,'Герцена','Менеджер А','','','',100000,70000,30000,0,'','']
@@ -84,7 +122,12 @@ test('receivables sync fails closed when detail or summary readback does not mat
   await handler({ method: 'GET' }, res);
 
   assert.equal(res.statusCode, 502);
-  assert.deepEqual(res.body, { ok: false, error: 'Receivables staging verification failed' });
+  assert.deepEqual(res.body, {
+    ok: false,
+    statusCode: 502,
+    errorClass: 'READBACK_MISMATCH',
+    retryable: false
+  });
 });
 
 test('receivables sync rejects non-GET without external calls', async () => {
@@ -102,20 +145,4 @@ test('receivables sync rejects non-GET without external calls', async () => {
 
   assert.equal(res.statusCode, 405);
   assert.equal(calls, 0);
-});
-
-test('receivables sync returns generic 500 without leaking ASHK details', async () => {
-  const handler = createReceivablesSyncHandler({
-    fetchCurrent: async () => { throw new Error('private student or ASHK detail'); },
-    writeDetail: async () => {},
-    writeSummary: async () => {},
-    readDetail: async () => [],
-    readSummary: async () => []
-  });
-
-  const res = responseRecorder();
-  await handler({ method: 'GET' }, res);
-
-  assert.equal(res.statusCode, 500);
-  assert.deepEqual(res.body, { ok: false, error: 'Receivables sync failed' });
 });

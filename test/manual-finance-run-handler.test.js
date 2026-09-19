@@ -12,6 +12,22 @@ function responseRecorder() {
   };
 }
 
+test('manual payment exception still releases its acquired finance lease', async () => {
+  const events = [];
+  const handler = createManualFinanceRunHandler({
+    cronSecret: 'cron-secret',
+    consumeToken: async () => { events.push('consume'); return { ok: true }; },
+    runControl: {
+      begin: async () => { events.push('acquire'); return { ok: true, runId: 'manual' }; },
+      finish: async context => { assert.equal(context.runId, 'manual'); events.push('release'); }
+    },
+    runNightly: async () => {},
+    runPayments: async () => { events.push('payments'); throw new Error('payment failure'); }
+  });
+  await assert.rejects(handler({ method: 'GET', query: { finance_run_token: 'one', stage: 'payments' } }, responseRecorder()));
+  assert.deepEqual(events, ['consume', 'acquire', 'payments', 'release']);
+});
+
 test('consumes and strips the one-time token before running the existing nightly handler', async () => {
   const events = [];
   const handler = createManualFinanceRunHandler({
