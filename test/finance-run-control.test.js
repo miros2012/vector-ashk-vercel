@@ -79,7 +79,7 @@ test('a busy lease prevents a stage executor from running', async () => {
   assert.deepEqual(result, { ok: false, statusCode: 409 });
   assert.deepEqual(store.calls.find(([name]) => name === 'acquireLease')[1], {
     runId: '2026-09-18T00:00:00.000Z-abcd',
-    leaseMs: 240_000
+    leaseMs: 360_000
   });
   assert.equal(ran, false);
   assert.equal(store.calls.some(([name]) => name === 'appendAttempt'), false);
@@ -369,7 +369,7 @@ test('pendingRecovery blocks malformed nonempty retry state without invoking exe
 });
 
 test('TIME_BUDGET is ledgered and scheduled without starting a late stage', async () => {
-  for (const [options, elapsed] of [[{}, 91_000], [{ minimumRemainingMs: 30_000 }, 151_000]]) {
+  for (const [options, elapsed] of [[{}, 211_000], [{ minimumRemainingMs: 30_000 }, 271_000]]) {
     let clock = NOW.getTime();
     const store = storeFake();
     const runControl = createFinanceRunControl({ store, now: () => new Date(clock), log: () => {}, ...options });
@@ -395,7 +395,7 @@ test('TIME_BUDGET is ledgered and scheduled without starting a late stage', asyn
 test('stage budget includes time spent before lazy controller initialization', async () => {
   const store = storeFake();
   const runControl = createFinanceRunControl({
-    store, requestStartedAt: new Date(NOW.getTime() - 100_000), now: () => NOW, log: () => {}
+    store, requestStartedAt: new Date(NOW.getTime() - 220_000), now: () => NOW, log: () => {}
   });
   const context = await runControl.begin();
   let executed = false;
