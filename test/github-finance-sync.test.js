@@ -60,6 +60,7 @@ test('finance sync OIDC handler routes intraday without exposing CRON_SECRET', a
     },
     cronSecret: 'private-cron-secret',
     runIntraday: runner(calls, 'intraday'),
+    runRecovery: runner(calls, 'recovery'),
     runFull: runner(calls, 'full')
   });
   const res = responseRecorder();
@@ -84,6 +85,7 @@ test('finance sync can request the bounded full refresh', async () => {
     verifyToken: async () => CLAIMS,
     cronSecret: 'secret',
     runIntraday: runner(calls, 'intraday'),
+    runRecovery: runner(calls, 'recovery'),
     runFull: runner(calls, 'full')
   });
   const res = responseRecorder();
@@ -97,11 +99,46 @@ test('finance sync can request the bounded full refresh', async () => {
   assert.equal(calls[0].name, 'full');
 });
 
+test('finance sync routes signed recovery checks without starting an intraday refresh', async () => {
+  const calls = [];
+  const handler = createGitHubFinanceSyncHandler({
+    verifyToken: async () => CLAIMS,
+    cronSecret: 'secret',
+    runIntraday: runner(calls, 'intraday'),
+    runRecovery: async (req, res) => {
+      calls.push({
+        name: 'recovery',
+        method: req.method,
+        authorization: req.headers.authorization,
+        recoveryOnly: req.headers['x-vector-finance-recovery-only']
+      });
+      return res.status(200).json({ ok: true, mode: 'recovery_idle' });
+    },
+    runFull: runner(calls, 'full')
+  });
+  const res = responseRecorder();
+
+  await handler({
+    method: 'POST',
+    headers: { authorization: 'Bearer signed-oidc' },
+    body: { mode: 'finance_sync', kind: 'recovery' }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls, [{
+    name: 'recovery',
+    method: 'GET',
+    authorization: 'Bearer secret',
+    recoveryOnly: 'true'
+  }]);
+});
+
 test('finance sync rejects unsupported modes and unsigned callers', async () => {
   const handler = createGitHubFinanceSyncHandler({
     verifyToken: async () => { throw new Error('invalid token'); },
     cronSecret: 'secret',
     runIntraday: async () => {},
+    runRecovery: async () => {},
     runFull: async () => {}
   });
   const res = responseRecorder();
