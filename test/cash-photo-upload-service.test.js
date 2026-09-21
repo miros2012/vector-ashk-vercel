@@ -127,3 +127,48 @@ test('rejects unsupported or oversized uploads before storage', async () => {
   await assert.rejects(service.upload(validInput({ imageBytes: Buffer.alloc(MAX_CASH_PHOTO_BYTES + 1) })), /слишком большой/i);
   assert.equal(storeCalls, 0);
 });
+
+
+test('save persists and queues recognition without waiting for Gemini', async () => {
+  const sequence = [];
+  const store = {
+    async findByHash() { sequence.push('find'); return null; },
+    async persistPhoto(input) { sequence.push('persist'); return { photoId: 'PHOTO-SAVE', archiveRow: 401, fileId: 'drive-save', ...input }; },
+    async markPending(_photo, details) {
+      sequence.push('pending');
+      assert.match(details.message, /распознавание продолжится/i);
+    }
+  };
+  const service = createCashPhotoUploadService({
+    store,
+    recognize: async () => {
+      sequence.push('recognize');
+      throw new Error('recognition must not run during save');
+    }
+  });
+
+  const result = await service.save(validInput());
+
+  assert.equal(result.statusCode, 202);
+  assert.equal(result.body.saved, true);
+  assert.equal(result.body.photoId, 'PHOTO-SAVE');
+  assert.equal(result.body.pendingRecognition, true);
+  assert.deepEqual(sequence, ['find', 'persist', 'pending']);
+});
+
+test('save keeps recognized duplicate idempotent', async () => {
+  let effects = 0;
+  const service = createCashPhotoUploadService({
+    store: {
+      async findByHash() { return { photoId: 'PHOTO-old', branch: 'Ямская', status: 'Распознано — ожидает обработки' }; },
+      async persistPhoto() { effects += 1; },
+      async markPending() { effects += 1; }
+    },
+    recognize: async () => { effects += 1; }
+  });
+
+  const result = await service.save(validInput());
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.body.alreadyStored, true);
+  assert.equal(effects, 0);
+});
