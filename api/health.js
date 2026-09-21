@@ -15,6 +15,7 @@ import { createCashPhotoSmokeHandler } from '../lib/cash-photo-automatic-smoke.j
 import { createCashPhotoAccessStore } from '../lib/cash-photo-access-store.js';
 import { createCashPhotoDriveWriter } from '../lib/cash-photo-drive-writer.js';
 import { createCashPhotoStore } from '../lib/cash-photo-store.js';
+import { createCashJournalPipeline } from '../lib/cash-journal-pipeline.js';
 import { createCashPhotoUploadHttpHandler } from '../lib/cash-photo-upload-http.js';
 import { createCashPhotoUploadService } from '../lib/cash-photo-upload-service.js';
 import { createCashPhotoConfigHttpHandler } from '../lib/cash-photo-config-http.js';
@@ -265,12 +266,17 @@ async function getCashPhotoServices() {
       const drive = google.drive({ version: 'v3', auth });
       const access = createCashPhotoAccessStore({ allowBareShared: true });
       const driveWriter = createCashPhotoDriveWriter({ google });
+      const journalPipeline = createCashJournalPipeline({
+        sheets,
+        spreadsheetId: CASH_PHOTO_SPREADSHEET_ID
+      });
       const store = createCashPhotoStore({
         sheets,
         drive,
         uploadDrive: driveWriter,
         spreadsheetId: CASH_PHOTO_SPREADSHEET_ID,
-        folderId: CASH_PHOTO_DRIVE_FOLDER_ID
+        folderId: CASH_PHOTO_DRIVE_FOLDER_ID,
+        journalPipeline
       });
       const recognize = async ({ imageBytes, mimeType, branch, year }) => {
         return recognizeWithFallback({
