@@ -263,7 +263,7 @@ async function getCashPhotoServices() {
       await auth.authorize();
       const sheets = google.sheets({ version: 'v4', auth });
       const drive = google.drive({ version: 'v3', auth });
-      const access = createCashPhotoAccessStore();
+      const access = createCashPhotoAccessStore({ allowBareShared: true });
       const driveWriter = createCashPhotoDriveWriter({ google });
       const store = createCashPhotoStore({
         sheets,
