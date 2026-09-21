@@ -53,3 +53,26 @@ test('transient failure remains pending and does not abort other items', async (
   assert.equal(pendingMarks, 1);
   assert.equal(recognizedMarks, 1);
 });
+
+
+test('concurrent recovery also runs bounded recognized-journal draft backfill', async () => {
+  let backfillLimit = 0;
+  const store = {
+    async listPending() { return []; },
+    async readPhoto() { throw new Error('not used'); },
+    async syncRecognizedDraftBacklog(limit) {
+      backfillLimit = limit;
+      return { attempted: 2, synced: 2, skipped: 0, failed: 0 };
+    }
+  };
+  const service = createCashPhotoRetryService({
+    store,
+    recognize: async () => ({ model: 'model', data: { operations: [] } })
+  });
+  const result = await service.retryPendingConcurrent(3, {});
+  assert.deepEqual(result, {
+    attempted: 0, recognized: 0, stillPending: 0, failed: 0,
+    draftBackfill: { attempted: 2, synced: 2, skipped: 0, failed: 0 }
+  });
+  assert.equal(backfillLimit, 3);
+});
