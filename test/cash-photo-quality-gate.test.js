@@ -43,9 +43,14 @@ function recognition(data) {
 }
 
 function writtenRow(updates) {
-  assert.equal(updates.length, 1);
-  assert.equal(updates[0].range, "'Архив кассовых фото'!H302:N302");
-  return updates[0].requestBody.values[0];
+  assert.equal(updates.length, 2);
+  assert.equal(updates[0].range, "'Архив кассовых фото'!L302:N302");
+  assert.equal(updates[1].range, "'Архив кассовых фото'!H302:J302");
+  return [
+    ...updates[1].requestBody.values[0],
+    '',
+    ...updates[0].requestBody.values[0]
+  ];
 }
 
 test('clean cash photo stays recognized and awaiting processing', async () => {

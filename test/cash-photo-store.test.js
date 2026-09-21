@@ -117,13 +117,48 @@ test('markRecognized routes flagged OCR to review and never DDS', async () => {
     data: { pageNote: 'ok', operations: [{ needsReview: false }, { needsReview: true }] }
   });
 
-  const update = calls.find((c) => c[0] === 'sheets.update')[1];
-  assert.equal(update.range, "'Архив кассовых фото'!H302:N302");
-  assert.equal(update.requestBody.values[0][0], 'Распознано — требуется проверка');
-  assert.equal(update.requestBody.values[0][1], 2);
-  assert.equal(update.requestBody.values[0][2], 1);
-  assert.equal(update.requestBody.values[0][4], 'google/gemini-3.8-flash');
+  const updates = calls.filter((c) => c[0] === 'sheets.update').map((c) => c[1]);
+  assert.equal(updates.length, 2);
+  assert.equal(updates[0].range, "'Архив кассовых фото'!L302:N302");
+  assert.equal(updates[0].requestBody.values[0][0], 'google/gemini-3.8-flash');
+  assert.equal(updates[1].range, "'Архив кассовых фото'!H302:J302");
+  assert.equal(updates[1].requestBody.values[0][0], 'Распознано — требуется проверка');
+  assert.equal(updates[1].requestBody.values[0][1], 2);
+  assert.equal(updates[1].requestBody.values[0][2], 1);
+  assert.ok(updates.every((update) => !/!K\d/.test(update.range) && !/:K\d/.test(update.range)));
   assert.ok(calls.every(([, args]) => !String(args.range || '').includes('ДДС')));
+});
+
+
+
+test('markRecognized succeeds when archive column K rejects all writes', async () => {
+  const { drive, sheets, calls } = makeClients();
+  const originalUpdate = sheets.spreadsheets.values.update;
+  sheets.spreadsheets.values.update = async (args) => {
+    if (/!K\d/.test(args.range) || /:K\d/.test(args.range)) {
+      throw new Error('Выберите статью из листа «Справочник статей».');
+    }
+    return originalUpdate(args);
+  };
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+
+  await store.markRecognized({ photoId: 'PHOTO-1', archiveRow: 302 }, {
+    model: 'gemini-test',
+    data: {
+      initialBalance: 0,
+      visibleMoneyRowCount: 0,
+      finalBalance: 0,
+      finalBalanceReadable: true,
+      pageNote: '',
+      operations: []
+    }
+  });
+
+  const updates = calls.filter((c) => c[0] === 'sheets.update').map((c) => c[1].range);
+  assert.deepEqual(updates, [
+    "'Архив кассовых фото'!L302:N302",
+    "'Архив кассовых фото'!H302:J302"
+  ]);
 });
 
 test('markPending stores safe state and diagnostics only in archive comment', async () => {
