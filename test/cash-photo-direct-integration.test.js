@@ -41,15 +41,12 @@ for(const [name,key,status] of [['missing key','',200],['transient outage','test
   if(!key)assert.equal(f.requests.length,0);
 });
 
-test('native recognition writes archive only and duplicate upload creates no new file or request',async()=>{
+test('HTTP upload durably stores once and never waits for native recognition',async()=>{
   const f=fixture('test-secret',200);const first=await f.upload();const again=await f.upload();
-  assert.equal(first.code,200);assert.equal(first.body.rowsRecognized,1);assert.equal(first.body.reviewCount,1);
-  assert.equal(again.body.alreadyStored,true);assert.equal(f.rows.length,1);assert.equal(f.requests.length,1);
+  assert.equal(first.code,202);assert.equal(first.body.saved,true);assert.equal(first.body.pendingRecognition,true);
+  assert.equal(again.code,202);assert.equal(again.body.saved,true);
+  assert.equal(f.rows.length,1);assert.equal(f.requests.length,0);
   assert.equal(f.events.filter(x=>x==='drive').length,1);
-  assert.equal(f.rows[0][7],'Распознано — требуется проверка');assert.equal(f.rows[0][10],'');
-  assert.match(f.rows[0][12],/\[QUALITY\]/);
-  assert.equal(JSON.parse(f.rows[0][13]).operations.length,1);
+  assert.equal(f.rows[0][7],'Ожидает распознавания');
   assert.ok(f.writes.every(range=>range.startsWith("'Архив кассовых фото'!")));
-  assert.ok(f.requests[0].url.startsWith('https://generativelanguage.googleapis.com/'));
-  assert.equal(f.requests[0].body.contents[0].parts[1].inlineData.data,Buffer.from('synthetic-test-photo').toString('base64'));
 });

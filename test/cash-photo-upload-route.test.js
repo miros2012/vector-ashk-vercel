@@ -97,3 +97,26 @@ test('rejects non-POST methods', async () => {
   assert.equal(res.code, 405);
   assert.equal(res.headers.allow, 'POST');
 });
+
+
+test('prefers save path so request completes before recognition work', async () => {
+  const calls = [];
+  const handler = createCashPhotoUploadHttpHandler({
+    authorize,
+    uploadService: {
+      async save(input) {
+        calls.push(['save', input.branch]);
+        return { statusCode: 202, body: { ok: true, saved: true, photoId: 'PHOTO-SAVE', pendingRecognition: true } };
+      },
+      async upload() {
+        calls.push(['upload']);
+        throw new Error('upload recognition path must not run');
+      }
+    }
+  });
+  const res = responseRecorder();
+  await handler(req(), res);
+  assert.equal(res.code, 202);
+  assert.equal(res.payload.photoId, 'PHOTO-SAVE');
+  assert.deepEqual(calls, [['save', 'Ямская']]);
+});
