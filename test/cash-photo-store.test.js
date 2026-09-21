@@ -277,3 +277,67 @@ test('readPhoto downloads Drive bytes without writing anything', async () => {
   assert.equal(calls[0][1].alt, 'media');
   assert.equal(calls.some((c) => c[0] === 'drive.create' || c[0] === 'sheets.append' || c[0] === 'sheets.update'), false);
 });
+
+
+test('markRecognized publishes latest readable journal balance to cash control', async () => {
+  const { drive, sheets, calls } = makeClients();
+  sheets.spreadsheets.values.get = async (args) => {
+    calls.push(['sheets.get', args]);
+    if (String(args.range).includes("'Контроль кассы'!A2:N")) {
+      return { data: { values: [
+        [101, 'Касса Герцена', 'Филиал', '', '', '', '', '', '', '', '', '', 12896, 46284],
+        [103, 'Касса Зарека', 'Филиал', '', '', '', '', '', '', '', '', '', 6002, 46282]
+      ] } };
+    }
+    return { data: { values: [] } };
+  };
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+
+  await store.markRecognized({ photoId: 'PHOTO-Z', archiveRow: 302, branch: 'Зарека' }, {
+    model: 'gemini-test',
+    data: {
+      initialBalance: 42634,
+      visibleMoneyRowCount: 14,
+      finalBalance: 21002,
+      finalBalanceReadable: true,
+      pageNote: '',
+      operations: [
+        { date: '18.09.2026', income: 10000, expense: 0, balance: 16002, needsReview: false },
+        { date: '21.09.2026', income: 5000, expense: 0, balance: 21002, needsReview: false }
+      ]
+    }
+  });
+
+  const controlWrite = calls
+    .filter(([name]) => name === 'sheets.update')
+    .map(([, args]) => args)
+    .find(args => args.range === "'Контроль кассы'!M3:N3");
+  assert.ok(controlWrite);
+  assert.deepEqual(controlWrite.requestBody.values[0], [21002, 46286]);
+});
+
+test('markRecognized never overwrites cash control with an older journal date', async () => {
+  const { drive, sheets, calls } = makeClients();
+  sheets.spreadsheets.values.get = async (args) => {
+    calls.push(['sheets.get', args]);
+    if (String(args.range).includes("'Контроль кассы'!A2:N")) {
+      return { data: { values: [[103, 'Касса Зарека', 'Филиал', '', '', '', '', '', '', '', '', '', 21002, 46286]] } };
+    }
+    return { data: { values: [] } };
+  };
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+
+  await store.markRecognized({ photoId: 'PHOTO-OLD', archiveRow: 302, branch: 'Зарека' }, {
+    model: 'gemini-test',
+    data: {
+      finalBalance: 6002,
+      finalBalanceReadable: true,
+      operations: [{ date: '17.09.2026', income: 5000, expense: 0, balance: 6002, needsReview: false }]
+    }
+  });
+
+  assert.equal(
+    calls.some(([name, args]) => name === 'sheets.update' && String(args.range).includes("'Контроль кассы'!")),
+    false
+  );
+});
