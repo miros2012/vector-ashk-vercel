@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { createCashPhotoAccessStore } from '../lib/cash-photo-access-store.js';
 import { createCashPhotoConfigHttpHandler } from '../lib/cash-photo-config-http.js';
 import { createCashPhotoUploadHttpHandler } from '../lib/cash-photo-upload-http.js';
@@ -110,4 +111,11 @@ test('existing branch link remains fixed to its branch even with a different sel
   await handler(request('Герцена', branchToken), res);
   assert.equal(res.code, 200);
   assert.equal(received.branch, 'Ямская');
+});
+
+
+test('production shared-link verifier cannot be silently overridden by Vercel environment', async () => {
+  const source = await readFile(new URL('../lib/cash-photo-access-store.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /process\.env\.CASH_PHOTO_SHARED_TOKEN_SHA256/);
+  assert.match(source, /sharedTokenSha256\s*=\s*CASH_PHOTO_SHARED_TOKEN_SHA256/);
 });
