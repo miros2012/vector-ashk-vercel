@@ -125,7 +125,6 @@
   }
 
   async function loadConfig() {
-    if (!token) throw new Error('invalid link');
     const response = await fetch('/api/health?cashPhotoRoute=config', {
       method: 'GET', cache: 'no-store', headers: { 'x-cash-photo-token': token }
     });

@@ -131,3 +131,42 @@ test('legacy shared verifier is additive and cannot invalidate the canonical lin
   assert.equal((await store.authorize(canonical))?.accessId, 'STAFF:SHARED');
   assert.equal((await store.authorize(legacy))?.accessId, 'STAFF:SHARED');
 });
+
+
+test('bare shared URL config exposes active branch picker without a token', async () => {
+  const store = createCashPhotoAccessStore({ registryJson: JSON.stringify(entries), allowBareShared: true });
+  const handler = createCashPhotoConfigHttpHandler({ authorize: token => store.authorize(token), now: () => new Date('2026-09-21') });
+  const res = response();
+  await handler({ method: 'GET', headers: {} }, res);
+  assert.equal(res.code, 200);
+  assert.deepEqual(res.payload.branches, [
+    { branch: 'Ямская', label: 'Ямская' },
+    { branch: 'Герцена', label: 'Герцена' }
+  ]);
+});
+
+test('bare shared URL can upload only to a known active branch', async () => {
+  const store = createCashPhotoAccessStore({ registryJson: JSON.stringify(entries), allowBareShared: true });
+  const saved = [];
+  const handler = createCashPhotoUploadHttpHandler({
+    authorize: token => store.authorize(token),
+    uploadService: { async upload(input) { saved.push(input); return { statusCode: 200, body: { ok: true, saved: true } }; } }
+  });
+  const req = request('Герцена', '');
+  delete req.headers['x-cash-photo-token'];
+  const res = response();
+  await handler(req, res);
+  assert.equal(res.code, 200);
+  assert.equal(saved[0].branch, 'Герцена');
+
+  const bad = request('Другой', '');
+  delete bad.headers['x-cash-photo-token'];
+  const badRes = response();
+  await handler(bad, badRes);
+  assert.equal(badRes.code, 403);
+});
+
+test('bare shared compatibility can be explicitly disabled', async () => {
+  const store = createCashPhotoAccessStore({ registryJson: JSON.stringify(entries), allowBareShared: false });
+  assert.equal(await store.authorize(''), null);
+});
