@@ -114,8 +114,20 @@ test('existing branch link remains fixed to its branch even with a different sel
 });
 
 
-test('production shared-link verifier cannot be silently overridden by Vercel environment', async () => {
+test('production accepts both canonical and legacy env shared-link verifiers without replacement', async () => {
   const source = await readFile(new URL('../lib/cash-photo-access-store.js', import.meta.url), 'utf8');
-  assert.doesNotMatch(source, /process\.env\.CASH_PHOTO_SHARED_TOKEN_SHA256/);
   assert.match(source, /sharedTokenSha256\s*=\s*CASH_PHOTO_SHARED_TOKEN_SHA256/);
+  assert.match(source, /legacySharedTokenSha256\s*=\s*process\.env\.CASH_PHOTO_SHARED_TOKEN_SHA256/);
+});
+
+test('legacy shared verifier is additive and cannot invalidate the canonical link', async () => {
+  const canonical = 'c'.repeat(43);
+  const legacy = 'l'.repeat(43);
+  const store = createCashPhotoAccessStore({
+    registryJson: JSON.stringify(entries),
+    sharedTokenSha256: hash(canonical),
+    legacySharedTokenSha256: hash(legacy)
+  });
+  assert.equal((await store.authorize(canonical))?.accessId, 'STAFF:SHARED');
+  assert.equal((await store.authorize(legacy))?.accessId, 'STAFF:SHARED');
 });
