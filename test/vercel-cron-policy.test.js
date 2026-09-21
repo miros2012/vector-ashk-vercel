@@ -11,6 +11,7 @@ const financePath = '/api/nightly-finance-orchestrator';
 const healthPath = '/api/health';
 const cashPhotoRetryPath = '/api/cash-photo-retry-cron';
 const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
+const financeRecoverySchedules = Array.from({ length: 12 }, (_, index) => `30 ${index + 4} * * *`);
 const publishSchedules = ['35 21 * * *'];
 const cashPhotoRetrySchedules = [
   '45 21 * * *',
@@ -22,11 +23,14 @@ test('Hobby deployment uses once-per-day cron expressions on bounded routes', ()
   const financeCrons = config.crons.filter((cron) => cron.path === financePath);
   const healthCrons = config.crons.filter((cron) => cron.path === healthPath);
   const cashPhotoCrons = config.crons.filter((cron) => cron.path === cashPhotoRetryPath);
-  assert.equal(financeCrons.length, 13, 'expected nightly full sync plus 12 daily intraday ROP schedules');
+  assert.equal(financeCrons.length, 25, 'expected nightly full sync plus 12 intraday and 12 recovery schedules');
   assert.equal(healthCrons.length, 1, 'expected one ROP fallback schedule');
   assert.equal(cashPhotoCrons.length, 13, 'expected 13 server-side cash-photo recovery schedules');
-  assert.equal(config.crons.length, 27, 'only finance, ROP fallback, and cash-photo recovery routes should be scheduled');
-  assert.deepEqual(financeCrons.map((cron) => cron.schedule).sort(), ['30 21 * * *', ...intradaySchedules].sort());
+  assert.equal(config.crons.length, 39, 'only finance, ROP fallback, and cash-photo recovery routes should be scheduled');
+  assert.deepEqual(
+    financeCrons.map((cron) => cron.schedule).sort(),
+    ['30 21 * * *', ...intradaySchedules, ...financeRecoverySchedules].sort()
+  );
   assert.deepEqual(healthCrons.map((cron) => cron.schedule).sort(), publishSchedules.sort());
   assert.deepEqual(cashPhotoCrons.map((cron) => cron.schedule).sort(), cashPhotoRetrySchedules.sort());
   assert.ok(!config.crons.some((cron) => cron.schedule.includes('-')), 'Hobby cron expressions must not use ranges');
@@ -41,9 +45,16 @@ test('nightly finance cron schedule is daily at 02:30 Tyumen', () => {
 
 test('intraday ROP uses twelve once-daily UTC schedules covering 09:00 through 20:00 Tyumen', () => {
   const schedules = config.crons
-    .filter((item) => item.path === financePath && item.schedule !== '30 21 * * *')
+    .filter((item) => item.path === financePath && item.schedule.startsWith('0 '))
     .map((item) => item.schedule);
   assert.deepEqual(schedules.sort(), intradaySchedules.sort());
+});
+
+test('finance retry recovery has twelve mid-hour once-daily fallback schedules', () => {
+  const schedules = config.crons
+    .filter((item) => item.path === financePath && financeRecoverySchedules.includes(item.schedule))
+    .map((item) => item.schedule);
+  assert.deepEqual(schedules.sort(), financeRecoverySchedules.sort());
 });
 
 test('ROP publisher keeps a nightly fallback after immediate source-to-target publishing', () => {
@@ -58,7 +69,12 @@ test('cash photo recovery runs independently after intraday finance and once ove
 
 test('nightly orchestrator has enough duration for sequential HOURS and decisions stages', () => {
   const duration = Number(config.functions?.['api/nightly-finance-orchestrator.js']?.maxDuration || 0);
-  assert.ok(duration >= 120, `nightly orchestrator maxDuration must be at least 120s, got ${duration}s`);
+  assert.equal(duration, 300, `nightly orchestrator must use the Hobby Fluid maximum, got ${duration}s`);
+  assert.equal(
+    Number(config.functions?.['api/master-hours-diagnostic.js']?.maxDuration || 0),
+    300,
+    'signed finance recovery endpoint must share the same runtime budget'
+  );
 });
 
 test('health function has enough duration for one bounded concurrent cash-photo recovery batch', () => {

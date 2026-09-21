@@ -228,6 +228,49 @@ test('intraday ROP recovery reruns only publish and gated tail', async () => {
   assert.deepEqual(Object.keys(res.body.stages), ['ropPublish', 'dataHealth', 'decisions', 'ownerActionQueue']);
 });
 
+test('recovery-only intraday exits without source work when no retry is due', async () => {
+  const calls = [];
+  const runControl = runControlFake();
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    recoveryOnly: true,
+    runControl,
+    runPayments: child(calls, 'payments'),
+    runReceivablesSource: child(calls, 'receivablesSource', { ok: true, verified: true }),
+    runRopPublish: async () => { calls.push(['ropPublish', 'internal']); return { ok: true }; },
+    ...requiredTail(calls)
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { ok: true, mode: 'recovery_idle', stages: {} });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(runControl.calls.map(([name]) => name), ['begin', 'pendingRecovery', 'finish']);
+});
+
+test('recovery-only retry verifies decisions without executing owner commands', async () => {
+  const calls = [];
+  const runControl = runControlFake({ recovery: { stage: 'ropPublish', attempt: 2 } });
+  const handler = createIntradayRopOrchestrator({
+    cronSecret: 'secret',
+    recoveryOnly: true,
+    runControl,
+    runPayments: child(calls, 'payments'),
+    runReceivablesSource: child(calls, 'receivablesSource', { ok: true, verified: true }),
+    runRopPublish: async () => { calls.push(['ropPublish', 'internal']); return { ok: true }; },
+    ...requiredTail(calls)
+  });
+
+  const res = responseRecorder();
+  await handler({ method: 'GET', headers: { authorization: 'Bearer secret' } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(calls.map(call => call[0]), ['ropPublish', 'dataHealth', 'decisions']);
+  assert.deepEqual(res.body.stages.ownerActionQueue, { ok: false, skipped: true });
+});
+
 test('intraday recovery runs Owner Action Queue only after healthy verified decisions', async () => {
   const calls = [];
   const runControl = runControlFake({ recovery: { stage: 'ropPublish', attempt: 2 } });

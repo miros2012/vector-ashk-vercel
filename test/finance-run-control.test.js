@@ -79,7 +79,7 @@ test('a busy lease prevents a stage executor from running', async () => {
   assert.deepEqual(result, { ok: false, statusCode: 409 });
   assert.deepEqual(store.calls.find(([name]) => name === 'acquireLease')[1], {
     runId: '2026-09-18T00:00:00.000Z-abcd',
-    leaseMs: 240_000
+    leaseMs: 360_000
   });
   assert.equal(ran, false);
   assert.equal(store.calls.some(([name]) => name === 'appendAttempt'), false);
@@ -295,6 +295,41 @@ test('a recovered success whose retry clear fails leaves its durable claim block
   assert.equal(executions, 1);
 });
 
+test('a stale claimed retry is reclaimed only with proof from the expired lease owner', async () => {
+  const retryState = { value: {
+    finance_retry_stage: 'receivablesSource',
+    finance_retry_attempt: 2,
+    finance_retry_after_utc: 'CLAIMED',
+    finance_retry_origin_run_id: 'stale-run',
+    finance_retry_error_class: 'TIME_BUDGET'
+  } };
+  const store = storeFake({
+    retryState,
+    lease: {
+      ok: true,
+      leaseUntilUtc: '2026-09-18T00:04:00.000Z',
+      reclaimedLeaseOwner: 'stale-run',
+      reclaimedLeaseUntilUtc: '2026-09-17T23:59:00.000Z'
+    }
+  });
+  const runControl = control(store);
+  const context = await runControl.begin({ trigger: 'cron', mode: 'intraday' });
+
+  assert.deepEqual(await runControl.pendingRecovery(context), {
+    stage: 'receivablesSource',
+    attempt: 2,
+    originRunId: 'stale-run',
+    errorClass: 'TIME_BUDGET'
+  });
+  assert.deepEqual(retryState.value, {
+    finance_retry_stage: 'receivablesSource',
+    finance_retry_attempt: 2,
+    finance_retry_after_utc: 'CLAIMED',
+    finance_retry_origin_run_id: '2026-09-18T00:00:00.000Z-abcd',
+    finance_retry_error_class: 'TIME_BUDGET'
+  });
+});
+
 test('finish releases an acquired lease even after a stage result is returned', async () => {
   const store = storeFake();
   const runControl = control(store);
@@ -334,7 +369,7 @@ test('pendingRecovery blocks malformed nonempty retry state without invoking exe
 });
 
 test('TIME_BUDGET is ledgered and scheduled without starting a late stage', async () => {
-  for (const [options, elapsed] of [[{}, 91_000], [{ minimumRemainingMs: 30_000 }, 151_000]]) {
+  for (const [options, elapsed] of [[{}, 211_000], [{ minimumRemainingMs: 30_000 }, 271_000]]) {
     let clock = NOW.getTime();
     const store = storeFake();
     const runControl = createFinanceRunControl({ store, now: () => new Date(clock), log: () => {}, ...options });
@@ -360,7 +395,7 @@ test('TIME_BUDGET is ledgered and scheduled without starting a late stage', asyn
 test('stage budget includes time spent before lazy controller initialization', async () => {
   const store = storeFake();
   const runControl = createFinanceRunControl({
-    store, requestStartedAt: new Date(NOW.getTime() - 100_000), now: () => NOW, log: () => {}
+    store, requestStartedAt: new Date(NOW.getTime() - 220_000), now: () => NOW, log: () => {}
   });
   const context = await runControl.begin();
   let executed = false;

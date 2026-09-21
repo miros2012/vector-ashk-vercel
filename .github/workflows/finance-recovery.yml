@@ -1,0 +1,67 @@
+name: Finance retry recovery
+
+on:
+  schedule:
+    - cron: '7,17,27,37,47,57 4-15 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finance-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Recover one due finance stage
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+
+    steps:
+      - name: Use Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Check and recover one due stage through signed OIDC request
+        env:
+          FINANCE_SYNC_ENDPOINT: https://vector-ashk-backend.vercel.app/api/master-hours-diagnostic
+        run: |
+          node --input-type=module <<'NODE'
+          const requestUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          requestUrl.searchParams.set('audience', 'vector-finance-sync-v1');
+          const tokenResponse = await fetch(requestUrl, {
+            headers: { authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` }
+          });
+          if (!tokenResponse.ok) throw new Error(`OIDC token request failed with ${tokenResponse.status}`);
+          const tokenPayload = await tokenResponse.json();
+          const token = String(tokenPayload?.value || '').trim();
+          if (!token) throw new Error('OIDC token missing');
+
+          const response = await fetch(process.env.FINANCE_SYNC_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${token}`,
+              'content-type': 'application/json',
+              accept: 'application/json'
+            },
+            body: JSON.stringify({ mode: 'finance_sync', kind: 'recovery' })
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok || body?.ok !== true) {
+            const stages = body?.stages && typeof body.stages === 'object'
+              ? Object.fromEntries(Object.entries(body.stages).map(([name, stage]) => [name, {
+                  ok: stage?.ok === true,
+                  statusCode: stage?.statusCode ?? null,
+                  skipped: stage?.skipped === true,
+                  errorClass: stage?.errorClass ?? null
+                }]))
+              : null;
+            throw new Error(`finance recovery failed with ${response.status}; stages=${JSON.stringify(stages)}`);
+          }
+          console.log(JSON.stringify({ ok: true, kind: 'recovery', mode: body.mode || null, stages: body.stages || null }));
+          NODE

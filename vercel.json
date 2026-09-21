@@ -46,10 +46,10 @@
   ],
   "functions": {
     "api/health.js": { "maxDuration": 60 },
-    "api/master-hours-diagnostic.js": { "maxDuration": 180 },
+    "api/master-hours-diagnostic.js": { "maxDuration": 300 },
     "api/sync-hours.js": { "maxDuration": 60 },
     "api/sync-payments.js": { "maxDuration": 60 },
-    "api/nightly-finance-orchestrator.js": { "maxDuration": 180 }
+    "api/nightly-finance-orchestrator.js": { "maxDuration": 300 }
   },
   "crons": [
     { "path": "/api/nightly-finance-orchestrator", "schedule": "30 21 * * *" },
@@ -65,6 +65,18 @@
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 13 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 14 * * *" },
     { "path": "/api/nightly-finance-orchestrator", "schedule": "0 15 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 4 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 5 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 6 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 7 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 8 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 9 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 10 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 11 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 12 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 13 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 14 * * *" },
+    { "path": "/api/nightly-finance-orchestrator", "schedule": "30 15 * * *" },
     { "path": "/api/health", "schedule": "35 21 * * *" },
     { "path": "/api/cash-photo-retry-cron", "schedule": "45 21 * * *" },
     { "path": "/api/cash-photo-retry-cron", "schedule": "15 4 * * *" },

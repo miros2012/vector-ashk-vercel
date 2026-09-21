@@ -83,6 +83,8 @@ jobs:
       - name: Refresh finance sources through signed OIDC request
         env:
           FINANCE_SYNC_ENDPOINT: https://vector-ashk-backend.vercel.app/api/master-hours-diagnostic
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_SCHEDULE: ${{ github.event.schedule }}
         run: |
           node --input-type=module <<'NODE'
           const requestUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
@@ -95,7 +97,10 @@ jobs:
           const token = String(tokenPayload?.value || '').trim();
           if (!token) throw new Error('OIDC token missing');
 
-          const kind = process.env.GITHUB_EVENT_NAME === 'schedule' ? 'full' : 'intraday';
+          const schedule = process.env.GITHUB_EVENT_SCHEDULE || '';
+          const kind = process.env.GITHUB_EVENT_NAME !== 'schedule'
+            ? 'intraday'
+            : schedule === '30 3 * * *' ? 'full' : 'recovery';
           const response = await fetch(process.env.FINANCE_SYNC_ENDPOINT, {
             method: 'POST',
             headers: {
