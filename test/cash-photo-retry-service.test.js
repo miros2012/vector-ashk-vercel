@@ -55,7 +55,7 @@ test('transient failure remains pending and does not abort other items', async (
 });
 
 
-test('concurrent recovery also runs bounded recognized-journal draft backfill', async () => {
+test('concurrent recovery backfills only one recognized journal per pass', async () => {
   let backfillLimit = 0;
   const store = {
     async listPending() { return []; },
@@ -74,5 +74,5 @@ test('concurrent recovery also runs bounded recognized-journal draft backfill', 
     attempted: 0, recognized: 0, stillPending: 0, failed: 0,
     draftBackfill: { attempted: 2, synced: 2, skipped: 0, failed: 0 }
   });
-  assert.equal(backfillLimit, 3);
+  assert.equal(backfillLimit, 1);
 });
