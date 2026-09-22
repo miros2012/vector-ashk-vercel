@@ -181,3 +181,25 @@ test('partial DDS commit is recovered without duplicating money', async()=>{
   assert.equal(state.log[0][0],'PHOTO-Z:op1');
   assert.match(state.log[0][7],/audit trail/i);
 });
+
+
+test('historical recognized backfill stages safe rows but never writes DDS', async()=>{
+  const {sheets,state}=makeSheets();
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book',now:()=>new Date('2026-09-22T04:00:00Z')});
+  const result=await pipeline.syncRecognition({photoId:'PHOTO-HIST',branch:'Зарека'},{
+    initialBalance:6002,
+    operations:[{
+      date:'18.09.2026',description:'Макаров обучение',income:10000,expense:0,
+      balance:16002,balanceReadable:true,confidence:100,needsReview:false
+    }]
+  }, { allowTransfer: false });
+
+  assert.equal(result.newRows,1);
+  assert.equal(result.readyCount,1);
+  assert.equal(result.transferredOperations,0);
+  assert.equal(result.createdDDSRows,0);
+  assert.equal(state.draft.length,1);
+  assert.equal(state.draft[0][12],'Готово к переносу');
+  assert.equal(state.dds.length,0);
+  assert.equal(state.log.length,0);
+});
