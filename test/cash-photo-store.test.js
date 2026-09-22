@@ -279,25 +279,25 @@ test('readPhoto downloads Drive bytes without writing anything', async () => {
 });
 
 
-test('markRecognized publishes latest readable journal balance to cash control', async () => {
+test('markRecognized publishes latest readable journal balance to stable wallet registry', async () => {
   const { drive, sheets, calls } = makeClients();
   sheets.spreadsheets.values.get = async (args) => {
     calls.push(['sheets.get', args]);
-    if (String(args.range).includes("'Контроль кассы'!A2:N")) {
+    if (String(args.range).includes("'Кошельки наличных'!A2:J")) {
       return { data: { values: [
-        [101, 'Касса Герцена', 'Филиал', '', '', '', '', '', '', '', '', '', 12896, 46284],
-        [103, 'Касса Зарека', 'Филиал', '', '', '', '', '', '', '', '', '', 6002, 46282]
+        [101, 'Касса Герцена', 'Филиал', true, '', 12896, 46284, 'PHOTO-H', 'ok', ''],
+        [103, 'Касса Зарека', 'Филиал', true, '', 6002, 46282, 'PHOTO-Z0', 'ok', '']
       ] } };
     }
     return { data: { values: [] } };
   };
-  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder', now: () => new Date('2026-09-22T03:00:00.000Z') });
 
   await store.markRecognized({ photoId: 'PHOTO-Z', archiveRow: 302, branch: 'Зарека' }, {
     model: 'gemini-test',
     data: {
-      initialBalance: 42634,
-      visibleMoneyRowCount: 14,
+      initialBalance: 6002,
+      visibleMoneyRowCount: 2,
       finalBalance: 21002,
       finalBalanceReadable: true,
       pageNote: '',
@@ -311,17 +311,23 @@ test('markRecognized publishes latest readable journal balance to cash control',
   const controlWrite = calls
     .filter(([name]) => name === 'sheets.update')
     .map(([, args]) => args)
-    .find(args => args.range === "'Контроль кассы'!M3:N3");
+    .find(args => args.range === "'Кошельки наличных'!F3:J3");
   assert.ok(controlWrite);
-  assert.deepEqual(controlWrite.requestBody.values[0], [21002, 46286]);
+  assert.deepEqual(controlWrite.requestBody.values[0], [
+    21002,
+    46286,
+    'PHOTO-Z',
+    'Распознано — ожидает обработки',
+    '2026-09-22T03:00:00.000Z'
+  ]);
 });
 
-test('markRecognized never overwrites cash control with an older journal date', async () => {
+test('markRecognized never overwrites stable wallet registry with an older journal date', async () => {
   const { drive, sheets, calls } = makeClients();
   sheets.spreadsheets.values.get = async (args) => {
     calls.push(['sheets.get', args]);
-    if (String(args.range).includes("'Контроль кассы'!A2:N")) {
-      return { data: { values: [[103, 'Касса Зарека', 'Филиал', '', '', '', '', '', '', '', '', '', 21002, 46286]] } };
+    if (String(args.range).includes("'Кошельки наличных'!A2:J")) {
+      return { data: { values: [[103, 'Касса Зарека', 'Филиал', true, '', 21002, 46286, 'PHOTO-current', 'ok', '']] } };
     }
     return { data: { values: [] } };
   };
@@ -337,7 +343,34 @@ test('markRecognized never overwrites cash control with an older journal date', 
   });
 
   assert.equal(
-    calls.some(([name, args]) => name === 'sheets.update' && String(args.range).includes("'Контроль кассы'!")),
+    calls.some(([name, args]) => name === 'sheets.update' && String(args.range).includes("'Кошельки наличных'!")),
+    false
+  );
+});
+
+
+test('markRecognized does not publish a live balance for an inactive branch wallet', async () => {
+  const { drive, sheets, calls } = makeClients();
+  sheets.spreadsheets.values.get = async (args) => {
+    calls.push(['sheets.get', args]);
+    if (String(args.range).includes("'Кошельки наличных'!A2:J")) {
+      return { data: { values: [[106, 'Касса Республика', 'Филиал', false, '', 5645, 46259, 'PHOTO-R', 'old', '']] } };
+    }
+    return { data: { values: [] } };
+  };
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+  await store.markRecognized({ photoId: 'PHOTO-NEW-R', archiveRow: 302, branch: 'Республика' }, {
+    model: 'gemini-test',
+    data: {
+      initialBalance: 5645,
+      visibleMoneyRowCount: 1,
+      finalBalance: 6645,
+      finalBalanceReadable: true,
+      operations: [{ date: '21.09.2026', income: 1000, expense: 0, balance: 6645, balanceReadable: true, confidence: 100, needsReview: false }]
+    }
+  });
+  assert.equal(
+    calls.some(([name, args]) => name === 'sheets.update' && String(args.range).startsWith("'Кошельки наличных'!F")),
     false
   );
 });
