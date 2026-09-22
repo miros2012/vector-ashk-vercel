@@ -151,3 +151,33 @@ test('ambiguous recognized operation stays in review and never reaches DDS',asyn
   assert.equal(state.draft[0][12],'Проверить');
   assert.equal(state.dds.length,0);
 });
+
+
+test('partial DDS commit is recovered without duplicating money', async()=>{
+  const {sheets,state}=makeSheets();
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book',now:()=>new Date('2026-09-22T03:00:00Z')});
+  state.draft.push([
+    'PHOTO-Z:op1',46284,'Зарека','Макаров обучение','',10000,16002,
+    'Приход','Продажи','','Касса Зарека','Сходится','Готово к переносу',
+    '[VERCEL-OCR] | Фото-ID: PHOTO-Z | Уверенность 100%'
+  ]);
+  state.dds.push([
+    'Сентябрь',9,46284,10000,103,'','','Макаров обучение [Зарека]','Продажи',
+    'Поступление','Операционная',9,'Касса Vercel | PHOTO-Z:op1 | Зарека'
+  ]);
+
+  const result=await pipeline.syncRecognition({photoId:'PHOTO-Z',branch:'Зарека'},{
+    initialBalance:6002,
+    operations:[{date:'18.09.2026',description:'Макаров обучение',income:10000,expense:0,balance:16002,balanceReadable:true,confidence:100,needsReview:false}]
+  });
+
+  assert.equal(result.newRows,0);
+  assert.equal(result.duplicateCount,1);
+  assert.equal(result.createdDDSRows,0);
+  assert.equal(result.recoveredOperations,1);
+  assert.equal(state.dds.length,1);
+  assert.equal(state.draft[0][12],'Перенесено');
+  assert.equal(state.log.length,1);
+  assert.equal(state.log[0][0],'PHOTO-Z:op1');
+  assert.match(state.log[0][7],/audit trail/i);
+});
