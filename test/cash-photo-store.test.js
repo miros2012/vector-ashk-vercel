@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCashPhotoStore } from '../lib/cash-photo-store.js';
 
+const CASH_RETRY_NOTE_FOR_TEST = '[КОНТРОЛЬ КАССЫ] OCR сохранён; LIVE-остаток требует повторной синхронизации';
+
 function makeClients() {
   const calls = [];
   const sheetRows = [];
@@ -175,6 +177,25 @@ test('markPending stores safe state and diagnostics only in archive comment', as
   assert.match(updates[1].requestBody.values[0][0], /503/);
 });
 
+test('markPending appends a new retry diagnostic without erasing the previous attempt', async () => {
+  const { drive, sheets, calls } = makeClients();
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+  await store.markPending({
+    archiveRow: 302,
+    recoveryNote: 'Попытка 1\n[TECH] gemini HTTP 429'
+  }, {
+    message: 'Попытка 2',
+    diagnostics: ['gateway TIMEOUT']
+  });
+  const note = calls
+    .filter(([name]) => name === 'sheets.update')
+    .map(([, args]) => args)
+    .find(args => args.range === "'Архив кассовых фото'!M302")
+    .requestBody.values[0][0];
+  assert.match(note, /429/);
+  assert.match(note, /TIMEOUT/);
+});
+
 test('probe is read-only and checks configured Drive folder', async () => {
   const { drive, sheets, calls } = makeClients();
   const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
@@ -198,6 +219,161 @@ test('listPending returns only retryable archive rows with enough metadata', asy
     photoId: 'PHOTO-1', archiveRow: 2, fileId: 'file1', photoUrl: 'https://drive.google.com/file/d/file1/view',
     status: 'Ожидает распознавания', hash: 'h1', branch: 'Ямская', year: 2026, fileName: 'one.jpg'
   }]);
+});
+
+test('listPending reclaims only stale recognizing rows after a crashed worker', async () => {
+  const { drive, sheets, sheetRows } = makeClients();
+  sheetRows.push(
+    ['PHOTO-stale', '2026-09-22T08:00:00.000Z', 'Ямская', '2026', 'stale.jpg', 'https://drive.google.com/file/d/stale-file/view', 'h1', 'Распознавание', '', '', '', '', 'предыдущая попытка', '', '2026-09-22T09:00:00.000Z'],
+    ['PHOTO-fresh', '2026-09-22T08:00:00.000Z', 'Герцена', '2026', 'fresh.jpg', 'https://drive.google.com/file/d/fresh-file/view', 'h2', 'Распознавание', '', '', '', '', '', '', '2026-09-22T09:59:00.000Z']
+  );
+  const store = createCashPhotoStore({
+    drive, sheets, spreadsheetId: 'sheet', folderId: 'folder',
+    now: () => new Date('2026-09-22T10:00:00.000Z')
+  });
+
+  const pending = await store.listPending(5);
+
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].photoId, 'PHOTO-stale');
+  assert.equal(pending[0].status, 'Распознавание');
+  assert.equal(pending[0].recoveryNote, 'предыдущая попытка');
+});
+
+test('markRecognizing records a fresh worker timestamp outside business archive columns', async () => {
+  const { drive, sheets, calls } = makeClients();
+  const store = createCashPhotoStore({
+    drive, sheets, spreadsheetId: 'sheet', folderId: 'folder',
+    now: () => new Date('2026-09-22T10:00:00.000Z')
+  });
+
+  await store.markRecognizing({ archiveRow: 302 });
+
+  const updates = calls.filter(([name]) => name === 'sheets.update').map(([, args]) => args);
+  assert.deepEqual(updates.map(item => item.range), [
+    "'Архив кассовых фото'!H302",
+    "'Архив кассовых фото'!O302"
+  ]);
+  assert.equal(updates[1].requestBody.values[0][0], '2026-09-22T10:00:00.000Z');
+});
+
+test('successful retry preserves the previous transient diagnostic in the archive note', async () => {
+  const { drive, sheets, calls } = makeClients();
+  const store = createCashPhotoStore({ drive, sheets, spreadsheetId: 'sheet', folderId: 'folder' });
+
+  await store.markRecognized({
+    photoId: 'PHOTO-1', archiveRow: 302, branch: 'Ямская',
+    recoveryNote: 'Распознавание временно недоступно.\n[TECH] gemini HTTP 503'
+  }, {
+    model: 'gemini-test',
+    data: {
+      initialBalance: 0,
+      visibleMoneyRowCount: 0,
+      finalBalance: 0,
+      finalBalanceReadable: true,
+      pageNote: 'Распознано после повтора.',
+      operations: []
+    }
+  });
+
+  const detailWrite = calls
+    .filter(([name]) => name === 'sheets.update')
+    .map(([, args]) => args)
+    .find(args => args.range === "'Архив кассовых фото'!L302:N302");
+  assert.match(detailWrite.requestBody.values[0][1], /Распознано после повтора/);
+  assert.match(detailWrite.requestBody.values[0][1], /503/);
+});
+
+test('recognized backlog retries failed live cash sync even after draft staging already succeeded', async () => {
+  const { drive, sheets, calls } = makeClients();
+  const data = {
+    initialBalance: 6002,
+    visibleMoneyRowCount: 1,
+    finalBalance: 21002,
+    finalBalanceReadable: true,
+    operations: [{ date: '21.09.2026', income: 15000, expense: 0, balance: 21002 }]
+  };
+  sheets.spreadsheets.values.get = async (args) => {
+    calls.push(['sheets.get', args]);
+    if (String(args.range).includes("'Архив кассовых фото'!A2:N")) {
+      return { data: { values: [[
+        'PHOTO-Z', '2026-09-21T11:17:42.032Z', 'Зарека', 2026, 'image.jpg',
+        'https://drive.google.com/file/d/file-z/view', 'hash-z', 'Распознано — ожидает обработки',
+        1, 0, '', 'gemini-test',
+        '[КОНТУР КАССЫ] новых строк: 1; в ДДС: 0; на проверке: 0; дублей: 0 | [КОНТРОЛЬ КАССЫ] OCR сохранён; LIVE-остаток требует повторной синхронизации',
+        JSON.stringify(data)
+      ]] } };
+    }
+    if (String(args.range).includes("'Кошельки наличных'!A2:J")) {
+      return { data: { values: [[103, 'Касса Зарека', 'Филиал', true, '', 6002, 46282, 'PHOTO-OLD', 'old', '']] } };
+    }
+    return { data: { values: [] } };
+  };
+  let pipelineCalls = 0;
+  const store = createCashPhotoStore({
+    drive, sheets, spreadsheetId: 'sheet', folderId: 'folder',
+    journalPipeline: { async syncRecognition() { pipelineCalls += 1; } },
+    now: () => new Date('2026-09-22T10:00:00.000Z')
+  });
+
+  const result = await store.syncRecognizedDraftBacklog(1);
+
+  assert.equal(result.attempted, 1);
+  assert.equal(result.failed, 0);
+  assert.equal(pipelineCalls, 0);
+  const walletWrite = calls
+    .filter(([name]) => name === 'sheets.update')
+    .map(([, args]) => args)
+    .find(args => args.range === "'Кошельки наличных'!F2:J2");
+  assert.ok(walletWrite);
+  assert.equal(walletWrite.requestBody.values[0][0], 21002);
+  const noteWrite = calls
+    .filter(([name]) => name === 'sheets.update')
+    .map(([, args]) => args)
+    .find(args => args.range === "'Архив кассовых фото'!M2");
+  assert.doesNotMatch(noteWrite.requestBody.values[0][0], /требует повторной синхронизации/);
+  assert.match(noteWrite.requestBody.values[0][0], /LIVE-остаток синхронизирован/);
+});
+
+test('recognized backlog never replaces a newer same-day live wallet snapshot', async () => {
+  const { drive, sheets, calls } = makeClients();
+  const data = {
+    finalBalance: 21002,
+    finalBalanceReadable: true,
+    operations: [{ date: '21.09.2026', income: 5000, expense: 0, balance: 21002 }]
+  };
+  sheets.spreadsheets.values.get = async (args) => {
+    calls.push(['sheets.get', args]);
+    if (String(args.range).includes("'Архив кассовых фото'!A2:N")) {
+      return { data: { values: [[
+        'PHOTO-OLD', '2026-09-21T11:00:00.000Z', 'Зарека', 2026, 'old.jpg',
+        'https://drive.google.com/file/d/old/view', 'old-hash', 'Распознано — ожидает обработки',
+        1, 0, '', 'gemini-test',
+        `[КОНТУР КАССЫ] новых строк: 1; в ДДС: 0; на проверке: 0; дублей: 0 | ${CASH_RETRY_NOTE_FOR_TEST}`,
+        JSON.stringify(data)
+      ]] } };
+    }
+    if (String(args.range).includes("'Кошельки наличных'!A2:J")) {
+      return { data: { values: [[103, 'Касса Зарека', 'Филиал', true, '', 25002, 46286, 'PHOTO-NEW', 'ok', '']] } };
+    }
+    return { data: { values: [] } };
+  };
+  const store = createCashPhotoStore({
+    drive, sheets, spreadsheetId: 'sheet', folderId: 'folder',
+    journalPipeline: { async syncRecognition() { throw new Error('not expected'); } }
+  });
+
+  const result = await store.syncRecognizedDraftBacklog(1);
+
+  assert.equal(result.failed, 0);
+  assert.equal(calls.some(([name, args]) =>
+    name === 'sheets.update' && String(args.range).startsWith("'Кошельки наличных'!F")), false);
+  const note = calls
+    .filter(([name]) => name === 'sheets.update')
+    .map(([, args]) => args)
+    .find(args => args.range === "'Архив кассовых фото'!M2")
+    .requestBody.values[0][0];
+  assert.match(note, /более новый LIVE-остаток сохранён/);
 });
 
 test('listPending resolves the legacy rich-text hyperlink for a specifically selected pending photo', async () => {
