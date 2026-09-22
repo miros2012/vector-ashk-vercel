@@ -9,21 +9,20 @@ const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url
 const financePath = '/api/nightly-finance-orchestrator';
 const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
 
-test('all intraday schedules use one request-local controller and separate tracked stages', async t => {
-  const { route, events, entries, stores } = await financeRouteHarness(t);
-  for (const schedule of intradaySchedules) {
-    const res = response();
-    await route.default(cronRequest(schedule), res);
-    assert.equal(res.statusCode, 200);
-    assert.equal(res.body.stages.receivablesSource?.ok, true);
-    assert.equal(res.body.stages.ropPublish?.ok, true);
+test('all intraday schedules resume the same lightweight cycle and recovery avoids owner actions', async t => {
+  const f = await financeRouteHarness(t);
+  for (let i=0;i<intradaySchedules.length;i++) {
+    const res=response(); await f.route.default(cronRequest(intradaySchedules[i]),res);
+    assert.equal(res.statusCode,i===8?200:202);
+    assert.equal(f.cycle.mode,'intraday');
   }
-  assert.equal(stores.length, 12);
-  assert.equal(entries.length, 24);
-  assert.equal(new Set(entries.map(entry => entry.runId)).size, 12);
-  assert.ok(entries.every(entry => entry.trigger === 'cron' && entry.mode === 'intraday'));
-  assert.equal(events.includes('hours'), false);
-  assert.equal(events.filter(event => event === 'ownerActionQueue').length, 12);
+  assert.equal(f.stores.length,12);
+  assert.equal(f.events.includes('hours'),false);
+  assert.equal(f.events.filter(e=>e==='ownerActionQueue').length,1);
+  const before=f.events.filter(e=>e==='ownerActionQueue').length;
+  for(let i=0;i<7;i++){const res=response();await f.route.default(cronRequest('30 15 * * *'),res);}
+  assert.equal(f.events.filter(e=>e==='ownerActionQueue').length,before);
+  assert.equal(f.cycle.status,'COMPLETE');
 });
 
 test('source-only callable marks its snapshot without invoking publication', async t => {

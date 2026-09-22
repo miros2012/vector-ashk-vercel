@@ -9,6 +9,10 @@ import { createNightlyFinanceOrchestrator } from '../lib/nightly-finance-orchest
 import { createIntradayRopOrchestrator } from '../lib/rop-intraday-orchestrator.js';
 import { createGoogleSheetsFinanceRunStore } from '../lib/google-sheets-finance-run-store.js';
 import { createFinanceRunControl } from '../lib/finance-run-control.js';
+import { createFinanceCycle } from '../lib/finance-cycle.js';
+import { createFinanceCycleStore } from '../lib/google-sheets-finance-cycle-store.js';
+import { refreshGoogleSheetsFinanceReports, verifyGoogleSheetsFinanceReports } from '../lib/google-sheets-finance-reports.js';
+import { createFinanceCycleHandler, invokeFinanceStage } from '../lib/finance-cycle-handler.js';
 import { mergeDebtorManualFields, syncRopSourceThenPublishTarget } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
 import { createAshkReceivablesSource } from '../lib/ashk-receivables-source.js';
@@ -433,7 +437,8 @@ const tochkaDdsHandler = createTochkaDdsImportHandler({
     return syncCurrentDayTochkaDds({
       sheets: await getSheets(),
       spreadsheetId: SPREADSHEET_ID,
-      businessDate: date
+      businessDate: date,
+      requestTimeoutMs: 30000
     });
   }
 });
@@ -506,22 +511,47 @@ const manualFinanceRunHandler = runControl => createManualFinanceRunHandler({
     spreadsheetId: SPREADSHEET_ID,
     providedToken
   }),
-  runNightly: nightlyHandler(runControl),
+  runNightly: resumableHandler('full'),
   runPayments: syncPayments,
   runControl
 });
+
+function resumableHandler(mode, recoveryOnly=false) {
+  const secret=process.env.CRON_SECRET||'';
+  return createFinanceCycleHandler({cronSecret:secret,mode,recoveryOnly,run:async options=>{
+    const sheets=await getSheets();
+    const store=createFinanceCycleStore({sheets,spreadsheetId:SPREADSHEET_ID,
+      lease:createGoogleSheetsFinanceRunStore({sheets,spreadsheetId:SPREADSHEET_ID})});
+    const reports=()=>refreshGoogleSheetsFinanceReports({sheets,spreadsheetId:SPREADSHEET_ID});
+    const child=(handler,extra={})=>({cycle})=>invokeFinanceStage(handler,secret,{cycle,...extra});
+    const guarded=(handler,extra={})=>async ({cycle})=>{
+      const fingerprint=cycle.completed.find(s=>s.stage==='reportVerification')?.fingerprint;
+      const verify=()=>verifyGoogleSheetsFinanceReports({sheets,spreadsheetId:SPREADSHEET_ID},fingerprint);
+      const before=await verify(); if(!before.ok)return before;
+      const result=await child(handler,extra)({cycle}); if(!result.ok)return result;
+      return verify();
+    };
+    const run=createFinanceCycle({store,onCycleStart:runOwnerActionQueueNow,stages:{
+      tochkaDds:child(tochkaDdsHandler),reports,
+      payments:child(syncPayments,{method:'POST'}),hours:child(syncHours),
+      receivablesSource:child(syncReceivables),ropPublish:refreshRopFromStagingAndPublish,
+      balances:child(refreshBalancesMirrorOnly),reportVerification:reports,
+      dataHealth:child(reconcileDecisions.dataHealth),decisions:guarded(reconcileDecisions,{verifyDecision:true})
+    }});
+    return run(options);
+  }});
+}
 
 export default async function handler(req, res) {
   if (hasManualFinanceRunToken(req)) {
     // Preserve consume-before-run token semantics, including lease conflicts.
     return manualFinanceRunHandler(createRequestRunControl('manual'))(req, res);
   }
-  const runControl = createRequestRunControl('cron');
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (INTRADAY_SCHEDULES.has(schedule) || RECOVERY_SCHEDULES.has(schedule)) {
     const recoveryOnly = RECOVERY_SCHEDULES.has(schedule)
       || String(req?.headers?.['x-vector-finance-recovery-only'] || '') === 'true';
-    return intradayHandler(runControl, { recoveryOnly })(req, res);
+    return resumableHandler('intraday', recoveryOnly)(req, res);
   }
-  return nightlyHandler(runControl)(req, res);
+  return resumableHandler('full')(req, res);
 }

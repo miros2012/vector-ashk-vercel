@@ -9,15 +9,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const routePath = path.join(here, '..', 'api', 'nightly-finance-orchestrator.js');
 const vercelPath = path.join(here, '..', 'vercel.json');
 
-test('manual token takes priority over schedule and labels the shared nightly ledger manual', async t => {
+test('manual token takes priority over schedule and starts a resumable full cycle', async t => {
   const fixture = await financeRouteHarness(t);
   const req = { ...cronRequest('0 4 * * *'), query: { finance_run_token: 'single-use' } };
   const res = response();
   await fixture.route.default(req, res);
-  assert.equal(res.statusCode, 200);
-  assert.deepEqual(fixture.entries.map(entry => [entry.trigger, entry.mode, entry.stage]), [
-    ['manual', 'nightly', 'receivablesSource'], ['manual', 'nightly', 'ropPublish']
-  ]);
+  assert.equal(res.statusCode, 202);
+  assert.equal(fixture.cycle.mode,'full');
+  assert.equal(fixture.cycle.cursor,1);
   assert.equal(fixture.stores.length, 1);
   assert.equal(fixture.consumed, true);
   assert.ok(fixture.events.indexOf('token') < fixture.events.indexOf('store'));

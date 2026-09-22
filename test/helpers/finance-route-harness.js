@@ -19,6 +19,7 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
   const entries = [];
   const stores = [];
   let consumed = false;
+  let cycle = null;
   let owner = busy ? 'foreign-owner' : null;
   const staging = new Map([
     ['РОП_План_Сентябрь', [[], ['Manager', 'Branch', 'Branch', 100, 100, '5/2', 'Да']]]
@@ -47,6 +48,13 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
     },
     hours: child('hours'), payments: child('payments'), decisions,
     balances: child('balances'),
+    cycleStore: ({lease}) => ({
+      acquire: async owner => (await lease.ensureSchema()).ok ? lease.acquireLease({runId:owner}) : {ok:false},
+      release: owner => lease.releaseLease({runId:owner}),
+      read: async () => structuredClone(cycle),
+      write: async state => { cycle=structuredClone(state); events.push(`checkpoint:${state.status}:${state.cursor}`); }
+    }),
+    reports: async () => {events.push('reports');return {ok:true,verified:true,fingerprint:'a'.repeat(64)};},
     ownerQueue: async () => { events.push('ownerActionQueue'); return { ok: true }; },
     publish: async () => ({ ok: true }),
     sourceFactory: () => ({}),
@@ -94,6 +102,8 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
   globalThis[key] = fixture;
   const modules = {
     googleapis: 'export const google = f.google;',
+    '../lib/google-sheets-finance-cycle-store.js': 'export const createFinanceCycleStore = f.cycleStore;',
+    '../lib/google-sheets-finance-reports.js': 'export const refreshGoogleSheetsFinanceReports = f.reports; export const verifyGoogleSheetsFinanceReports = async () => ({ok:true});',
     './sync-hours.js': 'export default f.hours;',
     './sync-payments.js': 'export default f.payments;',
     './decision-reconcile-daily.js': 'export default f.decisions;',
@@ -134,7 +144,7 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
     }
   });
   const route = await import(routeUrl);
-  return { route, events, entries, stores, get consumed() { return consumed; } };
+  return { route, events, entries, stores, get cycle() { return cycle; }, get consumed() { return consumed; } };
 }
 
 export const cronRequest = schedule => ({
