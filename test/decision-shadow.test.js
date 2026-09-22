@@ -126,3 +126,26 @@ test('shadow comparison reports a precise mismatch instead of silently accepting
   assert.equal(comparison.mismatches[0].ruleId, 'DEC-CASH-GAP');
   assert.ok(comparison.mismatches[0].fields.includes('active'));
 });
+
+
+test('awaiting invoice stays in forecast data but never becomes an overdue payment action', () => {
+  const snapshot = buildDecisionFinancialSnapshot({
+    asOfDate: '2026-09-22',
+    obligationRows: [
+      { id: 'RENT-WAIT', dueDate: '2026-09-08', remaining: 50718, priority: 'Высокий', status: 'Ожидаем счёт' },
+      { id: 'ROYALTY-LIVE', dueDate: '2026-10-03', remaining: 1243268.59, priority: 'Критический', status: 'Прогноз LIVE' }
+    ]
+  });
+
+  assert.deepEqual(snapshot.obligations.criticalPayments, [
+    { id: 'ROYALTY-LIVE', dueDate: '2026-10-03', amount: 1243268.59, priority: 'Критический' }
+  ]);
+  const result = evaluateDecisionRule(
+    'critical_payment_due_3d',
+    snapshot,
+    new Date('2026-09-22T05:00:00.000Z')
+  );
+  assert.equal(result.active, false);
+  assert.equal(result.amount, 0);
+  assert.deepEqual(result.linkedObjects, []);
+});
