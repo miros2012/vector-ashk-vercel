@@ -63,13 +63,15 @@ test('transient recognition outage keeps saved photo pending and returns safe 20
   assert.match(pending.diagnostics.join('\n'), /500/);
 });
 
-test('recognized duplicate is idempotent and does not store or recognize again', async () => {
+test('recognized duplicate is idempotent, refreshes freshness and does not store or recognize again', async () => {
   let persisted = 0;
   let recognized = 0;
+  let verified = 0;
   const service = createCashPhotoUploadService({
     store: {
       async findByHash() { return { photoId: 'PHOTO-old', branch: 'Ямская', status: 'Распознано — ожидает обработки' }; },
-      async persistPhoto() { persisted += 1; }
+      async persistPhoto() { persisted += 1; },
+      async markDuplicateVerified() { verified += 1; }
     },
     recognize: async () => { recognized += 1; }
   });
@@ -78,7 +80,9 @@ test('recognized duplicate is idempotent and does not store or recognize again',
 
   assert.equal(result.statusCode, 200);
   assert.equal(result.body.alreadyStored, true);
+  assert.equal(result.body.verifiedCurrent, true);
   assert.equal(result.body.photoId, 'PHOTO-old');
+  assert.equal(verified, 1);
   assert.equal(persisted, 0);
   assert.equal(recognized, 0);
 });
@@ -156,13 +160,15 @@ test('save persists and queues recognition without waiting for Gemini', async ()
   assert.deepEqual(sequence, ['find', 'persist', 'pending']);
 });
 
-test('save keeps recognized duplicate idempotent', async () => {
+test('save keeps recognized duplicate idempotent and refreshes freshness', async () => {
   let effects = 0;
+  let verified = 0;
   const service = createCashPhotoUploadService({
     store: {
       async findByHash() { return { photoId: 'PHOTO-old', branch: 'Ямская', status: 'Распознано — ожидает обработки' }; },
       async persistPhoto() { effects += 1; },
-      async markPending() { effects += 1; }
+      async markPending() { effects += 1; },
+      async markDuplicateVerified() { verified += 1; }
     },
     recognize: async () => { effects += 1; }
   });
@@ -170,5 +176,7 @@ test('save keeps recognized duplicate idempotent', async () => {
   const result = await service.save(validInput());
   assert.equal(result.statusCode, 200);
   assert.equal(result.body.alreadyStored, true);
+  assert.equal(result.body.verifiedCurrent, true);
+  assert.equal(verified, 1);
   assert.equal(effects, 0);
 });

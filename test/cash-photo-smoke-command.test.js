@@ -41,7 +41,7 @@ test('recognition retries stop after three pending responses', async () => {
 });
 test('deployment wait is bounded', async () => {
   const f = fixture([]); await assert.rejects(f.run(), /cash_photo_deployment_timeout/);
-  assert.equal(f.waits, 17);
+  assert.equal(f.waits, 59);
 });
 
 test('successful responses cannot add unreviewed fields to public workflow logs', async () => {

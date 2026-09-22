@@ -13,7 +13,7 @@ export async function runCashPhotoSmoke({ env = process.env, fetchImpl = fetch, 
       || tokenUrl.username || tokenUrl.password || tokenUrl.port) throw new Error('cash_photo_smoke_oidc_url_invalid');
   tokenUrl.searchParams.set('audience', AUDIENCE);
   let pending = 0;
-  for (let attempt = 0; attempt < 18; attempt++) {
+  for (let attempt = 0; attempt < 60; attempt++) {
     if (attempt) await sleep(10000);
     let response, body;
     try {
