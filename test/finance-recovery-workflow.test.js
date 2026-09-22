@@ -9,14 +9,14 @@ const hourlyWorkflow = readFileSync(
 );
 const recoveryUrl = new URL('../.github/workflows/finance-recovery.yml', import.meta.url);
 
-test('finance recovery uses a dedicated off-peak scheduled workflow', () => {
+test('finance recovery uses a dedicated all-day scheduled workflow', () => {
   assert.equal(existsSync(fileURLToPath(recoveryUrl)), true, 'dedicated finance recovery workflow is required');
   const recoveryWorkflow = readFileSync(recoveryUrl, 'utf8');
 
-  assert.match(recoveryWorkflow, /cron:\s*'7,17,27,37,47,57 4-15 \* \* \*'/);
+  assert.match(recoveryWorkflow, /cron:\s*'7,17,27,37,47,57 \* \* \* \*'/);
   assert.match(recoveryWorkflow, /group:\s*finance-recovery/);
   assert.match(recoveryWorkflow, /body:\s*JSON\.stringify\(\{ mode: 'finance_sync', kind: 'recovery' \}\)/);
-  assert.doesNotMatch(hourlyWorkflow, /cron:\s*'\*\/10 4-15 \* \* \*'/);
+  assert.doesNotMatch(hourlyWorkflow, /cron:\s*'\*\/10 \* \* \* \*'/);
 });
 
 test('finance sync script receives the GitHub event name before choosing recovery mode', () => {
@@ -24,4 +24,26 @@ test('finance sync script receives the GitHub event name before choosing recover
     hourlyWorkflow,
     /GITHUB_EVENT_NAME:\s*\$\{\{\s*github\.event_name\s*\}\}/
   );
+});
+
+async function runRecovery(responses) {
+  const script=readFileSync(recoveryUrl,'utf8').split("<<'NODE'\n")[1].split('\n          NODE')[0];
+  let tokens=0, stages=0;
+  const fetch=async url=>{
+    if(String(url).startsWith('https://oidc.invalid')) {tokens++;return {ok:true,json:async()=>({value:'test'})};}
+    stages++;
+    const result=responses.shift();
+    if(!result)throw Error('Unexpected stage request');
+    return {ok:result.status<300,status:result.status,json:async()=>result.body};
+  };
+  const run=new Function('fetch','process',`return (async()=>{${script}})()`);
+  await run(fetch,{env:{ACTIONS_ID_TOKEN_REQUEST_URL:'https://oidc.invalid',ACTIONS_ID_TOKEN_REQUEST_TOKEN:'fixture',FINANCE_SYNC_ENDPOINT:'https://finance.invalid'}});
+  return {tokens,stages};
+}
+test('recovery drains pending stages with a fresh OIDC token and stops on completion',async()=>{
+  assert.deepEqual(await runRecovery([{status:202,body:{ok:true,pending:true}},{status:200,body:{ok:true,complete:true}}]),{tokens:2,stages:2});
+});
+test('recovery stops on busy lease and fails visibly on failed stage',async()=>{
+  assert.deepEqual(await runRecovery([{status:409,body:{ok:false,busy:true}}]),{tokens:1,stages:1});
+  await assert.rejects(runRecovery([{status:503,body:{ok:false,stage:'reports',errorClass:'SOURCE_CHANGED'}}]),/reports.*SOURCE_CHANGED/);
 });

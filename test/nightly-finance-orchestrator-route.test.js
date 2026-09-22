@@ -24,49 +24,44 @@ test('nightly finance route composes HOURS, receivables, decisions, and runtime 
   assert.match(source, /process\.env\.CRON_SECRET/);
 });
 
-test('nightly route records separate source and publish attempts with deployment metadata only', async t => {
-  const { route, entries, stores, events } = await financeRouteHarness(t);
-  const res = response();
-  await route.default(cronRequest('30 21 * * *'), res);
-  assert.equal(res.statusCode, 200);
-  assert.deepEqual(entries.map(entry => [entry.stage, entry.trigger, entry.mode, entry.deploymentSha]), [
-    ['receivablesSource', 'cron', 'nightly', 'deployment-sha-test'],
-    ['ropPublish', 'cron', 'nightly', 'deployment-sha-test']
-  ]);
-  assert.equal(stores.length, 1);
-  assert.equal(stores[0].spreadsheetId, '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10');
-  assert.equal(stores[0].sheets.client, 'sheets');
-  assert.equal(entries[0].runId, entries[1].runId);
-  for (const entry of entries) assert.deepEqual(Object.keys(entry).sort(), [
-    'runId', 'startedAtUtc', 'finishedAtUtc', 'trigger', 'mode', 'stage', 'attempt',
-    'result', 'statusCode', 'errorClass', 'retryable', 'retryAfterUtc', 'deploymentSha'
-  ].sort());
-  const serializedEntries = JSON.stringify(entries);
-  assert.doesNotMatch(serializedEntries, /PRIVATE_|route-secret/);
-  assert.doesNotMatch(serializedEntries, /"debt"\s*:\s*999/);
-  assert.ok(events.indexOf('schema') < events.indexOf('acquire'));
-  assert.ok(events.indexOf('acquire') < events.indexOf('tochkaDds'));
-  assert.ok(events.indexOf('marker:receivables_last_success_utc') < events.indexOf('ropPublish'));
-  assert.equal(events.at(-1), 'release');
+test('nightly route checkpoints each stage and resumes without repeating completed work', async t => {
+  const f = await financeRouteHarness(t);
+  let res;
+  for(let i=0;i<10;i++) {
+    res=response(); await f.route.default(cronRequest('30 21 * * *'),res);
+    assert.equal(res.statusCode,i===9?200:202);
+    assert.equal(f.cycle.cursor,i+1);
+    assert.equal(res.body.complete,i===9);
+  }
+  assert.equal(f.cycle.status,'COMPLETE');
+  assert.equal(f.events.filter(e=>e==='tochkaDds').length,1);
+  assert.equal(f.events.filter(e=>e==='reports').length,2);
+  assert.equal(f.stores.length,10);
+  assert.doesNotMatch(JSON.stringify(f.cycle),/PRIVATE_|route-secret|"debt"/);
+  assert.ok(f.events.indexOf('schema')<f.events.indexOf('acquire'));
+  assert.ok(f.events.indexOf('acquire')<f.events.indexOf('tochkaDds'));
+  assert.ok(f.events.indexOf('marker:receivables_last_success_utc')<f.events.indexOf('ropPublish'));
+  assert.equal(f.events.at(-1),'release');
 });
 
 test('schema verification failure blocks lease and all finance stages', async t => {
   const { route, events } = await financeRouteHarness(t, { schemaOk: false });
   const res = response();
   await route.default(cronRequest('30 21 * * *'), res);
-  assert.equal(res.statusCode, 500);
+  assert.equal(res.statusCode, 503);
   assert.deepEqual(events, ['google-authorize', 'google-client', 'store', 'schema']);
 });
 
-test('source failure never invokes the separate ROP publication dependency', async t => {
-  const { route, events, entries } = await financeRouteHarness(t, { sourceOk: false });
-  const res = response();
-  await route.default(cronRequest('30 21 * * *'), res);
-  assert.equal(res.statusCode, 502);
-  assert.equal(res.body.stages.ropPublish?.skipped, true);
-  assert.deepEqual(entries.map(entry => entry.stage), ['receivablesSource']);
-  assert.equal(events.includes('ropPublish'), false);
-  assert.equal(events.includes('marker:receivables_last_success_utc'), false);
+test('source failure preserves cursor and never invokes ROP or decisions', async t => {
+  const f=await financeRouteHarness(t,{sourceOk:false});
+  let res;
+  for(let i=0;i<5;i++){res=response();await f.route.default(cronRequest('30 21 * * *'),res);}
+  assert.equal(res.statusCode,503);
+  assert.equal(res.body.stage,'receivablesSource');
+  assert.equal(f.cycle.cursor,4);
+  assert.equal(f.cycle.status,'FAILED');
+  assert.equal(f.events.includes('ropPublish'),false);
+  assert.equal(f.events.includes('decisions'),false);
 });
 
 test('signed recovery-only finance request does no source work when retry state is empty', async t => {
@@ -81,7 +76,7 @@ test('signed recovery-only finance request does no source work when retry state 
   }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, { ok: true, mode: 'recovery_idle', stages: {} });
+  assert.deepEqual(res.body, { ok: true, mode: 'recovery_idle', pending:false, complete:false });
   assert.deepEqual(entries, []);
   assert.deepEqual(events, ['google-authorize', 'google-client', 'store', 'schema', 'acquire', 'release']);
 });
@@ -92,7 +87,7 @@ test('mid-hour Vercel finance cron is recovery-only without a private routing he
   await route.default(cronRequest('30 4 * * *'), res);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, { ok: true, mode: 'recovery_idle', stages: {} });
+  assert.deepEqual(res.body, { ok: true, mode: 'recovery_idle', pending:false, complete:false });
   assert.deepEqual(entries, []);
   assert.deepEqual(events, ['google-authorize', 'google-client', 'store', 'schema', 'acquire', 'release']);
 });

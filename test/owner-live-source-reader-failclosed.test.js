@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createOwnerLiveSourceReader } from '../lib/owner-live-source-reader.js';
 
 const ranges = {
+  financeControl: "'__vercel_control'!A1:B1009",
   dataHealth: "'Data Health Snapshot'!A1:L40",
   sales: "'РОП_Штаб_Утро'!A1:I500",
   receivables: "'АШК_Дебиторка_Свод__vercel'!A1:F2",
@@ -49,6 +50,7 @@ const historyHeader = ['Event ID','Rule ID','Событие','Дата/врем�
 
 function baseMatrices() {
   return {
+    [ranges.financeControl]: [],
     [ranges.dataHealth]: dataHealthValues(),
     [ranges.sales]: sales,
     [ranges.receivables]: [['Тип','Объект','Договоров','Долг','Продажи','Оплачено'], ['ИТОГО','',1,1000,5000,4000]],

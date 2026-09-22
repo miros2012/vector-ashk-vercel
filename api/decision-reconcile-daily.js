@@ -1,3 +1,6 @@
+import { verifyGoogleSheetsFinanceReports } from '../lib/google-sheets-finance-reports.js';
+import { cycleFromControlRows } from '../lib/google-sheets-finance-cycle-store.js';
+import { verifiedFinanceCycleHealth } from '../lib/finance-cycle-status.js';
 import { google } from 'googleapis';
 import { createDecisionShadowSheetAdapter } from '../lib/decision-shadow-sheet-adapter.js';
 import { createDecisionStateSynchronizer } from '../lib/decision-state-sync-service.js';
@@ -69,7 +72,8 @@ async function runDataHealth(req, res) {
         `'${DATA_HEALTH_SHEET}'!A1:H40`,
         `'Точка_API'!A2:P`,
         `'ДДС: месяц'!M5:M30000`,
-        `'Контроль Точка → ДДС'!A5:P3000`
+        `'Контроль Точка → ДДС'!A5:P3000`,
+        "'__vercel_control'!A1:B1009"
       ],
       valueRenderOption: 'UNFORMATTED_VALUE'
     });
@@ -83,15 +87,19 @@ async function runDataHealth(req, res) {
       businessDateSerial: currentBusinessDateSerial()
     });
 
+    const cycle = await verifiedFinanceCycleHealth(cycleFromControlRows(ranges[4]?.values || []),
+      {internalCycleId:req.headers?.['x-vector-finance-cycle-id'] || ''},
+      fingerprint => verifyGoogleSheetsFinanceReports({sheets,spreadsheetId:SPREADSHEET_ID},fingerprint));
     const staleCoreSources = [...health.staleCoreSources];
     const consistencyErrors = [...health.consistencyErrors];
     if (!tochkaDds.ok) {
       staleCoreSources.push('tochkaDds');
       consistencyErrors.push('tochka operations missing from DDS');
     }
+    if (!cycle.ok) { staleCoreSources.push('financeCycle'); consistencyErrors.push(cycle.reason); }
     const uniqueStaleCoreSources = [...new Set(staleCoreSources)];
     const uniqueConsistencyErrors = [...new Set(consistencyErrors)];
-    const ok = health.ok && tochkaDds.ok;
+    const ok = health.ok && tochkaDds.ok && cycle.ok;
     const body = {
       ok,
       status: ok ? health.status : 'BLOCKED',
@@ -99,7 +107,8 @@ async function runDataHealth(req, res) {
       missingCoreSources: health.missingCoreSources,
       warnings: health.warnings,
       consistencyErrors: uniqueConsistencyErrors,
-      tochkaDds
+      errorClass:cycle.reason==='finance-report-stale'?'REPORT_STALE':undefined,
+      tochkaDds, cycle
     };
     console.log(JSON.stringify({ event: 'finance-data-health', ...body }));
     return res.status(ok ? 200 : 503).json(body);

@@ -1,3 +1,4 @@
+import { financeCycleSequence } from '../lib/finance-cycle.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -12,6 +13,7 @@ async function loadReader() {
 }
 
 const RANGES = Object.freeze({
+  financeControl: "'__vercel_control'!A1:B1009",
   dataHealth: "'Data Health Snapshot'!A1:L40",
   sales: "'РОП_Штаб_Утро'!A1:I500",
   receivables: "'АШК_Дебиторка_Свод__vercel'!A1:F2",
@@ -117,6 +119,11 @@ function historyValues() {
 
 function makeMatrices(overrides = {}) {
   return {
+    [RANGES.financeControl]: overrides.financeControl ?? [['finance_cycle_v1',JSON.stringify({
+      version:1,id:'test',mode:'full',status:'COMPLETE',cursor:10,attempt:0,
+      startedAt:'2026-09-07T09:00:00Z',finishedAt:'2026-09-07T09:30:00Z',
+      completed:financeCycleSequence('full').map(stage=>({stage,ok:true}))
+    })]],
     [RANGES.dataHealth]: overrides.dataHealth ?? dataHealthValues(),
     [RANGES.sales]: overrides.sales ?? salesValues(),
     [RANGES.receivables]: overrides.receivables ?? receivablesValues(),
@@ -268,4 +275,13 @@ test('treats an estimated obligation with a known amount as confirmed planning c
   assert.equal(row.unconfirmed, false);
   assert.equal(result.obligations.confirmedCashNeed, 262403.74);
   assert.equal(result.obligations.unconfirmedCashNeed, 500);
+});
+
+test('fresh input markers cannot hide an absent or unfinished verified finance cycle',async()=>{
+  const create=await loadReader();
+  const {sheets}=makeSheets({matrices:makeMatrices({financeControl:[]})});
+  const facts=await create({sheets,spreadsheetId:'s',now:()=>new Date('2026-09-07T10:00:00Z')}).readOwnerLiveFacts();
+  assert.equal(facts.dataHealth.ok,false);
+  assert.equal(facts.dataHealth.status,'BLOCKED');
+  assert.ok(facts.dataHealth.consistencyErrors.includes('finance-cycle-unverified'));
 });
