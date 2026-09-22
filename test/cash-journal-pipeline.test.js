@@ -157,12 +157,12 @@ test('partial DDS commit is recovered without duplicating money', async()=>{
   const {sheets,state}=makeSheets();
   const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book',now:()=>new Date('2026-09-22T03:00:00Z')});
   state.draft.push([
-    'PHOTO-Z:op1',46284,'Зарека','Макаров обучение','',10000,16002,
+    'PHOTO-Z:op1',46283,'Зарека','Макаров обучение','',10000,16002,
     'Приход','Продажи','','Касса Зарека','Сходится','Готово к переносу',
     '[VERCEL-OCR] | Фото-ID: PHOTO-Z | Уверенность 100%'
   ]);
   state.dds.push([
-    'Сентябрь',9,46284,10000,103,'','','Макаров обучение [Зарека]','Продажи',
+    'Сентябрь',9,46283,10000,103,'','','Макаров обучение [Зарека]','Продажи',
     'Поступление','Операционная',9,'Касса Vercel | PHOTO-Z:op1 | Зарека'
   ]);
 
