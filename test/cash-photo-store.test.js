@@ -568,3 +568,35 @@ test('markRecognized does not publish a live balance for an inactive branch wall
     false
   );
 });
+
+
+test('markDuplicateVerified refreshes only stable wallet verification timestamp', async () => {
+  const { drive, sheets, calls } = makeClients();
+  sheets.spreadsheets.values.get = async (args) => {
+    calls.push(['sheets.get', args]);
+    if (String(args.range).includes("'Кошельки наличных'!A2:J")) {
+      return { data: { values: [
+        [102, 'Касса Ямская', 'Филиал', true, '', 4059, 46286, 'PHOTO-old', 'Распознано — требуется проверка', '2026-09-21T09:58:58.389Z']
+      ] } };
+    }
+    return { data: { values: [] } };
+  };
+  const store = createCashPhotoStore({
+    drive, sheets, spreadsheetId: 'sheet', folderId: 'folder',
+    now: () => new Date('2026-09-22T10:00:00.000Z')
+  });
+
+  const result = await store.markDuplicateVerified({
+    photoId: 'PHOTO-old',
+    branch: 'Ямская',
+    status: 'Распознано — требуется проверка'
+  });
+
+  assert.equal(result, 'verified');
+  const writes = calls
+    .filter(([name]) => name === 'sheets.update')
+    .map(([, args]) => args);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].range, "'Кошельки наличных'!J2");
+  assert.deepEqual(writes[0].requestBody.values[0], ['2026-09-22T10:00:00.000Z']);
+});
