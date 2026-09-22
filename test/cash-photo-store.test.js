@@ -240,6 +240,24 @@ test('listPending reclaims only stale recognizing rows after a crashed worker', 
   assert.equal(pending[0].recoveryNote, 'предыдущая попытка');
 });
 
+test('listPending reclaims a legacy recognizing row that has no attempt timestamp', async () => {
+  const { drive, sheets, sheetRows } = makeClients();
+  sheetRows.push([
+    'PHOTO-legacy-stuck', '', 'Гондатти', '2026', 'legacy.jpg',
+    'https://drive.google.com/file/d/legacy-stuck/view', 'h1', 'Распознавание'
+  ]);
+  const store = createCashPhotoStore({
+    drive, sheets, spreadsheetId: 'sheet', folderId: 'folder',
+    now: () => new Date('2026-09-22T10:00:00.000Z')
+  });
+
+  const pending = await store.listPending(5);
+
+  assert.equal(pending.length, 1);
+  assert.equal(pending[0].photoId, 'PHOTO-legacy-stuck');
+  assert.equal(pending[0].status, 'Распознавание');
+});
+
 test('markRecognizing records a fresh worker timestamp outside business archive columns', async () => {
   const { drive, sheets, calls } = makeClients();
   const store = createCashPhotoStore({
