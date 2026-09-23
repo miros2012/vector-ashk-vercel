@@ -36,8 +36,8 @@ async function runRecovery(responses) {
     if(!result)throw Error('Unexpected stage request');
     return {ok:result.status<300,status:result.status,json:async()=>result.body};
   };
-  const run=new Function('fetch','process',`return (async()=>{${script}})()`);
-  await run(fetch,{env:{ACTIONS_ID_TOKEN_REQUEST_URL:'https://oidc.invalid',ACTIONS_ID_TOKEN_REQUEST_TOKEN:'fixture',FINANCE_SYNC_ENDPOINT:'https://finance.invalid'}});
+  const run=new Function('fetch','process','setTimeout',`return (async()=>{${script}})()`);
+  await run(fetch,{env:{ACTIONS_ID_TOKEN_REQUEST_URL:'https://oidc.invalid',ACTIONS_ID_TOKEN_REQUEST_TOKEN:'fixture',FINANCE_SYNC_ENDPOINT:'https://finance.invalid'}},fn=>fn());
   return {tokens,stages};
 }
 test('recovery drains pending stages with a fresh OIDC token and stops on completion',async()=>{
@@ -46,4 +46,10 @@ test('recovery drains pending stages with a fresh OIDC token and stops on comple
 test('recovery stops on busy lease and fails visibly on failed stage',async()=>{
   assert.deepEqual(await runRecovery([{status:409,body:{ok:false,busy:true}}]),{tokens:1,stages:1});
   await assert.rejects(runRecovery([{status:503,body:{ok:false,stage:'reports',errorClass:'SOURCE_CHANGED'}}]),/reports.*SOURCE_CHANGED/);
+});
+test('recovery retries a checkpoint transport failure with a new token and resumes',async()=>{
+ assert.deepEqual(await runRecovery([{status:503,body:{ok:false,errorClass:'CHECKPOINT_FAILED'}},{status:202,body:{ok:true,pending:true}},{status:200,body:{ok:true,complete:true}}]),{tokens:3,stages:3});
+});
+test('recovery stops after bounded transient failures',async()=>{
+ await assert.rejects(runRecovery(Array.from({length:3},()=>({status:503,body:{ok:false,errorClass:'CHECKPOINT_FAILED'}}))),/CHECKPOINT_FAILED/);
 });

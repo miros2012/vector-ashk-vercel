@@ -76,8 +76,8 @@ test('manual finance run is handled inside the existing nightly route', () => {
 
 test('manual run capability does not add a route alongside finance and recovery crons', () => {
   const config = JSON.parse(fs.readFileSync(vercelPath, 'utf8'));
-  const financeCrons = config.crons.filter(cron => cron.path === '/api/nightly-finance-orchestrator');
+  const financeCrons = config.crons.filter(cron => cron.path.split("?")[0] === '/api/nightly-finance-orchestrator');
   assert.equal(Object.keys(config.functions || {}).length, 5);
-  assert.equal(financeCrons.length, 25);
+  assert.equal(financeCrons.length, 37);
   assert.ok(!Object.keys(config.functions || {}).some(path => path.includes('manual')));
 });

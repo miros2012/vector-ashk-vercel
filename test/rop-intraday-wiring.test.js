@@ -38,8 +38,11 @@ test('source-only callable marks its snapshot without invoking publication', asy
 });
 
 test('same protected finance endpoint has nightly, intraday, and recovery schedules', () => {
-  const financeCrons = config.crons.filter((cron) => cron.path === financePath);
-  assert.equal(financeCrons.length, 25);
+  const financeCrons = config.crons.filter((cron) => cron.path.split("?")[0] === financePath);
+  assert.equal(financeCrons.length, 37);
+  assert.equal(financeCrons.filter(c=>c.path.endsWith('?kind=recovery')).length,24);
+  for(let h=0;h<24;h++)assert.ok(financeCrons.some(c=>c.path.endsWith('?kind=recovery')&&c.schedule===`30 ${h} * * *`));
+  for(const cron of financeCrons)assert.match(cron.path,/\?kind=(full|intraday|recovery)$/);
   assert.ok(financeCrons.some((cron) => cron.schedule === '30 21 * * *'));
   for (const schedule of intradaySchedules) {
     assert.ok(financeCrons.some((cron) => cron.schedule === schedule), `missing ${schedule}`);
