@@ -363,3 +363,10 @@ test('protected internal handler exposes aggregate counts only', async () => {
   });
   assert.equal(JSON.stringify(allowed.body).includes(K1), false);
 });
+test('import timeout is retryable but invalid data remains a permanent failure',async()=>{
+ for(const [error,expected] of [[new Error('Google Sheets request timed out'),'DDS_TRANSPORT'],[Object.assign(new Error('quota'),{code:429}),'DDS_TRANSPORT'],[new Error('DDS duplicate key before import'),'DDS_IMPORT_FAILED']]) {
+  const handler=createTochkaDdsImportHandler({cronSecret:'secret',runImport:async()=>{throw error;}});
+  const res=responseRecorder();await handler({method:'GET',headers:{authorization:'Bearer secret'}},res);
+  assert.equal(res.body.errorClass,expected);
+ }
+});
