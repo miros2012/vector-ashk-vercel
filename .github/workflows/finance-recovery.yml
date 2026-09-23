@@ -60,11 +60,12 @@ jobs:
             }
             if (!response.ok || body.ok !== true) {
               const retryable=[429,502,503,504].includes(response.status)
-                && !body.blocked && !body.attempt
-                && [undefined,'CHECKPOINT_FAILED','CYCLE_UNAVAILABLE','TRANSPORT_FAILED'].includes(body.errorClass);
+                && !body.blocked
+                && ((!body.attempt && [undefined,'CHECKPOINT_FAILED','CYCLE_UNAVAILABLE','TRANSPORT_FAILED'].includes(body.errorClass))
+                  || (body.errorClass==='REPORT_TRANSPORT' && Number.isInteger(body.attempt) && body.attempt>0 && body.attempt<3));
               if(retryable && ++transientFailures<3 && step<23) {
                 console.log(JSON.stringify({retry:true,status:response.status,errorClass:body.errorClass||'TRANSPORT_FAILED'}));
-                await new Promise(resolve=>setTimeout(resolve,2000*transientFailures));
+                await new Promise(resolve=>setTimeout(resolve,(body.errorClass==='REPORT_TRANSPORT'?30000:2000)*transientFailures));
                 continue;
               }
               throw new Error(`Finance recovery failed: ${response.status}; stage=${body.stage || 'unknown'}; error=${body.errorClass || 'unknown'}`);

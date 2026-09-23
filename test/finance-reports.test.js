@@ -8,6 +8,12 @@ function input() {
     revenue: [['Месяц','Месяц (цифрой)','Выручка'], ['Август',8,1000], ['Сентябрь',9,'']],
     layout: ['Выручка по начислению','Возвраты курсантам','Прочие операционные доходы','Чистая выручка','Переменные расходы','Валовая прибыль','Постоянные расходы','Налоги','Операционная прибыль','Рентабельность','Справочно: инвестиционный отток (нетто, ДДС)'] };
 }
+test('report transport failures are distinguished from invalid financial data',async()=>{
+ const adapter={read:async()=>{throw Object.assign(Error('private response'),{response:{status:429}});}};
+ assert.deepEqual(await refreshFinanceReports(adapter),{ok:false,errorClass:'REPORT_TRANSPORT'});
+ adapter.read=async()=>{const source=input();source.dds[0][3]='invalid';return source;};
+ assert.deepEqual(await refreshFinanceReports(adapter),{ok:false,errorClass:'REPORT_VALIDATION'});
+});
 test('canonical months, refunds and excluded transfers produce hand-checked P&L', () => {
   const result = calculateFinanceReports(input());
   assert.deepEqual(result.values.map(r => r[7]), [1000,10,0,990,7,983,120,5,858,858/990,0]);

@@ -53,3 +53,8 @@ test('recovery retries a checkpoint transport failure with a new token and resum
 test('recovery stops after bounded transient failures',async()=>{
  await assert.rejects(runRecovery(Array.from({length:3},()=>({status:503,body:{ok:false,errorClass:'CHECKPOINT_FAILED'}}))),/CHECKPOINT_FAILED/);
 });
+test('temporary report stage failure resumes while the three-attempt circuit breaker is respected',async()=>{
+ assert.deepEqual(await runRecovery([{status:503,body:{ok:false,errorClass:'REPORT_TRANSPORT',attempt:1}},{status:200,body:{ok:true,complete:true}}]),{tokens:2,stages:2});
+ await assert.rejects(runRecovery([{status:503,body:{ok:false,errorClass:'REPORT_TRANSPORT',attempt:3}}]),/REPORT_TRANSPORT/);
+ await assert.rejects(runRecovery([{status:503,body:{ok:false,errorClass:'REPORT_VALIDATION',attempt:1}}]),/REPORT_VALIDATION/);
+});
