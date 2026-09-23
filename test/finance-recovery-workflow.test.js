@@ -58,3 +58,6 @@ test('temporary report stage failure resumes while the three-attempt circuit bre
  await assert.rejects(runRecovery([{status:503,body:{ok:false,errorClass:'REPORT_TRANSPORT',attempt:3}}]),/REPORT_TRANSPORT/);
  await assert.rejects(runRecovery([{status:503,body:{ok:false,errorClass:'REPORT_VALIDATION',attempt:1}}]),/REPORT_VALIDATION/);
 });
+test('recovery stops cleanly on source cooldown rather than consuming more attempts',async()=>{
+ assert.deepEqual(await runRecovery([{status:202,body:{ok:true,pending:true,complete:false,deferred:true}}]),{tokens:1,stages:1});
+});

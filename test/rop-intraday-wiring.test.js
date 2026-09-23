@@ -13,14 +13,14 @@ test('all intraday schedules resume the same lightweight cycle and recovery avoi
   const f = await financeRouteHarness(t);
   for (let i=0;i<intradaySchedules.length;i++) {
     const res=response(); await f.route.default(cronRequest(intradaySchedules[i]),res);
-    assert.equal(res.statusCode,i===8?200:202);
+    assert.equal(res.statusCode,i===9?200:202);
     assert.equal(f.cycle.mode,'intraday');
   }
   assert.equal(f.stores.length,12);
   assert.equal(f.events.includes('hours'),false);
   assert.equal(f.events.filter(e=>e==='ownerActionQueue').length,1);
   const before=f.events.filter(e=>e==='ownerActionQueue').length;
-  for(let i=0;i<7;i++){const res=response();await f.route.default(cronRequest('30 15 * * *'),res);}
+  for(let i=0;i<8;i++){const res=response();await f.route.default(cronRequest('30 15 * * *'),res);}
   assert.equal(f.events.filter(e=>e==='ownerActionQueue').length,before);
   assert.equal(f.cycle.status,'COMPLETE');
 });

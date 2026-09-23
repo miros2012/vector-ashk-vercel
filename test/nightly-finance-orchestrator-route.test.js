@@ -27,16 +27,16 @@ test('nightly finance route composes HOURS, receivables, decisions, and runtime 
 test('nightly route checkpoints each stage and resumes without repeating completed work', async t => {
   const f = await financeRouteHarness(t);
   let res;
-  for(let i=0;i<10;i++) {
+  for(let i=0;i<11;i++) {
     res=response(); await f.route.default(cronRequest('30 21 * * *'),res);
-    assert.equal(res.statusCode,i===9?200:202);
-    assert.equal(f.cycle.cursor,i+1);
-    assert.equal(res.body.complete,i===9);
+    assert.equal(res.statusCode,i===10?200:202);
+    assert.equal(f.cycle.cursor,i<7?i+1:i);
+    assert.equal(res.body.complete,i===10);
   }
   assert.equal(f.cycle.status,'COMPLETE');
-  assert.equal(f.events.filter(e=>e==='tochkaDds').length,1);
+  assert.equal(f.events.filter(e=>e==='tochkaDds').length,2);
   assert.equal(f.events.filter(e=>e==='reports').length,2);
-  assert.equal(f.stores.length,10);
+  assert.equal(f.stores.length,11);
   assert.doesNotMatch(JSON.stringify(f.cycle),/PRIVATE_|route-secret|"debt"/);
   assert.ok(f.events.indexOf('schema')<f.events.indexOf('acquire'));
   assert.ok(f.events.indexOf('acquire')<f.events.indexOf('tochkaDds'));

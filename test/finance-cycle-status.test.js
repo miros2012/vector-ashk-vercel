@@ -3,6 +3,12 @@ import { financeCycleHealth, verifiedFinanceCycleHealth } from '../lib/finance-c
 test('green sources cannot turn partial, failed, corrupt or absent cycles green',()=>{
  for(const state of [null,{status:'COMPLETE'},{status:'FAILED'},{status:'RUNNING'}])assert.equal(financeCycleHealth(state).ok,false);
 });
+test('source catch-up explains waiting and preserves last confirmed time without reporting OK',()=>{
+ const state={version:1,id:'id',mode:'intraday',status:'PENDING',cursor:0,attempt:0,startedAt:'2026-09-23T05:00:00Z',completed:[],waitingForSource:true,lastCompletedAt:'2026-09-23T04:01:00Z'};
+ const health=financeCycleHealth(state,{now:new Date('2026-09-23T05:01:00Z')});
+ assert.equal(health.ok,false);assert.equal(health.reason,'finance-cycle-updating');assert.equal(health.updating,true);
+ assert.equal(health.lastCompletedAt,state.lastCompletedAt);
+});
 test('only verified completed cycle is overall OK; internal tail explicitly allows own verified running cycle',()=>{
  const names=['tochkaDds','reports','payments','receivablesSource','ropPublish','balances','reportVerification','dataHealth','decisions'];
  const state={version:1,id:'id',mode:'intraday',status:'COMPLETE',cursor:9,attempt:0,startedAt:'2026-09-22T10:00:00Z',finishedAt:'2026-09-22T10:10:00Z',completed:names.map(stage=>({stage,ok:true,fingerprint:'a'.repeat(64)}))};
