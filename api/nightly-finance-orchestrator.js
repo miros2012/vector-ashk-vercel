@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { parseRequestQuery } from '../lib/request-query.js';
 import syncHours from './sync-hours.js';
 import syncPayments from './sync-payments.js';
 import reconcileDecisions from './decision-reconcile-daily.js';
@@ -546,6 +547,13 @@ export default async function handler(req, res) {
   if (hasManualFinanceRunToken(req)) {
     // Preserve consume-before-run token semantics, including lease conflicts.
     return manualFinanceRunHandler(createRequestRunControl('manual'))(req, res);
+  }
+  // Native cron requests carry their mode in the configured URL. They do not
+  // need the synthetic schedule header used by the authenticated GitHub bridge.
+  const kind=parseRequestQuery(req).kind;
+  if(kind !== undefined) {
+    if(!['intraday','full','recovery'].includes(kind))return res.status(400).json({ok:false,error:'Invalid cycle kind'});
+    return resumableHandler(kind==='full'?'full':'intraday',kind==='recovery')(req,res);
   }
   const schedule = String(req?.headers?.['x-vercel-cron-schedule'] || '');
   if (INTRADAY_SCHEDULES.has(schedule) || RECOVERY_SCHEDULES.has(schedule)) {
