@@ -61,3 +61,7 @@ test('temporary report stage failure resumes while the three-attempt circuit bre
 test('recovery stops cleanly on source cooldown rather than consuming more attempts',async()=>{
  assert.deepEqual(await runRecovery([{status:202,body:{ok:true,pending:true,complete:false,deferred:true}}]),{tokens:1,stages:1});
 });
+test('bank import transport failure retries the idempotent stage within its attempt limit',async()=>{
+ assert.deepEqual(await runRecovery([{status:503,body:{ok:false,errorClass:'DDS_TRANSPORT',attempt:1}},{status:200,body:{ok:true,complete:true}}]),{tokens:2,stages:2});
+ await assert.rejects(runRecovery([{status:503,body:{ok:false,errorClass:'DDS_IMPORT_FAILED',attempt:1}}]),/DDS_IMPORT_FAILED/);
+});

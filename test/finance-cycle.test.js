@@ -143,3 +143,9 @@ test('final import failure cannot advance reports and retains the attempt limit'
  assert.equal(f.state().status,'BLOCKED');assert.equal(f.state().cursor,3);
  assert.equal(f.calls.includes('reportVerification'),false);
 });
+test('input changing during the report calculation rewinds and stays pending',async()=>{
+ const f=movingSourceFixture();for(let i=0;i<4;i++)await f.run({});
+ f.stages.reportVerification=async()=>({ok:false,errorClass:'SOURCE_CHANGED'});
+ const result=await f.run({recoveryOnly:true});assert.equal(result.ok,true);assert.equal(result.complete,false);
+ assert.equal(f.state().status,'PENDING');assert.equal(f.state().cursor,3);assert.equal(f.state().finalImportDone,false);
+});
