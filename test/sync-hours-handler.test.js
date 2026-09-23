@@ -200,3 +200,13 @@ test('cron GET rejects the manual sync key', async () => {
   assert.equal(res.statusCode, 403);
   assert.equal(externalCalls, 0);
 });
+
+test('Sheets read quota failure remains retryable without exposing exception details',async()=>{
+ const quota=Object.assign(new Error('private Sheets details'),{response:{status:429}});
+ const handler=createSyncHoursHandler({cronKey:'cron-secret',
+   now:()=>new Date('2026-09-23T10:00:00Z'),fetchReport:async()=>REPORT_ROWS,
+   writeRaw:async()=>{throw quota;},readRaw:async()=>[],writeReconciliation:async()=>{}});
+ const res=responseRecorder();await handler({method:'GET',headers:{authorization:'Bearer cron-secret'}},res);
+ assert.equal(res.statusCode,503);assert.equal(res.body.errorClass,'HOURS_TRANSPORT');
+ assert.equal(JSON.stringify(res.body).includes('private Sheets details'),false);
+});
