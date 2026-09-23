@@ -62,10 +62,10 @@ jobs:
               const retryable=[429,502,503,504].includes(response.status)
                 && !body.blocked
                 && ((!body.attempt && [undefined,'CHECKPOINT_FAILED','CYCLE_UNAVAILABLE','TRANSPORT_FAILED'].includes(body.errorClass))
-                  || (['REPORT_TRANSPORT','DDS_TRANSPORT'].includes(body.errorClass) && Number.isInteger(body.attempt) && body.attempt>0 && body.attempt<3));
+                  || (['REPORT_TRANSPORT','DDS_TRANSPORT','HOURS_TRANSPORT'].includes(body.errorClass) && Number.isInteger(body.attempt) && body.attempt>0 && body.attempt<3));
               if(retryable && ++transientFailures<3 && step<23) {
                 console.log(JSON.stringify({retry:true,status:response.status,errorClass:body.errorClass||'TRANSPORT_FAILED'}));
-                await new Promise(resolve=>setTimeout(resolve,(['REPORT_TRANSPORT','DDS_TRANSPORT'].includes(body.errorClass)?30000:2000)*transientFailures));
+                await new Promise(resolve=>setTimeout(resolve,(['REPORT_TRANSPORT','DDS_TRANSPORT','HOURS_TRANSPORT'].includes(body.errorClass)?30000:2000)*transientFailures));
                 continue;
               }
               throw new Error(`Finance recovery failed: ${response.status}; stage=${body.stage || 'unknown'}; error=${body.errorClass || 'unknown'}`);

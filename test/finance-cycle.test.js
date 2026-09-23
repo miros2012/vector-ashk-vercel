@@ -157,6 +157,14 @@ test('third transient import timeout defers recovery without replaying prior sta
  for(let i=0;i<4;i++)await f.run({recoveryOnly:true});
  assert.equal(f.state().status,'COMPLETE');assert.equal(f.calls.filter(s=>s==='payments').length,1);
 });
+test('three hours transport failures defer without restarting the completed payments stage',async()=>{
+ const f=movingSourceFixture();for(let i=0;i<2;i++)await f.run({});
+ f.stages.balances=async()=>({ok:false,errorClass:'HOURS_TRANSPORT'});
+ for(let i=0;i<2;i++)assert.equal((await f.run({recoveryOnly:true})).errorClass,'HOURS_TRANSPORT');
+ const delayed=await f.run({recoveryOnly:true});assert.equal(delayed.deferred,true);
+ assert.equal(f.state().cursor,2);assert.equal(f.state().errorClass,'HOURS_TRANSPORT');
+ assert.equal(f.calls.filter(s=>s==='payments').length,1);
+});
 test('input changing during the report calculation rewinds and stays pending',async()=>{
  const f=movingSourceFixture();for(let i=0;i<4;i++)await f.run({});
  f.stages.reportVerification=async()=>({ok:false,errorClass:'SOURCE_CHANGED'});

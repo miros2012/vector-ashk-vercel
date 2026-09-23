@@ -65,3 +65,7 @@ test('bank import transport failure retries the idempotent stage within its atte
  assert.deepEqual(await runRecovery([{status:503,body:{ok:false,errorClass:'DDS_TRANSPORT',attempt:1}},{status:200,body:{ok:true,complete:true}}]),{tokens:2,stages:2});
  await assert.rejects(runRecovery([{status:503,body:{ok:false,errorClass:'DDS_IMPORT_FAILED',attempt:1}}]),/DDS_IMPORT_FAILED/);
 });
+test('Sheets quota during hours sync waits before retrying the same stage',async()=>{
+ assert.deepEqual(await runRecovery([{status:503,body:{ok:false,errorClass:'HOURS_TRANSPORT',attempt:1}},{status:202,body:{ok:true,pending:true}},{status:200,body:{ok:true,complete:true}}]),{tokens:3,stages:3});
+ await assert.rejects(runRecovery([{status:503,body:{ok:false,errorClass:'HOURS_SYNC_FAILED',attempt:1}}]),/HOURS_SYNC_FAILED/);
+});
