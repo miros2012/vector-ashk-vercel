@@ -143,6 +143,20 @@ test('final import failure cannot advance reports and retains the attempt limit'
  assert.equal(f.state().status,'BLOCKED');assert.equal(f.state().cursor,3);
  assert.equal(f.calls.includes('reportVerification'),false);
 });
+test('third transient import timeout defers recovery without replaying prior stages',async()=>{
+ const f=movingSourceFixture();for(let i=0;i<3;i++)await f.run({});
+ f.stages.tochkaDds=async()=>({ok:false,errorClass:'DDS_TRANSPORT'});
+ for(let i=0;i<2;i++)assert.equal((await f.run({recoveryOnly:true})).errorClass,'DDS_TRANSPORT');
+ const deferred=await f.run({recoveryOnly:true});
+ assert.equal(deferred.ok,true);assert.equal(deferred.deferred,true);
+ assert.equal(deferred.reason,'UPSTREAM_UNAVAILABLE');
+ assert.equal(f.state().status,'PENDING');assert.equal(f.state().cursor,3);
+ assert.equal(f.state().attempt,0);assert.equal(f.state().errorClass,'DDS_TRANSPORT');
+ assert.equal((await f.run({recoveryOnly:true})).deferred,true);
+ f.advance();f.stages.tochkaDds=async()=>({ok:true});
+ for(let i=0;i<4;i++)await f.run({recoveryOnly:true});
+ assert.equal(f.state().status,'COMPLETE');assert.equal(f.calls.filter(s=>s==='payments').length,1);
+});
 test('input changing during the report calculation rewinds and stays pending',async()=>{
  const f=movingSourceFixture();for(let i=0;i<4;i++)await f.run({});
  f.stages.reportVerification=async()=>({ok:false,errorClass:'SOURCE_CHANGED'});

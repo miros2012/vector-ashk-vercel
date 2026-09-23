@@ -439,7 +439,7 @@ const tochkaDdsHandler = createTochkaDdsImportHandler({
       sheets: await getSheets(),
       spreadsheetId: SPREADSHEET_ID,
       businessDate: date,
-      requestTimeoutMs: 30000
+      requestTimeoutMs: 75000
     });
   }
 });
