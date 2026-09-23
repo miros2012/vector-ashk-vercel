@@ -3,7 +3,7 @@ const missing='Нет подтверждённых данных';
 const money=value=>typeof value==='number' && Number.isFinite(value) ? new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0}).format(value)+' ₽' : missing;
 const date=value=>{if(!value)return 'Дата не подтверждена';const d=new Date(value);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Yekaterinburg'}).format(d):'Дата не подтверждена';};
 const healthNames={OK:'Данные подтверждены',WARNING:'Есть замечания к данным',BLOCKED:'Достоверность данных не подтверждена'};
-const reasonNames={OPERATING_RESERVE_UNDEFINED:'Не задан операционный резерв — доступная сумма к выводу не подтверждена.',UNCONFIRMED_OBLIGATION_AMOUNT_MISSING:'У неподтверждённых обязательств отсутствует сумма.',DATA_HEALTH_BLOCKED:'Источники данных требуют проверки.'};
+const reasonNames={'finance-cycle-updating':'Поступили новые данные. Идёт обновление отчёта; итоговая сверка ещё не завершена.',OPERATING_RESERVE_UNDEFINED:'Не задан операционный резерв — доступная сумма к выводу не подтверждена.',UNCONFIRMED_OBLIGATION_AMOUNT_MISSING:'У неподтверждённых обязательств отсутствует сумма.',DATA_HEALTH_BLOCKED:'Источники данных требуют проверки.'};
 let dashboard=null,days=7,generation=0;
 let googleLibrary;
 let googleSetupGeneration=0;

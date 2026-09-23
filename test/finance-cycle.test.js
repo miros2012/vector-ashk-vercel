@@ -96,3 +96,50 @@ test('stale report during tail rewinds only report verification and later stages
  await run({recoveryOnly:true});assert.equal(state.cursor,1);assert.equal(state.completed.length,1);
  fail=false;await run({recoveryOnly:true});assert.equal((await run({recoveryOnly:true})).complete,true);
 });
+
+function movingSourceFixture() {
+ let state=null, clock=new Date('2026-09-23T05:00:00Z'); const calls=[];
+ let missing='', reportStale=false;
+ const sequence=()=>['tochkaDds','payments','balances','reportVerification','dataHealth','decisions'];
+ const stages=Object.fromEntries(sequence().map(stage=>[stage,async()=>{calls.push(stage);return {ok:true,fingerprint:'a'.repeat(64)};}]));
+ stages.dataHealth=async()=>{calls.push('dataHealth');return missing?{ok:false,errorClass:'DDS_PENDING',sourceFingerprint:missing}:{ok:true};};
+ stages.decisions=async()=>reportStale?{ok:false,errorClass:'REPORT_STALE'}:{ok:true};
+ const store={acquire:async()=>({ok:true}),release:async()=>{},read:async()=>structuredClone(state),write:async s=>{state=structuredClone(s);}};
+ const run=createFinanceCycle({store,stages,sequence,now:()=>clock});
+ return {run,calls,stages,state:()=>state,missing:v=>{missing=v;},stale:v=>{reportStale=v;},advance:()=>{clock=new Date(clock.getTime()+300001);}};
+}
+test('final bank import runs before report verification without replaying payments',async()=>{
+ const f=movingSourceFixture();for(let i=0;i<4;i++)await f.run({});
+ assert.deepEqual(f.calls,['tochkaDds','payments','balances','tochkaDds']);
+ assert.equal(f.state().cursor,3);assert.equal(f.state().finalImportDone,true);
+ await f.run({recoveryOnly:true});assert.equal(f.state().cursor,4);
+});
+test('late bank data rewinds only the tail and completes after catch-up',async()=>{
+ const f=movingSourceFixture();for(let i=0;i<5;i++)await f.run({});
+ f.missing('b'.repeat(64));const pending=await f.run({recoveryOnly:true});
+ assert.equal(pending.ok,true);assert.equal(pending.statusCode,202);assert.equal(pending.complete,false);
+ assert.equal(f.state().cursor,3);assert.equal(f.state().finalImportDone,false);
+ f.missing('');for(let i=0;i<4;i++)await f.run({recoveryOnly:true});
+ assert.equal(f.state().status,'COMPLETE');assert.equal(f.calls.filter(s=>s==='payments').length,1);
+});
+test('same missing bank operations after repair remain a real visible failure',async()=>{
+ const f=movingSourceFixture();for(let i=0;i<5;i++)await f.run({});f.missing('b'.repeat(64));
+ await f.run({recoveryOnly:true});await f.run({recoveryOnly:true});await f.run({recoveryOnly:true});
+ const failed=await f.run({recoveryOnly:true});assert.equal(failed.ok,false);assert.equal(failed.errorClass,'DDS_IMPORT_INCOMPLETE');
+ assert.notEqual(f.state().status,'COMPLETE');
+});
+test('continuous data changes yield a durable cooldown and resume without claiming completion',async()=>{
+ const f=movingSourceFixture();for(let i=0;i<5;i++)await f.run({});
+ for(const digit of ['b','c']) {f.missing(digit.repeat(64));await f.run({recoveryOnly:true});await f.run({recoveryOnly:true});await f.run({recoveryOnly:true});}
+ f.missing('d'.repeat(64));const waiting=await f.run({recoveryOnly:true});
+ assert.equal(waiting.deferred,true);assert.equal(waiting.complete,false);assert.equal(f.state().status,'PENDING');
+ const count=f.calls.length;assert.equal((await f.run({recoveryOnly:true})).deferred,true);assert.equal(f.calls.length,count);
+ f.advance();f.missing('');for(let i=0;i<4;i++)await f.run({recoveryOnly:true});assert.equal(f.state().status,'COMPLETE');
+});
+test('final import failure cannot advance reports and retains the attempt limit',async()=>{
+ const f=movingSourceFixture();for(let i=0;i<3;i++)await f.run({});
+ f.stages.tochkaDds=async()=>({ok:false,errorClass:'IMPORT_FAILED'});
+ for(let i=0;i<3;i++)assert.equal((await f.run({recoveryOnly:true})).ok,false);
+ assert.equal(f.state().status,'BLOCKED');assert.equal(f.state().cursor,3);
+ assert.equal(f.calls.includes('reportVerification'),false);
+});

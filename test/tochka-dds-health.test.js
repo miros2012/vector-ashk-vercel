@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { evaluateTochkaDdsCoverage } from '../lib/tochka-dds-health.js';
 
 const day = 46269;
+test('missing-operation fingerprint is order independent and includes keys beyond log limit',()=>{
+ const rows=Array.from({length:25},(_,i)=>op(`key-${i}`));
+ const evaluate=tochkaRows=>evaluateTochkaDdsCoverage({tochkaRows,businessDateSerial:day});
+ assert.equal(evaluate(rows).missingFingerprint,evaluate([...rows].reverse()).missingFingerprint);
+ assert.notEqual(evaluate(rows).missingFingerprint,evaluate(rows.slice(0,24)).missingFingerprint);
+});
 
 function op(key, { internal = 'Нет', signed = -100, date = day } = {}) {
   const row = Array(16).fill('');

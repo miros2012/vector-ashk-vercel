@@ -1,4 +1,5 @@
 import { verifyGoogleSheetsFinanceReports } from '../lib/google-sheets-finance-reports.js';
+import { financeHealthFailure } from '../lib/finance-cycle-handler.js';
 import { cycleFromControlRows } from '../lib/google-sheets-finance-cycle-store.js';
 import { verifiedFinanceCycleHealth } from '../lib/finance-cycle-status.js';
 import { google } from 'googleapis';
@@ -107,7 +108,7 @@ async function runDataHealth(req, res) {
       missingCoreSources: health.missingCoreSources,
       warnings: health.warnings,
       consistencyErrors: uniqueConsistencyErrors,
-      errorClass:cycle.reason==='finance-report-stale'?'REPORT_STALE':undefined,
+      ...financeHealthFailure({ok,tochkaDds,cycle}),
       tochkaDds, cycle
     };
     console.log(JSON.stringify({ event: 'finance-data-health', ...body }));

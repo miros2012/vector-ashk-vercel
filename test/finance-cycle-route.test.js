@@ -1,7 +1,15 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import { createFinanceCycleHandler } from '../lib/finance-cycle-handler.js';
+import { createFinanceCycleHandler, financeHealthFailure, invokeFinanceStage } from '../lib/finance-cycle-handler.js';
 import { financeRouteHarness, cronRequest } from './helpers/finance-route-harness.js';
 const response=()=>({statusCode:200,setHeader(){},status(n){this.statusCode=n;return this;},json(b){this.body=b;return this;}});
+test('health distinguishes pending bank import, stale reports and other blocked data',async()=>{
+ const pending=financeHealthFailure({ok:false,tochkaDds:{ok:false,missingFingerprint:'b'.repeat(64)},cycle:{reason:'finance-report-stale'}});
+ assert.equal(pending.errorClass,'DDS_PENDING');
+ const result=await invokeFinanceStage(async(req,res)=>res.status(503).json({ok:false,...pending}),'secret');
+ assert.equal(result.sourceFingerprint,'b'.repeat(64));assert.equal(result.ok,false);
+ assert.equal(financeHealthFailure({ok:false,tochkaDds:{ok:true},cycle:{reason:'finance-report-stale'}}).errorClass,'REPORT_STALE');
+ assert.equal(financeHealthFailure({ok:false,tochkaDds:{ok:true},cycle:{ok:true}}).errorClass,'DATA_HEALTH_BLOCKED');
+});
 test('native cron query selects intraday without undocumented schedule header',async t=>{
  const f=await financeRouteHarness(t);const req=cronRequest();delete req.headers['x-vercel-cron-schedule'];req.url='/api/nightly-finance-orchestrator?kind=intraday';
  await f.route.default(req,response());assert.equal(f.cycle.mode,'intraday');

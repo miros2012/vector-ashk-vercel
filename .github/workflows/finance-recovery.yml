@@ -72,7 +72,7 @@ jobs:
             }
             transientFailures=0;
             console.log(JSON.stringify({ok:true,stage:body.stage||null,pending:body.pending===true,complete:body.complete===true}));
-            if (body.pending !== true) break;
+            if (body.pending !== true || body.deferred === true) break;
             if (step === 23) throw new Error('Finance continuation limit reached; checkpoint retained');
           }
           NODE
