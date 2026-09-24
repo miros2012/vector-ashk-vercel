@@ -13,6 +13,7 @@ export async function runCashPhotoSmoke({ env = process.env, fetchImpl = fetch, 
       || tokenUrl.username || tokenUrl.password || tokenUrl.port) throw new Error('cash_photo_smoke_oidc_url_invalid');
   tokenUrl.searchParams.set('audience', AUDIENCE);
   let pending = 0;
+  let transportFailures = 0;
   for (let attempt = 0; attempt < 60; attempt++) {
     if (attempt) await sleep(10000);
     let response, body;
@@ -29,7 +30,13 @@ export async function runCashPhotoSmoke({ env = process.env, fetchImpl = fetch, 
         body: JSON.stringify({ mode: 'cash_photo_smoke' }), redirect: 'error', signal: AbortSignal.timeout(65000)
       });
       body = await response.json();
-    } catch { throw new Error('cash_photo_smoke_transport_failed'); }
+    } catch {
+      transportFailures += 1;
+      if (transportFailures >= 3) throw new Error('cash_photo_smoke_transport_failed');
+      write('Production smoke transport is temporarily unavailable; retrying.');
+      continue;
+    }
+    transportFailures = 0;
     if ((response.status === 409 && body?.error === 'deployment_not_current')
         || (response.status === 200 && body?.service === 'vector-ashk-backend' && !body?.mode)) {
       write('Waiting for the matching production deployment.'); continue;
