@@ -27,3 +27,20 @@ test('native cron modes still require the server secret',async t=>{
 });
 test('unauthenticated requests cannot create a cycle or access its state',async()=>{let calls=0;const h=createFinanceCycleHandler({cronSecret:'secret',run:async()=>{calls++;}});const r=response();await h({method:'GET',headers:{}},r);assert.equal(r.statusCode,403);assert.equal(calls,0);});
 test('recovery dispatch and pending response expose partial completion honestly',async()=>{let options;const h=createFinanceCycleHandler({cronSecret:'secret',run:async o=>{options=o;return {ok:true,pending:true,complete:false,stage:'reports',statusCode:202};}});const r=response();await h({method:'GET',headers:{authorization:'Bearer secret','x-vector-finance-recovery-only':'true'}},r);assert.equal(options.recoveryOnly,true);assert.equal(r.statusCode,202);assert.equal(r.body.complete,false);});
+test('native recovery drains successive checkpointed stages in one invocation',async()=>{
+ let calls=0;
+ const h=createFinanceCycleHandler({cronSecret:'secret',recoveryOnly:true,maxStages:10,run:async()=>{
+  calls++;
+  return {ok:true,pending:calls<3,complete:calls===3,stage:`stage${calls}`,statusCode:calls<3?202:200};
+ }});
+ const r=response();await h({method:'GET',headers:{authorization:'Bearer secret'}},r);
+ assert.equal(calls,3);assert.equal(r.statusCode,200);assert.equal(r.body.complete,true);
+});
+test('native recovery stops at deferred stage and never loops on waiting data',async()=>{
+ let calls=0;
+ const h=createFinanceCycleHandler({cronSecret:'secret',recoveryOnly:true,maxStages:10,run:async()=>{
+  calls++;return {ok:true,pending:true,deferred:true,statusCode:202};
+ }});
+ const r=response();await h({method:'GET',headers:{authorization:'Bearer secret'}},r);
+ assert.equal(calls,1);assert.equal(r.body.deferred,true);
+});
