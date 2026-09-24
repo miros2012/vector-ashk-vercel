@@ -26,7 +26,7 @@ test('finance sync script receives the GitHub event name before choosing recover
   );
 });
 
-async function runRecovery(responses) {
+async function runRecovery(responses,waits=[]) {
   const script=readFileSync(recoveryUrl,'utf8').split("<<'NODE'\n")[1].split('\n          NODE')[0];
   let tokens=0, stages=0;
   const fetch=async url=>{
@@ -37,7 +37,7 @@ async function runRecovery(responses) {
     return {ok:result.status<300,status:result.status,json:async()=>result.body};
   };
   const run=new Function('fetch','process','setTimeout',`return (async()=>{${script}})()`);
-  await run(fetch,{env:{ACTIONS_ID_TOKEN_REQUEST_URL:'https://oidc.invalid',ACTIONS_ID_TOKEN_REQUEST_TOKEN:'fixture',FINANCE_SYNC_ENDPOINT:'https://finance.invalid'}},fn=>fn());
+  await run(fetch,{env:{ACTIONS_ID_TOKEN_REQUEST_URL:'https://oidc.invalid',ACTIONS_ID_TOKEN_REQUEST_TOKEN:'fixture',FINANCE_SYNC_ENDPOINT:'https://finance.invalid'}},(fn,ms)=>{waits.push(ms);fn();});
   return {tokens,stages};
 }
 test('recovery drains pending stages with a fresh OIDC token and stops on completion',async()=>{
@@ -68,4 +68,15 @@ test('bank import transport failure retries the idempotent stage within its atte
 test('Sheets quota during hours sync waits before retrying the same stage',async()=>{
  assert.deepEqual(await runRecovery([{status:503,body:{ok:false,errorClass:'HOURS_TRANSPORT',attempt:1}},{status:202,body:{ok:true,pending:true}},{status:200,body:{ok:true,complete:true}}]),{tokens:3,stages:3});
  await assert.rejects(runRecovery([{status:503,body:{ok:false,errorClass:'HOURS_SYNC_FAILED',attempt:1}}]),/HOURS_SYNC_FAILED/);
+});
+test('recovery spaces quota-heavy stage boundaries without restarting completed work',async()=>{
+ const waits=[];
+ const result=await runRecovery([
+   {status:202,body:{ok:true,pending:true,stage:'payments',nextStage:'hours'}},
+   {status:202,body:{ok:true,pending:true,stage:'hours',nextStage:'receivablesSource'}},
+   {status:202,body:{ok:true,pending:true,stage:'balances',nextStage:'reportVerification'}},
+   {status:200,body:{ok:true,pending:false,complete:true}}
+ ],waits);
+ assert.deepEqual(result,{tokens:4,stages:4});
+ assert.deepEqual(waits,[65000,65000]);
 });

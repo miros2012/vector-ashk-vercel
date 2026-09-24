@@ -73,6 +73,12 @@ jobs:
             transientFailures=0;
             console.log(JSON.stringify({ok:true,stage:body.stage||null,pending:body.pending===true,complete:body.complete===true}));
             if (body.pending !== true || body.deferred === true) break;
+            // Both boundaries follow stages that use many Sheets reads. Let
+            // the per-user minute quota refill before the next heavy stage.
+            if ((body.stage === 'payments' && body.nextStage === 'hours')
+              || (body.stage === 'balances' && body.nextStage === 'reportVerification')) {
+              await new Promise(resolve=>setTimeout(resolve,65000));
+            }
             if (step === 23) throw new Error('Finance continuation limit reached; checkpoint retained');
           }
           NODE
