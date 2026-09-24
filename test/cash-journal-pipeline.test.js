@@ -28,7 +28,7 @@ function makeSheets(){
       const r=rangeText(args);
       if(r.includes("'Черновик кассы'!A2:N")) return {data:{values:state.draft}};
       if(r.includes("'Справочник кассы'!A2:F")) return {data:{values:state.rules}};
-      if(r.includes("'Кошельки наличных'!A2:E")) return {data:{values:state.wallets}};
+      if(r.includes("'Кошельки наличных'!A2:E") || r.includes("'Кошельки наличных'!A2:O")) return {data:{values:state.wallets}};
       if(r.includes("'Справочник статей'!A2:B")) return {data:{values:state.articles}};
       if(r.includes("'Журнал переноса кассы'!A2:H")) return {data:{values:state.log}};
       if(r.includes("'ДДС: месяц'!M5:M30000")) return {data:{values:state.dds.map(row=>[row[12]])}};
@@ -262,4 +262,41 @@ test('reconciliation removes stale review duplicate of already transferred opera
   assert.equal(result.duplicates,1);
   assert.equal(state.draft[1][12],'Дубль — уже учтено');
   assert.equal(state.dds.length,0);
+});
+
+
+test('reconciliation archives rows from the checkpoint photo instead of writing DDS', async()=>{
+  const {sheets,state}=makeSheets();
+  state.wallets=state.wallets.map(row=>{
+    const next=[...row];
+    if(Number(next[0])===103) next[14]='PHOTO-CP';
+    return next;
+  });
+  state.draft.push([
+    'PHOTO-CP:op1',46286,'Зарека','Кофе',500,'',10000,
+    'Расход','Содержание офиса','Касса Зарека','','Сходится','Проверить',
+    '[VERCEL-OCR] | Фото-ID: PHOTO-CP | Уверенность 95%'
+  ]);
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book'});
+  const result=await pipeline.reconcileDraftBacklog(100);
+  assert.equal(result.checkpointed,1);
+  assert.equal(result.transferredOperations,0);
+  assert.equal(state.draft[0][12],'Checkpoint — уже учтено');
+  assert.equal(state.dds.length,0);
+});
+
+test('high-confidence OCR review flag does not block an otherwise unambiguous rule match', async()=>{
+  const {sheets,state}=makeSheets();
+  state.draft.push([
+    'PHOTO-NEW:op1',46288,'Зарека','Кофе для офиса',500,'',10500,
+    'Расход','','Касса Зарека','','Сходится','Проверить',
+    '[VERCEL-OCR] | Фото-ID: PHOTO-NEW | Уверенность 90% | Автопроверка: ИИ просит проверить распознавание; не определена статья'
+  ]);
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book'});
+  const result=await pipeline.reconcileDraftBacklog(100);
+  assert.equal(result.promoted,1);
+  assert.equal(result.transferredOperations,1);
+  assert.equal(state.draft[0][12],'Перенесено');
+  assert.equal(state.draft[0][8],'Содержание офиса');
+  assert.equal(state.dds.length,1);
 });
