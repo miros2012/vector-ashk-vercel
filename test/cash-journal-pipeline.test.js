@@ -82,6 +82,12 @@ function makeSheets(){
         state.draft[row][13]=rows[0][1];
         return {data:{}};
       }
+      const draftReclass=r.match(/'Черновик кассы'!H(\d+):N(\d+)/);
+      if(draftReclass){
+        const row=Number(draftReclass[1])-2;
+        for(let i=0;i<7;i++) state.draft[row][7+i]=rows[0][i];
+        return {data:{}};
+      }
       throw new Error('unexpected update '+r);
     }
   };
@@ -202,4 +208,58 @@ test('historical recognized backfill stages safe rows but never writes DDS', asy
   assert.equal(state.draft[0][12],'Готово к переносу');
   assert.equal(state.dds.length,0);
   assert.equal(state.log.length,0);
+});
+
+
+test('reconciliation promotes obvious household expense and transfers it to DDS', async()=>{
+  const {sheets,state}=makeSheets();
+  state.draft.push([
+    'PHOTO-S:op12',46287,'Зарека','Конфеты, бумага салфетки',482,'',2908,
+    'Расход','','Касса Зарека','','Сходится','Проверить',
+    '[VERCEL-OCR] | Фото-ID: PHOTO-S | Уверенность 95% | Автопроверка: не определена статья'
+  ]);
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book',now:()=>new Date('2026-09-24T10:00:00Z')});
+  const result=await pipeline.reconcileDraftBacklog(100);
+  assert.equal(result.promoted,1);
+  assert.equal(result.transferredOperations,1);
+  assert.equal(result.createdDDSRows,1);
+  assert.equal(state.draft[0][8],'Содержание офиса');
+  assert.equal(state.draft[0][12],'Перенесено');
+  assert.equal(state.dds.length,1);
+  assert.equal(state.dds[0][3],-482);
+  assert.equal(state.dds[0][8],'Содержание офиса');
+});
+
+test('reconciliation keeps hard OCR or arithmetic issue for owner review', async()=>{
+  const {sheets,state}=makeSheets();
+  state.draft.push([
+    'PHOTO-HARD:op1',46288,'Зарека','Непонятная выплата',3400,'',34327,
+    'Расход','','Касса Зарека','','Расхождение: -100 ₽','Проверить',
+    '[VERCEL-OCR] | Фото-ID: PHOTO-HARD | Уверенность 70% | Автопроверка: уверенность ИИ ниже 85%; ИИ просит проверить распознавание; арифметика журнала не сходится'
+  ]);
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book'});
+  const result=await pipeline.reconcileDraftBacklog(100);
+  assert.equal(result.promoted,0);
+  assert.equal(result.unresolved,1);
+  assert.equal(result.transferredOperations,0);
+  assert.equal(state.draft[0][12],'Проверить');
+  assert.equal(state.dds.length,0);
+});
+
+test('reconciliation removes stale review duplicate of already transferred operation', async()=>{
+  const {sheets,state}=makeSheets();
+  state.draft.push([
+    'PHOTO-OLD:op1',46280,'Зарека','Инкассация Мирослав',100000,'',4654,
+    'Инкассация','','Касса Зарека','Мирослав','Сходится','Перенесено','done'
+  ]);
+  state.draft.push([
+    'PHOTO-NEW:op1',46280,'Зарека','Инкассация Мирослав',100000,'',4654,
+    'Инкассация','','Касса Зарека','Мирослав','Сходится','Проверить',
+    '[VERCEL-OCR] | Фото-ID: PHOTO-NEW | Уверенность 95%'
+  ]);
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book'});
+  const result=await pipeline.reconcileDraftBacklog(100);
+  assert.equal(result.duplicates,1);
+  assert.equal(state.draft[1][12],'Дубль — уже учтено');
+  assert.equal(state.dds.length,0);
 });
