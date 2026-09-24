@@ -1,9 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  createTochkaAckRowsReader,
   evaluateTochkaOperationAck,
   normalizeExpectedOperationIdentifiers
 } from '../lib/tochka-operation-ack.js';
+
+test('parallel ack polls share a short-lived Sheets snapshot and recheck after expiry',async()=>{
+ let reads=0,clock=0,release;
+ const reader=createTochkaAckRowsReader({ttlMs:15000,now:()=>clock,load:async()=>{
+   reads++;
+   if(reads===1)await new Promise(resolve=>{release=resolve;});
+   return reads===1?[]:[['tx-later','pay-later']];
+ }});
+ const first=reader(),second=reader();await Promise.resolve();
+ assert.equal(reads,1);release();
+ const [a,b]=await Promise.all([first,second]);assert.deepEqual(a,b);
+ assert.equal((await reader()).length,0);assert.equal(reads,1);
+ clock=15000;const fresh=await reader();assert.equal(reads,2);
+ assert.equal(evaluateTochkaOperationAck({rows:fresh,transactionIds:['tx-later']}).ok,true);
+});
+
+test('failed ack snapshot is never cached as success',async()=>{
+ let reads=0;const reader=createTochkaAckRowsReader({load:async()=>{
+   if(++reads===1)throw Error('Sheets quota');return [['tx-1','pay-1']];
+ }});
+ await assert.rejects(reader(),/Sheets quota/);
+ assert.deepEqual(await reader(),[['tx-1','pay-1']]);assert.equal(reads,2);
+});
 
 test('normalizes and deduplicates expected Tochka identifiers', () => {
   assert.deepEqual(normalizeExpectedOperationIdentifiers({
