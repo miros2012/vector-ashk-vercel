@@ -55,14 +55,22 @@ test('transient failure remains pending and does not abort other items', async (
 });
 
 
-test('concurrent recovery backfills only one recognized journal per pass', async () => {
+test('concurrent recovery backfills one recognized journal and reconciles draft review queue', async () => {
   let backfillLimit = 0;
+  let reconciliationLimit = 0;
   const store = {
     async listPending() { return []; },
     async readPhoto() { throw new Error('not used'); },
     async syncRecognizedDraftBacklog(limit) {
       backfillLimit = limit;
       return { attempted: 2, synced: 2, skipped: 0, failed: 0 };
+    },
+    async reconcileDraftBacklog(limit) {
+      reconciliationLimit = limit;
+      return {
+        scanned: 4, promoted: 2, recovered: 1, duplicates: 1, unresolved: 0,
+        transferredOperations: 2, createdDDSRows: 2
+      };
     }
   };
   const service = createCashPhotoRetryService({
@@ -72,7 +80,12 @@ test('concurrent recovery backfills only one recognized journal per pass', async
   const result = await service.retryPendingConcurrent(3, {});
   assert.deepEqual(result, {
     attempted: 0, recognized: 0, stillPending: 0, failed: 0,
-    draftBackfill: { attempted: 2, synced: 2, skipped: 0, failed: 0 }
+    draftBackfill: { attempted: 2, synced: 2, skipped: 0, failed: 0 },
+    draftReconciliation: {
+      scanned: 4, promoted: 2, recovered: 1, duplicates: 1, unresolved: 0,
+      transferredOperations: 2, createdDDSRows: 2
+    }
   });
   assert.equal(backfillLimit, 1);
+  assert.equal(reconciliationLimit, 100);
 });
