@@ -519,7 +519,7 @@ const manualFinanceRunHandler = runControl => createManualFinanceRunHandler({
 
 function resumableHandler(mode, recoveryOnly=false) {
   const secret=process.env.CRON_SECRET||'';
-  return createFinanceCycleHandler({cronSecret:secret,mode,recoveryOnly,run:async options=>{
+  return createFinanceCycleHandler({cronSecret:secret,mode,recoveryOnly,maxStages:recoveryOnly?12:1,run:async options=>{
     const sheets=await getSheets();
     const store=createFinanceCycleStore({sheets,spreadsheetId:SPREADSHEET_ID,
       lease:createGoogleSheetsFinanceRunStore({sheets,spreadsheetId:SPREADSHEET_ID})});
