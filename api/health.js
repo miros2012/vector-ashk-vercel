@@ -5,6 +5,7 @@ import { createRopPublisher } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import {
+  createTochkaAckRowsReader,
   evaluateTochkaOperationAck,
   normalizeExpectedOperationIdentifiers
 } from '../lib/tochka-operation-ack.js';
@@ -69,6 +70,16 @@ async function getSheets() {
   }
   return sheetsPromise;
 }
+
+const readTochkaAckRows=createTochkaAckRowsReader({load:async()=>{
+  const sheets=await getSheets();
+  const response=await sheets.spreadsheets.values.get({
+    spreadsheetId:SOURCE_SPREADSHEET_ID,
+    range:"'Точка_API'!M2:N",
+    valueRenderOption:'UNFORMATTED_VALUE'
+  });
+  return response.data.values||[];
+}});
 
 async function readSourceSheet(sheetName) {
   const sheets = await getSheets();
@@ -449,18 +460,13 @@ async function handleTochkaOperationAck(req, res, body) {
   }
 
   try {
-    const sheets = await getSheets();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SOURCE_SPREADSHEET_ID,
-      range: `'Точка_API'!M2:N`,
-      valueRenderOption: 'UNFORMATTED_VALUE'
-    });
     const result = evaluateTochkaOperationAck({
-      rows: response.data.values || [],
+      rows: await readTochkaAckRows(),
       ...expected
     });
 
     if (!result.ok) {
+      res.setHeader?.('Retry-After','15');
       return res.status(409).json({
         ok: false,
         mode: 'operation_ack_pending',
