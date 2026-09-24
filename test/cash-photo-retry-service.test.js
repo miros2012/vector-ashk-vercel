@@ -87,5 +87,25 @@ test('concurrent recovery backfills one recognized journal and reconciles draft 
     }
   });
   assert.equal(backfillLimit, 1);
-  assert.equal(reconciliationLimit, 100);
+  assert.equal(reconciliationLimit, 20);
+});
+
+
+test('concurrent recovery can skip financial draft reconciliation for production smoke', async () => {
+  let reconciliations = 0;
+  const store = {
+    async listPending() { return []; },
+    async readPhoto() { throw new Error('not used'); },
+    async syncRecognizedDraftBacklog() {
+      return { attempted: 0, synced: 0, skipped: 0, failed: 0 };
+    },
+    async reconcileDraftBacklog() { reconciliations += 1; return {}; }
+  };
+  const service = createCashPhotoRetryService({
+    store,
+    recognize: async () => ({ model: 'model', data: { operations: [] } })
+  });
+  const result = await service.retryPendingConcurrent(3, {}, { reconcileDraft: false });
+  assert.equal(reconciliations, 0);
+  assert.equal(result.draftReconciliation, undefined);
 });

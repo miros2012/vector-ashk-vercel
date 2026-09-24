@@ -62,8 +62,8 @@ test('production smoke performs one bounded pending-photo recovery after fixture
       async readPhoto() { return { imageBytes: bytes, mimeType: 'image/png' }; }
     },
     retryService: {
-      async retryPendingConcurrent(limit, filters) {
-        recoveryCalls.push({ limit, filters });
+      async retryPendingConcurrent(limit, filters, options) {
+        recoveryCalls.push({ limit, filters, options });
         return { attempted: 3, recognized: 2, stillPending: 1, failed: 0 };
       }
     }
@@ -83,6 +83,6 @@ test('production smoke performs one bounded pending-photo recovery after fixture
 
   assert.equal(res.code, 200);
   assert.equal(uploadCalls, 2);
-  assert.deepEqual(recoveryCalls, [{ limit: 3, filters: {} }]);
+  assert.deepEqual(recoveryCalls, [{ limit: 3, filters: {}, options: { reconcileDraft: false } }]);
   assert.deepEqual(res.body.recovery, { attempted: 3, recognized: 2, stillPending: 1, failed: 0 });
 });
