@@ -281,7 +281,7 @@ test('reconciliation archives rows from the checkpoint photo instead of writing 
   const result=await pipeline.reconcileDraftBacklog(100);
   assert.equal(result.checkpointed,1);
   assert.equal(result.transferredOperations,0);
-  assert.equal(state.draft[0][12],'Checkpoint — уже учтено');
+  assert.equal(state.draft[0][12],'Дубль — уже учтено');
   assert.equal(state.dds.length,0);
 });
 
