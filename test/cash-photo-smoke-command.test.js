@@ -15,7 +15,9 @@ function fixture(responses) {
     assert.equal(url, 'https://vector-ashk-backend.vercel.app/api/health');
     assert.equal(init.headers.authorization, 'Bearer short-lived-jwt');
     assert.deepEqual(JSON.parse(init.body), { mode: 'cash_photo_smoke' });
-    const [status, body] = responses.shift() || [409, { error: 'deployment_not_current' }];
+    const next = responses.shift();
+    if (next instanceof Error) throw next;
+    const [status, body] = next || [409, { error: 'deployment_not_current' }];
     return { status, headers: new Headers({ 'cache-control': 'no-store' }), json: async () => body };
   } }) };
 }
@@ -29,6 +31,19 @@ for (const bad of [{ ...good, deploymentSha: 'b'.repeat(40) }, { ...good, checks
     const f = fixture([[200, bad]]); await assert.rejects(f.run(), /smoke_attestation_invalid/);
   });
 }
+test('retries a transient production transport failure and then accepts the matching deployment', async () => {
+  const f = fixture([new Error('temporary transport'), [200, good]]);
+  assert.equal((await f.run()).ok, true);
+  assert.equal(f.waits, 1);
+  assert.match(JSON.stringify(f.logs), /temporarily unavailable/);
+});
+
+test('three consecutive production transport failures fail closed', async () => {
+  const f = fixture([new Error('one'), new Error('two'), new Error('three')]);
+  await assert.rejects(f.run(), error => error.message === 'cash_photo_smoke_transport_failed');
+  assert.equal(f.waits, 2);
+});
+
 test('permanent denial fails immediately and does not echo server error details', async () => {
   const f = fixture([[403, { error: 'private-secret-dump' }]]);
   await assert.rejects(f.run(), error => error.message === 'cash_photo_smoke_http_403');
