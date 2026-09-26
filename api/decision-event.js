@@ -16,9 +16,9 @@ import { resolveOwnerPackageKey } from '../lib/owner-package-key.js';
 import { runOwnerPackageStage } from '../lib/owner-package-stage.js';
 import { createOwnerReadonlyApi } from '../lib/owner-readonly-api.js';
 import { firstRequestQueryValue } from '../lib/request-query.js';
+import { createInternalOwnerActionKey } from '../lib/internal-owner-action-key.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
-const INTERNAL_OWNER_ACTION_KEY = 'owner-action-internal-only';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
@@ -110,7 +110,7 @@ function createQueueHandler() {
 }
 
 export async function processOwnerActionQueue() {
-  const key = configuredKey() || INTERNAL_OWNER_ACTION_KEY;
+  const key = configuredKey() || createInternalOwnerActionKey();
   const queueApi = createQueueApi(key);
   const response = {
     body: null,

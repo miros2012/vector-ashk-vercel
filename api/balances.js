@@ -13,6 +13,7 @@ import { createOwnerActionQueueApi } from '../lib/owner-action-queue-api.js';
 import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sheet-adapter.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import { authorizeBearer, authorizeHeader } from '../lib/request-authorization.js';
+import { createInternalOwnerActionKey } from '../lib/internal-owner-action-key.js';
 import {
   evaluateTochkaWebhookReadiness,
   evaluateCandidateBalanceReadiness
@@ -24,7 +25,6 @@ const DATA_HEALTH_SHEET = 'Data Health Snapshot';
 const DECISION_AUDIT_SHEET = 'Rule Engine Audit';
 const DEFAULT_BRIDGE_URL = 'https://tochka-realtime-bridge.onrender.com';
 const FRESH_MS = 30000;
-const INTERNAL_OWNER_ACTION_KEY = 'owner-action-internal-only';
 const TOCHKA_READINESS_ATTEMPTS = 4;
 const TOCHKA_READINESS_DELAY_MS = 750;
 const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
@@ -274,7 +274,9 @@ function internalDecisionCommand(decisionApi, configuredKey) {
 }
 
 async function processOwnerActionQueue(sheets) {
-  const configuredKey = process.env.VECTOR_SYNC_KEY || process.env.TOCHKA_BRIDGE_KEY || INTERNAL_OWNER_ACTION_KEY;
+  const configuredKey = process.env.VECTOR_SYNC_KEY
+    || process.env.TOCHKA_BRIDGE_KEY
+    || createInternalOwnerActionKey();
   const queue = createOwnerActionQueueSheetAdapter({ sheets, spreadsheetId: SPREADSHEET_ID });
   const control = createOwnerActionControlSheetAdapter({ sheets, spreadsheetId: SPREADSHEET_ID });
   const decisionApi = createDecisionEventApi({ sheets, spreadsheetId: SPREADSHEET_ID, configuredKey });
