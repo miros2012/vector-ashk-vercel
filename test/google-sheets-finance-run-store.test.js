@@ -107,6 +107,22 @@ test('ensureSchema creates one hidden ledger sheet and verifies the exact 13 hea
   assert.equal(fake.calls.filter(([kind, payload]) => kind === 'batchUpdate' && payload.requestBody.requests[0].addSheet).length, 1);
 });
 
+test('stalled finance control requests fail closed within the configured budget', async () => {
+  const fake = sheetsFake();
+  fake.sheets.spreadsheets.get = async () => new Promise(() => {});
+  const store = createGoogleSheetsFinanceRunStore({
+    sheets: fake.sheets,
+    spreadsheetId: 'book',
+    requestTimeoutMs: 5
+  });
+  const guard = new Promise(resolve => setTimeout(() => resolve('unbounded'), 100));
+
+  assert.deepEqual(await Promise.race([store.ensureSchema(), guard]), {
+    ok: false,
+    errorClass: 'LEDGER_WRITE'
+  });
+});
+
 test('ensureSchema provisions every missing retry and lease control marker without changing unrelated rows', async () => {
   const fake = sheetsFake({ controlRows: [['unrelated_control', 'preserve']] });
   const store = createGoogleSheetsFinanceRunStore({ sheets: fake.sheets, spreadsheetId: 'book' });

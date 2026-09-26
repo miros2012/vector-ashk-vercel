@@ -24,3 +24,9 @@ test('permanent read failure is not retried or converted to success',async()=>{
  const f=fixture();let reads=0;f.sheets.spreadsheets.values.get=async()=>{reads++;throw Object.assign(Error('denied'),{code:403});};
  await assert.rejects(f.store.read);assert.equal(reads,1);
 });
+test('stalled checkpoint reads fail within the configured request budget',async()=>{
+ const f=fixture();f.sheets.spreadsheets.values.get=async()=>new Promise(()=>{});
+ const store=createFinanceCycleStore({sheets:f.sheets,spreadsheetId:'test',requestTimeoutMs:5,sleep:async()=>{}});
+ const guard=new Promise((_,reject)=>setTimeout(()=>reject(Error('checkpoint store did not time out')),100));
+ await assert.rejects(Promise.race([store.read(),guard]),/Google Sheets request timed out/);
+});
