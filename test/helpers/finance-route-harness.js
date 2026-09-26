@@ -18,6 +18,7 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
   const events = [];
   const entries = [];
   const stores = [];
+  const stageStatuses = new Map();
   let consumed = false;
   let cycle = null;
   let owner = busy ? 'foreign-owner' : null;
@@ -27,7 +28,8 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
   const sheetTitle = range => range.match(/^'(.+)'!/)?.[1];
   const child = name => async (req, res) => {
     events.push(name);
-    return res.status(200).json({ ok: true, mode: 'commit', verified: true, matches: 1, total: 1 });
+    const statusCode = stageStatuses.get(name) || 200;
+    return res.status(statusCode).json({ ok: statusCode < 400, mode: 'commit', verified: true, matches: 1, total: 1 });
   };
   const decisions = child('decisions');
   decisions.dataHealth = child('dataHealth');
@@ -144,7 +146,11 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
     }
   });
   const route = await import(routeUrl);
-  return { route, events, entries, stores, get cycle() { return cycle; }, get consumed() { return consumed; } };
+  return {
+    route, events, entries, stores,
+    setStageStatus(name, statusCode) { stageStatuses.set(name, statusCode); },
+    get cycle() { return cycle; }, get consumed() { return consumed; }
+  };
 }
 
 export const cronRequest = schedule => ({

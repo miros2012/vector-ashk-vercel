@@ -44,3 +44,22 @@ test('native recovery stops at deferred stage and never loops on waiting data',a
  const r=response();await h({method:'GET',headers:{authorization:'Bearer secret'}},r);
  assert.equal(calls,1);assert.equal(r.body.deferred,true);
 });
+test('resumed data-health checkpoint refreshes bank sources before evaluating health',async t=>{
+ const f=await financeRouteHarness(t);const req=cronRequest();delete req.headers['x-vercel-cron-schedule'];req.url='/api/nightly-finance-orchestrator?kind=intraday';
+ for(let i=0;i<8;i++)await f.route.default(req,response());
+ f.events.length=0;const r=response();await f.route.default(req,r);
+ assert.deepEqual(f.events.filter(event=>['tochkaDds','balances','dataHealth'].includes(event)),['tochkaDds','balances','dataHealth']);
+ assert.equal(r.statusCode,202);assert.equal(r.body.stage,'dataHealth');
+});
+test('resumed data-health checkpoint stays fail-closed when a source refresh fails',async t=>{
+ for(const [failedStage,expected] of [['tochkaDds',['tochkaDds']],['balances',['tochkaDds','balances']]])await t.test(failedStage,async t=>{
+  const f=await financeRouteHarness(t);const req=cronRequest();delete req.headers['x-vercel-cron-schedule'];req.url='/api/nightly-finance-orchestrator?kind=intraday';
+  for(let i=0;i<8;i++)await f.route.default(req,response());
+  f.setStageStatus(failedStage,502);f.events.length=0;const failed=response();await f.route.default(req,failed);
+  assert.deepEqual(f.events.filter(event=>['tochkaDds','balances','dataHealth','decisions','ownerActionQueue'].includes(event)),expected);
+  assert.equal(failed.statusCode,503);assert.equal(failed.body.stage,'dataHealth');assert.equal(f.cycle.cursor,7);
+  f.setStageStatus(failedStage,200);f.events.length=0;const retried=response();await f.route.default(req,retried);
+  assert.deepEqual(f.events.filter(event=>['tochkaDds','balances','dataHealth','decisions','ownerActionQueue'].includes(event)),['tochkaDds','balances','dataHealth']);
+  assert.equal(retried.statusCode,202);assert.equal(f.cycle.cursor,8);
+ });
+});
