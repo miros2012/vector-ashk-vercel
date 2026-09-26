@@ -19,7 +19,9 @@ test('Tochka webhook refresh uses a force-live mirror-only path', () => {
 
 test('balances POST delegates Tochka webhook trigger before decision reconciliation', () => {
   assert.match(source, /x-vector-refresh/);
+  assert.match(source, /x-vector-key/);
   assert.match(source, /tochka-webhook/);
+  assert.match(source, /authorizeHeader/);
   assert.match(source, /return\s+refreshBalancesFromTochkaWebhook\(req,\s*res\)/);
 
   const handlerStart = source.indexOf('export default async function handler');

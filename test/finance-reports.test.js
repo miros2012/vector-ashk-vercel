@@ -36,6 +36,45 @@ test('legacy paired cash collection is excluded only with matching date, purpose
   a.dds.push(out,inc);assert.equal(calculateFinanceReports(a).values[8][7],858);
   inc[3]=49;assert.throws(()=>calculateFinanceReports(a),/article/i);
 });
+test('legacy cash collection keeps the original source-month and P&L-month checks', () => {
+  for (const mutate of [
+    (out,inc)=>{out[11]=8;inc[1]=9;inc[11]=8;},
+    (out,inc)=>{out[11]='';inc[11]=8;}
+  ]) {
+    const a=input();const out=row(8,-50,'');out[4]=101;out[7]='Инкассация Вадим — перевод из Касса';
+    const inc=row(8,50,'');inc[4]=202;inc[7]='Инкассация Вадим — поступление в Вадим';
+    mutate(out,inc);a.dds.push(out,inc);
+    assert.throws(()=>calculateFinanceReports(a),/article/i);
+  }
+});
+test('stable marker excludes a generated cash transfer with abbreviated descriptions', () => {
+  const a=input();const out=row(8,-50,'');out[4]=101;out[7]='Инкас. — перевод из Касса';
+  const inc=row(8,50,'');inc[4]=202;inc[7]='Инкас. — поступление в Подотчёт';
+  out[12]='Касса Vercel | PHOTO-X:op1:1/2 | Зарека';
+  inc[12]='Касса Vercel | PHOTO-X:op1:2/2 | Зарека';
+  a.dds.push(out,inc);
+  assert.equal(calculateFinanceReports(a).values[8][7],858);
+});
+test('stable marker transfer stays fail-closed when any structural invariant is broken', () => {
+  const cases=[
+    ['operation id',(_out,inc)=>{inc[12]='Касса Vercel | PHOTO-Y:op1:2/2 | Зарека';}],
+    ['blank operation id',(out,inc)=>{out[12]='Касса Vercel |  :1/2 | Зарека';inc[12]='Касса Vercel |  :2/2 | Зарека';}],
+    ['part order',(out,inc)=>{out[12]='Касса Vercel | PHOTO-X:op1:2/2 | Зарека';inc[12]='Касса Vercel | PHOTO-X:op1:1/2 | Зарека';}],
+    ['missing marker',(_out,inc)=>{inc[12]='';}],
+    ['same wallet',(_out,inc)=>{inc[4]=101;}],
+    ['date',(_out,inc)=>{inc[2]=46261;}],
+    ['effective month',(_out,inc)=>{inc[11]=9;}],
+    ['cents',(_out,inc)=>{inc[3]=49.99;}]
+  ];
+  for(const [name,mutate] of cases) {
+    const a=input();const out=row(8,-50,'');out[4]=101;out[7]='Инкас. — перевод из Касса';
+    const inc=row(8,50,'');inc[4]=202;inc[7]='Инкас. — поступление в Подотчёт';
+    out[12]='Касса Vercel | PHOTO-X:op1:1/2 | Зарека';
+    inc[12]='Касса Vercel | PHOTO-X:op1:2/2 | Зарека';
+    mutate(out,inc);a.dds.push(out,inc);
+    assert.throws(()=>calculateFinanceReports(a),/article/i,name);
+  }
+});
 test('report publishes with readback and refuses success when inputs race', async () => {
   const a=input(); let output;let reads=0;
   const adapter={read:async()=>{reads++; return a;},write:async v=>{output=v;},readOutput:async()=>output};

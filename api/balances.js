@@ -12,6 +12,7 @@ import { createOwnerActionControlSheetAdapter } from '../lib/owner-action-contro
 import { createOwnerActionQueueApi } from '../lib/owner-action-queue-api.js';
 import { createOwnerActionQueueSheetAdapter } from '../lib/owner-action-queue-sheet-adapter.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
+import { authorizeBearer, authorizeHeader } from '../lib/request-authorization.js';
 import {
   evaluateTochkaWebhookReadiness,
   evaluateCandidateBalanceReadiness
@@ -30,12 +31,6 @@ const TOCHKA_OPERATIONS_SUCCESS_MARKER = 'tochka_operations_last_success_utc';
 
 function privateKey() {
   return String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-}
-
-function requestBearer(req) {
-  const authorization = String(req?.headers?.authorization || '');
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || '';
 }
 
 async function sheetsClient() {
@@ -321,8 +316,7 @@ export async function refreshBalancesMirrorOnly(req, res) {
   if (String(req?.method || '').toUpperCase() !== 'GET') {
     return res.status(405).json({ ok: false, error: 'Use GET' });
   }
-  const secret = String(process.env.CRON_SECRET || '').trim();
-  if (!secret || requestBearer(req) !== secret) {
+  if (!authorizeBearer(req, process.env.CRON_SECRET)) {
     return res.status(403).json({ ok: false, error: 'forbidden' });
   }
 
@@ -430,7 +424,10 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
   if (String(req?.method || '').toUpperCase() !== 'POST') {
     return res.status(405).json({ ok: false, error: 'Use POST' });
   }
-  if (String(req?.headers?.['x-vector-refresh'] || '').trim() !== 'tochka-webhook') {
+  const source = String(req?.headers?.['x-vector-refresh'] || '').trim();
+  const bridgeSecret = String(process.env.TOCHKA_BRIDGE_KEY || '').trim()
+    || String(process.env.VECTOR_SYNC_KEY || '').trim();
+  if (source !== 'tochka-webhook' || !authorizeHeader(req, 'x-vector-key', bridgeSecret)) {
     return res.status(403).json({ ok: false, error: 'forbidden' });
   }
 
@@ -518,15 +515,23 @@ export async function refreshBalancesFromTochkaWebhook(req, res) {
 }
 
 export default async function handler(req, res) {
-  if (!['GET', 'POST'].includes(req.method)) {
+  const method = String(req?.method || '').toUpperCase();
+  if (!['GET', 'POST'].includes(method)) {
     return res.status(405).json({ ok: false, error: 'Use GET or POST' });
   }
 
-  if (
-    String(req?.method || '').toUpperCase() === 'POST' &&
-    String(req?.headers?.['x-vector-refresh'] || '').trim() === 'tochka-webhook'
-  ) {
-    return refreshBalancesFromTochkaWebhook(req, res);
+  if (method === 'POST') {
+    if (String(req?.headers?.['x-vector-refresh'] || '').trim() === 'tochka-webhook') {
+      return refreshBalancesFromTochkaWebhook(req, res);
+    }
+    if (String(req?.headers?.['x-vector-key'] || '').trim()) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
+    return res.status(405).json({ ok: false, error: 'Use GET' });
+  }
+
+  if (!authorizeBearer(req, process.env.CRON_SECRET)) {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
   }
 
   try {
