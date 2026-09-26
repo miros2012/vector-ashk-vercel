@@ -13,6 +13,8 @@ import {
 import { reconcilePaymentEmployees } from '../lib/payment-employee-reconciliation.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import { fetchAshkWithRetry } from '../lib/ashk-transient-fetch.js';
+import { authorizeBearer } from '../lib/request-authorization.js';
+import { replaceSheetSnapshotsAtomically } from '../lib/google-sheets-atomic-snapshots.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
@@ -185,6 +187,9 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'Use POST' });
   }
+  if (!authorizeBearer(req, process.env.CRON_SECRET)) {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
+  }
   try {
     if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
       throw new Error('Google service account secrets missing');
@@ -237,25 +242,13 @@ export default async function handler(req, res) {
       item.Id ?? '', item.Date ?? '', item.EmployeeName ?? '', item.StudentOwnerName ?? '',
       item.StudentId ?? '', item.ProductName ?? '', toNumber(item.Sum), toNumber(item.Paid)
     ]);
-    await sheets.spreadsheets.values.clear({
+    await replaceSheetSnapshotsAtomically({
+      sheets,
       spreadsheetId: SPREADSHEET_ID,
-      range: `'${STAGING_SHEET}'!A:K`
-    });
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${STAGING_SHEET}'!A1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [...headers, ...rows] }
-    });
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${SALES_STAGING_SHEET}'!A:H`
-    });
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${SALES_STAGING_SHEET}'!A1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [...salesHeaders, ...salesRows] }
+      snapshots: [
+        { sheetName: STAGING_SHEET, columnCount: 11, values: [...headers, ...rows] },
+        { sheetName: SALES_STAGING_SHEET, columnCount: 8, values: [...salesHeaders, ...salesRows] }
+      ]
     });
 
     const stagingExpected = paymentMetrics(rows);
