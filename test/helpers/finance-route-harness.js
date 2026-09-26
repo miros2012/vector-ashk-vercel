@@ -13,7 +13,7 @@ export function response() {
 
 // Replace external boundaries only; route dispatch, both orchestrators, the
 // manual handler, and the durable execution controller remain real.
-export async function financeRouteHarness(t, { busy = false, schemaOk = true, sourceOk = true } = {}) {
+export async function financeRouteHarness(t, { busy = false, schemaOk = true, sourceOk = true, authStalls = false } = {}) {
   const key = `financeRouteHarness${++sequence}`;
   const events = [];
   const entries = [];
@@ -35,7 +35,7 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
   decisions.dataHealth = child('dataHealth');
   const fixture = {
     google: {
-      auth: { JWT: class { async authorize() { events.push('google-authorize'); } } },
+      auth: { JWT: class { async authorize() { events.push('google-authorize');if(authStalls)await new Promise(()=>{}); } } },
       sheets: () => {
         events.push('google-client');
         return { client: 'sheets', spreadsheets: {
@@ -48,6 +48,10 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
         } };
       }
     },
+    boundedRequest: execute => Promise.race([
+      execute({ timeout: 5, retry: false }),
+      new Promise((_, reject) => setTimeout(() => reject(Error('Google Sheets request timed out')), 5))
+    ]),
     hours: child('hours'), payments: child('payments'), decisions,
     balances: child('balances'),
     cycleStore: ({lease}) => ({
@@ -118,7 +122,8 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
     '../lib/google-sheets-sync-marker.js': 'export const writeControlMarker = f.marker;',
     '../lib/one-time-finance-run-token.js': 'export const consumeOneTimeFinanceRunToken = f.token;',
     '../lib/tochka-dds-import.js': 'export const createTochkaDdsImportHandler = f.tochka; export const syncCurrentDayTochkaDds = () => {};',
-    '../lib/google-sheets-finance-run-store.js': 'export const createGoogleSheetsFinanceRunStore = f.store;'
+    '../lib/google-sheets-finance-run-store.js': 'export const createGoogleSheetsFinanceRunStore = f.store;',
+    '../lib/google-sheets-lease.js': 'export const boundedGoogleSheetsRequest = f.boundedRequest;'
   };
   const routeUrl = new URL(`../../api/nightly-finance-orchestrator.js?harness=${sequence}`, import.meta.url).href;
   const hooks = registerHooks({

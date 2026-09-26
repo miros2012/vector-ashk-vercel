@@ -53,6 +53,17 @@ test('schema verification failure blocks lease and all finance stages', async t 
   assert.deepEqual(events, ['google-authorize', 'google-client', 'store', 'schema']);
 });
 
+test('stalled Google authorization fails before the finance store or any stage is created', async t => {
+  const f = await financeRouteHarness(t, { authStalls: true });
+  const res = response();
+  const guard = new Promise(resolve => setTimeout(() => resolve('unbounded'), 100));
+  const result = await Promise.race([f.route.default(cronRequest('30 21 * * *'), res), guard]);
+
+  assert.notEqual(result, 'unbounded');
+  assert.equal(res.statusCode, 503);
+  assert.deepEqual(f.events, ['google-authorize']);
+});
+
 test('source failure preserves cursor and never invokes ROP or decisions', async t => {
   const f=await financeRouteHarness(t,{sourceOk:false});
   let res;

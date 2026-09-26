@@ -23,6 +23,7 @@ import { sanitizeFinanceStageFailure } from '../lib/finance-stage-result.js';
 import { buildRopMorningDashboard } from '../lib/rop-morning-dashboard.js';
 import { buildRopDebtorPriority, buildRopTasksToday } from '../lib/rop-tasks-today.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
+import { boundedGoogleSheetsRequest } from '../lib/google-sheets-lease.js';
 import { consumeOneTimeFinanceRunToken } from '../lib/one-time-finance-run-token.js';
 import { createTochkaDdsImportHandler, syncCurrentDayTochkaDds } from '../lib/tochka-dds-import.js';
 import {
@@ -80,11 +81,16 @@ async function getSheets() {
         key: privateKey(),
         scopes: ['https://www.googleapis.com/auth/spreadsheets']
       });
-      await auth.authorize();
+      await boundedGoogleSheetsRequest(() => auth.authorize(), undefined, 'finance-auth');
       return google.sheets({ version: 'v4', auth });
     })();
   }
-  return sheetsPromise;
+  try {
+    return await sheetsPromise;
+  } catch (error) {
+    sheetsPromise = undefined;
+    throw error;
+  }
 }
 
 async function ensureSheet(sheets, title, rowCount, columnCount) {
