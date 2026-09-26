@@ -34,7 +34,7 @@ test('nightly route checkpoints each stage and resumes without repeating complet
     assert.equal(res.body.complete,i===10);
   }
   assert.equal(f.cycle.status,'COMPLETE');
-  assert.equal(f.events.filter(e=>e==='tochkaDds').length,3);
+  assert.equal(f.events.filter(e=>e==='tochkaDds').length,2);
   assert.equal(f.events.filter(e=>e==='balances').length,2);
   assert.equal(f.events.filter(e=>e==='reports').length,2);
   assert.equal(f.stores.length,11);
