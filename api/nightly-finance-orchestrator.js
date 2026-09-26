@@ -526,8 +526,6 @@ function resumableHandler(mode, recoveryOnly=false) {
     const reports=()=>refreshGoogleSheetsFinanceReports({sheets,spreadsheetId:SPREADSHEET_ID});
     const child=(handler,extra={})=>({cycle})=>invokeFinanceStage(handler,secret,{cycle,...extra});
     const refreshDataHealth=async ({cycle})=>{
-      const tochkaDds=await child(tochkaDdsHandler)({cycle});
-      if(!tochkaDds.ok)return tochkaDds;
       const balances=await child(refreshBalancesMirrorOnly)({cycle});
       if(!balances.ok)return balances;
       return child(reconcileDecisions.dataHealth)({cycle});
