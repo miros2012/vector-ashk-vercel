@@ -525,6 +525,13 @@ function resumableHandler(mode, recoveryOnly=false) {
       lease:createGoogleSheetsFinanceRunStore({sheets,spreadsheetId:SPREADSHEET_ID})});
     const reports=()=>refreshGoogleSheetsFinanceReports({sheets,spreadsheetId:SPREADSHEET_ID});
     const child=(handler,extra={})=>({cycle})=>invokeFinanceStage(handler,secret,{cycle,...extra});
+    const refreshDataHealth=async ({cycle})=>{
+      const tochkaDds=await child(tochkaDdsHandler)({cycle});
+      if(!tochkaDds.ok)return tochkaDds;
+      const balances=await child(refreshBalancesMirrorOnly)({cycle});
+      if(!balances.ok)return balances;
+      return child(reconcileDecisions.dataHealth)({cycle});
+    };
     const guarded=(handler,extra={})=>async ({cycle})=>{
       const fingerprint=cycle.completed.find(s=>s.stage==='reportVerification')?.fingerprint;
       const verify=()=>verifyGoogleSheetsFinanceReports({sheets,spreadsheetId:SPREADSHEET_ID},fingerprint);
@@ -537,7 +544,7 @@ function resumableHandler(mode, recoveryOnly=false) {
       payments:child(syncPayments,{method:'POST'}),hours:child(syncHours),
       receivablesSource:child(syncReceivables),ropPublish:refreshRopFromStagingAndPublish,
       balances:child(refreshBalancesMirrorOnly),reportVerification:reports,
-      dataHealth:child(reconcileDecisions.dataHealth),decisions:guarded(reconcileDecisions,{verifyDecision:true})
+      dataHealth:refreshDataHealth,decisions:guarded(reconcileDecisions,{verifyDecision:true})
     }});
     return run(options);
   }});
