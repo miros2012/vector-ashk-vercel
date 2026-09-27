@@ -85,3 +85,21 @@ test('Owner package smoke runs in a dedicated least-privilege job', () => {
   assert.match(ownerSmoke, /OWNER_PACKAGE_SMOKE_ENDPOINT/);
   assert.doesNotMatch(ownerSmoke, /GITHUB_TOKEN|VECTOR_SYNC_KEY|TOCHKA_BRIDGE_KEY|VECTOR_OWNER_API_KEY/);
 });
+
+test('daily Owner package monitor uses an exact least-privilege OIDC workflow without shared secrets', () => {
+  const relativePath = '.github/workflows/owner-package-monitor.yml';
+  assert.equal(fs.existsSync(path.join(root, relativePath)), true, 'dedicated monitor workflow is required');
+  const workflow = read(relativePath);
+
+  assert.match(workflow, /cron:\s*['"]45 4 \* \* \*['"]/);
+  assert.match(workflow, /contents:\s*read/);
+  assert.match(workflow, /id-token:\s*write/);
+  assert.doesNotMatch(workflow, /\bcontents:\s*write\b/);
+  assert.doesNotMatch(workflow, /\bissues:\s*write\b/);
+  assert.doesNotMatch(workflow, /\bpull-requests:\s*write\b/);
+  assert.match(workflow, /vector-owner-package-smoke-v1/);
+  assert.match(workflow, /https:\/\/vector-ashk-backend\.vercel\.app\/api\/health/);
+  assert.match(workflow, /owner_package_smoke/);
+  assert.match(workflow, /authorization:\s*`Bearer \$\{token\}`/);
+  assert.doesNotMatch(workflow, /GITHUB_TOKEN|VECTOR_SYNC_KEY|TOCHKA_BRIDGE_KEY|VECTOR_OWNER_API_KEY/);
+});
