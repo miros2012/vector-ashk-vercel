@@ -86,6 +86,35 @@ test('full request during an intraday cycle is retained and drained by recovery'
  assert.equal((await run({recoveryOnly:true})).complete,true);
  assert.ok(seen.includes('hours'));
 });
+test('queued full cycle is promoted before an intraday data-health tail can deadlock it',async()=>{
+ let state=null;const seen=[];
+ const store={acquire:async()=>({ok:true}),release:async()=>{},read:async()=>structuredClone(state),write:async s=>{state=structuredClone(s);}};
+ const sequence=mode=>mode==='full'
+   ? ['import','payments','reportVerification','dataHealth','decisions']
+   : ['import','reportVerification','dataHealth','decisions'];
+ const stages={
+   import:async()=>{seen.push(`import:${state.mode}`);return {ok:true};},
+   payments:async()=>{seen.push('payments');return {ok:true};},
+   reportVerification:async()=>{seen.push(`reportVerification:${state.mode}`);return {ok:true,fingerprint:'a'.repeat(64)};},
+   dataHealth:async()=>{seen.push(`dataHealth:${state.mode}`);return {ok:false,errorClass:'DATA_HEALTH_BLOCKED'};},
+   decisions:async()=>({ok:true})
+ };
+ const run=createFinanceCycle({store,stages,sequence,now:()=>new Date('2026-09-27T05:00:00Z')});
+
+ await run({mode:'intraday'});
+ await run({mode:'full'});
+ assert.equal(state.mode,'intraday');
+ assert.equal(state.pendingFull,true);
+ assert.equal(sequence(state.mode)[state.cursor],'dataHealth');
+
+ const promoted=await run({recoveryOnly:true});
+ assert.equal(promoted.ok,true);
+ assert.equal(promoted.stage,'import');
+ assert.equal(state.mode,'full');
+ assert.equal(state.cursor,1);
+ assert.equal(state.pendingFull,undefined);
+ assert.deepEqual(seen,['import:intraday','reportVerification:intraday','import:full']);
+});
 test('stale report during tail rewinds only report verification and later stages',async()=>{
  let state=null;let fail=true;
  const store={acquire:async()=>({ok:true}),release:async()=>{},read:async()=>structuredClone(state),write:async s=>{state=structuredClone(s);}};
