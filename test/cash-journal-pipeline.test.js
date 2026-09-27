@@ -285,6 +285,35 @@ test('reconciliation archives rows from the checkpoint photo instead of writing 
   assert.equal(state.dds.length,0);
 });
 
+test('checkpointed cash transfer preserves the recipient wallet without replaying the branch expense', async()=>{
+  const {sheets,state}=makeSheets();
+  state.rules.unshift([10,'ИНКАССАЦИЯ.*МИРОСЛАВ','Инкассация','','Мирослав','Передача денег Мирославу']);
+  state.wallets=state.wallets.map(row=>{
+    const next=[...row];
+    if(Number(next[0])===103) next[14]='PHOTO-CP';
+    return next;
+  });
+  state.draft.push([
+    'PHOTO-CP:op1',46282,'Зарека','Инкассация Мирослав',25000,'',12396,
+    '','','','','Сходится','Проверить',
+    '[VERCEL-OCR] | Фото-ID: PHOTO-CP | Уверенность 95%'
+  ]);
+
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book',now:()=>new Date('2026-09-24T10:00:00Z')});
+  const result=await pipeline.reconcileDraftBacklog(100);
+
+  assert.equal(result.checkpointed,1);
+  assert.equal(result.transferredOperations,1);
+  assert.equal(result.createdDDSRows,1);
+  assert.equal(state.draft[0][12],'Перенесено');
+  assert.equal(state.dds.length,1);
+  assert.equal(state.dds[0][3],25000);
+  assert.equal(state.dds[0][4],201);
+  assert.equal(state.dds[0][9],'Поступление');
+  assert.match(state.dds[0][7],/checkpoint/i);
+  assert.equal(state.log.length,1);
+});
+
 test('high-confidence OCR review flag does not block an otherwise unambiguous rule match', async()=>{
   const {sheets,state}=makeSheets();
   state.draft.push([
