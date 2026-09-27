@@ -22,6 +22,11 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Checkout recovery worker without persisted credentials
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       - name: Use Node.js 24
         uses: actions/setup-node@v7
         with:
@@ -30,55 +35,4 @@ jobs:
       - name: Drain pending stages through signed OIDC requests
         env:
           FINANCE_SYNC_ENDPOINT: https://vector-ashk-backend.vercel.app/api/master-hours-diagnostic
-        run: |
-          node --input-type=module <<'NODE'
-          let transientFailures=0;
-          for (let step=0; step<24; step++) {
-            // Refresh the short-lived identity token for every stage.
-            const requestUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
-            requestUrl.searchParams.set('audience', 'vector-finance-sync-v1');
-            const tokenResponse = await fetch(requestUrl, {
-              headers: { authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
-              signal: AbortSignal.timeout(15000)
-            });
-            if (!tokenResponse.ok) throw new Error(`OIDC request failed: ${tokenResponse.status}`);
-            const token = String((await tokenResponse.json())?.value || '').trim();
-            if (!token) throw new Error('OIDC token missing');
-            let response;
-            try { response = await fetch(process.env.FINANCE_SYNC_ENDPOINT, {
-              method: 'POST',
-              headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json' },
-              body: JSON.stringify({ mode: 'finance_sync', kind: 'recovery' }),
-              signal: AbortSignal.timeout(315000)
-            }); } catch {
-              response={ok:false,status:503,json:async()=>({ok:false,errorClass:'TRANSPORT_FAILED'})};
-            }
-            const body = await response.json().catch(() => ({}));
-            if (response.status === 409 && body.busy === true) {
-              console.log('Finance lease busy; next scheduled recovery will resume.');
-              break;
-            }
-            if (!response.ok || body.ok !== true) {
-              const retryable=[429,502,503,504].includes(response.status)
-                && !body.blocked
-                && ((!body.attempt && [undefined,'CHECKPOINT_FAILED','CYCLE_UNAVAILABLE','TRANSPORT_FAILED'].includes(body.errorClass))
-                  || (['REPORT_TRANSPORT','DDS_TRANSPORT','HOURS_TRANSPORT'].includes(body.errorClass) && Number.isInteger(body.attempt) && body.attempt>0 && body.attempt<3));
-              if(retryable && ++transientFailures<3 && step<23) {
-                console.log(JSON.stringify({retry:true,status:response.status,errorClass:body.errorClass||'TRANSPORT_FAILED'}));
-                await new Promise(resolve=>setTimeout(resolve,(['REPORT_TRANSPORT','DDS_TRANSPORT','HOURS_TRANSPORT'].includes(body.errorClass)?30000:2000)*transientFailures));
-                continue;
-              }
-              throw new Error(`Finance recovery failed: ${response.status}; stage=${body.stage || 'unknown'}; error=${body.errorClass || 'unknown'}`);
-            }
-            transientFailures=0;
-            console.log(JSON.stringify({ok:true,stage:body.stage||null,pending:body.pending===true,complete:body.complete===true}));
-            if (body.pending !== true || body.deferred === true) break;
-            // Both boundaries follow stages that use many Sheets reads. Let
-            // the per-user minute quota refill before the next heavy stage.
-            if ((body.stage === 'payments' && body.nextStage === 'hours')
-              || (body.stage === 'balances' && body.nextStage === 'reportVerification')) {
-              await new Promise(resolve=>setTimeout(resolve,65000));
-            }
-            if (step === 23) throw new Error('Finance continuation limit reached; checkpoint retained');
-          }
-          NODE
+        run: node scripts/finance-recovery-worker.mjs
