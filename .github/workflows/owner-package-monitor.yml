@@ -1,0 +1,82 @@
+name: Owner package production monitor
+
+on:
+  schedule:
+    - cron: '45 4 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-package-production-monitor
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify production Owner package
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Request production attestation through signed OIDC identity
+        env:
+          OWNER_PACKAGE_SMOKE_ENDPOINT: https://vector-ashk-backend.vercel.app/api/health
+        run: |
+          node --input-type=module <<'NODE'
+          const requestUrl = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+          requestUrl.searchParams.set('audience', 'vector-owner-package-smoke-v1');
+          const tokenResponse = await fetch(requestUrl, {
+            headers: { authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+            signal: AbortSignal.timeout(15000)
+          });
+          if (!tokenResponse.ok) throw new Error(`OIDC token request failed with ${tokenResponse.status}`);
+          const token = String((await tokenResponse.json())?.value || '').trim();
+          if (!token) throw new Error('OIDC token missing');
+
+          const response = await fetch(process.env.OWNER_PACKAGE_SMOKE_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${token}`,
+              'content-type': 'application/json',
+              accept: 'application/json'
+            },
+            body: JSON.stringify({ mode: 'owner_package_smoke' }),
+            signal: AbortSignal.timeout(240000)
+          });
+          const cacheControl = response.headers.get('cache-control') || '';
+          const body = await response.json().catch(() => ({}));
+          const attestation = body?.attestation;
+          const noStore = value => /(?:^|,)\s*no-store(?:\s*(?:,|$)|\s*=)/i.test(String(value || ''));
+          const valid = response.ok
+            && body?.ok === true
+            && body?.mode === 'owner_package_smoke'
+            && noStore(cacheControl)
+            && attestation?.ok === true
+            && attestation?.status === 200
+            && noStore(attestation?.cacheControl)
+            && Number.isFinite(attestation?.ageMs)
+            && attestation.ageMs >= 0
+            && attestation.ageMs <= 300000
+            && Number.isFinite(attestation?.safeWithdrawal)
+            && attestation.safeWithdrawal >= 0
+            && attestation?.operatingReserveDefined === true
+            && Array.isArray(attestation?.policyBlockers)
+            && !attestation.policyBlockers.includes('OPERATING_RESERVE_UNDEFINED');
+          if (!valid) {
+            const allowed = new Set(['OWNER_PACKAGE_KEY_UNAVAILABLE', 'OWNER_PACKAGE_VERIFY_FAILED']);
+            const failureCode = allowed.has(body?.failureCode)
+              ? body.failureCode
+              : 'OWNER_PACKAGE_UNCLASSIFIED_FAILURE';
+            throw new Error(`owner package monitor failed with ${response.status}; failureCode=${failureCode}`);
+          }
+          console.log(JSON.stringify({
+            ok: true,
+            businessDate: attestation.businessDate,
+            ageMs: attestation.ageMs,
+            safeWithdrawal: attestation.safeWithdrawal,
+            policyBlockers: attestation.policyBlockers
+          }));
+          NODE

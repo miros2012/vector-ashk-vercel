@@ -168,6 +168,20 @@ test('scheduled hourly run cannot invoke owner package smoke', async () => {
   assert.equal(executed.count, 0);
 });
 
+test('dedicated scheduled monitor can invoke owner package smoke for the deployed main revision', async () => {
+  const executed = { count: 0 };
+  const service = serviceForClaims({
+    ...validClaims('schedule'),
+    workflow_ref: 'miros2012/vector-ashk-vercel/.github/workflows/owner-package-monitor.yml@refs/heads/main'
+  }, executed);
+
+  const result = await service({ authorization: 'Bearer signed-token' });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.mode, 'owner_package_smoke');
+  assert.equal(executed.count, 1);
+});
+
 test('missing or invalid bearer token fails closed before smoke execution', async () => {
   let verified = 0;
   let executed = 0;
