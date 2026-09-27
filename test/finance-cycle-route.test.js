@@ -18,6 +18,20 @@ test('native recovery query never starts a new cycle',async t=>{
  const f=await financeRouteHarness(t);const req=cronRequest();delete req.headers['x-vercel-cron-schedule'];req.url='/api/nightly-finance-orchestrator?kind=recovery';
  const r=response();await f.route.default(req,r);assert.equal(r.body.mode,'recovery_idle');assert.equal(f.cycle,null);
 });
+test('each native recovery request advances exactly one durable checkpointed stage',async t=>{
+ const f=await financeRouteHarness(t);
+ const intraday=cronRequest();delete intraday.headers['x-vercel-cron-schedule'];intraday.url='/api/nightly-finance-orchestrator?kind=intraday';
+ await f.route.default(intraday,response());
+ assert.equal(f.cycle.cursor,1);
+
+ const recovery=cronRequest();delete recovery.headers['x-vercel-cron-schedule'];recovery.url='/api/nightly-finance-orchestrator?kind=recovery';
+ const r=response();await f.route.default(recovery,r);
+
+ assert.equal(r.statusCode,202);
+ assert.equal(r.body.stage,'reports');
+ assert.equal(r.body.pending,true);
+ assert.equal(f.cycle.cursor,2);
+});
 test('native cron modes still require the server secret',async t=>{
  const f=await financeRouteHarness(t);
  for(const kind of ['full','intraday','recovery']){
