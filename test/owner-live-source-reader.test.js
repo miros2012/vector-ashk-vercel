@@ -19,6 +19,7 @@ const RANGES = Object.freeze({
   receivables: "'АШК_Дебиторка_Свод__vercel'!A1:F2",
   obligations: "'Обязательства'!A1:Q500",
   adjustments: "'Корректировки обязательств'!A1:J500",
+  accountables: "'Кошельки наличных'!A1:F100",
   drivingFund: "'Фонд вождения'!A21:J30",
   decisions: "'Решения'!A1:V200",
   history: "'История решений'!A1:K1000"
@@ -88,6 +89,14 @@ function adjustmentValues() {
   ];
 }
 
+function accountableValues() {
+  return [
+    ['Код кошелька', 'Название', 'Тип', 'Активен', 'Комментарий', 'LIVE остаток журнала'],
+    [201, 'Мирослав', 'Подотчёт', true, 'Наличные у Мирослава', 92771],
+    [202, 'Вадим', 'Подотчёт', true, 'Наличные у Вадима', 1000]
+  ];
+}
+
 function drivingFundValues() {
   return [
     ['УПРОЩЕННАЯ МОДЕЛЬ ФОНДА — принято 04.09.2026'],
@@ -129,6 +138,7 @@ function makeMatrices(overrides = {}) {
     [RANGES.receivables]: overrides.receivables ?? receivablesValues(),
     [RANGES.obligations]: overrides.obligations ?? obligationValues(),
     [RANGES.adjustments]: overrides.adjustments ?? adjustmentValues(),
+    [RANGES.accountables]: overrides.accountables ?? accountableValues(),
     [RANGES.drivingFund]: overrides.drivingFund ?? drivingFundValues(),
     [RANGES.decisions]: overrides.decisions ?? decisionValues(),
     [RANGES.history]: overrides.history ?? historyValues()
@@ -203,6 +213,7 @@ test('reads the exact bounded owner ranges and returns normalized immutable live
   assert.equal(result.obligations.confirmedCashNeed, 192403.74);
   assert.equal(result.obligations.unconfirmedCashNeed, 500);
   assert.equal(result.obligations.unconfirmedAmountMissing, false);
+  assert.deepEqual(result.accountables, { miroslav: 92771 });
   assert.equal(result.drivingFund.requiredReserve, 2605956.5093401885);
   assert.equal(result.drivingFund.liveBalance, 91283.44);
   assert.equal(result.drivingFund.deficit, 2514673.0693401885);

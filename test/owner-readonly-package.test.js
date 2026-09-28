@@ -69,6 +69,7 @@ function baseInput() {
       generatedAt: '2026-09-06T12:00:00.000Z',
       modelVersion: 'owner-readonly-v1',
       availableCash: 100000,
+      miroslavAccountable: 92771,
       cashGap: 0,
       salesPlanToDate: 300000,
       salesFact: 280000,
