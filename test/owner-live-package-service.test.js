@@ -84,6 +84,9 @@ function liveFacts(overrides = {}) {
       unconfirmedCashNeed: 50_000,
       unconfirmedAmountMissing: false
     },
+    accountables: {
+      miroslav: 92_771
+    },
     drivingFund: {
       requiredReserve: 500_000,
       liveBalance: 300_000,
@@ -166,6 +169,7 @@ test('returns the live package while undefined operating reserve forces safe wit
   assert.equal(result.snapshot.receivables, 300_000);
   assert.equal(result.snapshot.openObligations, 150_000);
   assert.equal(result.snapshot.unconfirmedObligations, 50_000);
+  assert.equal(result.snapshot.miroslavAccountable, 92_771);
   assert.equal(result.snapshot.drivingFundReserve, 500_000);
   assert.equal(result.snapshot.drivingFundDeficit, 200_000);
   assert.equal(result.cashScenario.forecast.scenarios.length, 3);

@@ -10,7 +10,7 @@ const apiDirectory = path.join(here, '..', 'api');
 const financePath = '/api/nightly-finance-orchestrator';
 const healthPath = '/api/health';
 const cashPhotoRetryPath = '/api/cash-photo-retry-cron';
-const intradaySchedules = Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`);
+const intradaySchedules = Array.from({ length: 15 }, (_, index) => `0 ${index + 4} * * *`);
 const financeRecoverySchedules = Array.from({ length: 24 }, (_, index) => `30 ${index} * * *`);
 const publishSchedules = ['35 21 * * *'];
 const cashPhotoRetrySchedules = [
@@ -23,10 +23,10 @@ test('Hobby deployment uses once-per-day cron expressions on bounded routes', ()
   const financeCrons = config.crons.filter((cron) => cron.path.split("?")[0] === financePath);
   const healthCrons = config.crons.filter((cron) => cron.path === healthPath);
   const cashPhotoCrons = config.crons.filter((cron) => cron.path === cashPhotoRetryPath);
-  assert.equal(financeCrons.length, 37, 'expected nightly full sync plus 12 intraday and 24 recovery schedules');
+  assert.equal(financeCrons.length, 40, 'expected nightly full sync plus 15 intraday and 24 recovery schedules');
   assert.equal(healthCrons.length, 1, 'expected one ROP fallback schedule');
   assert.equal(cashPhotoCrons.length, 13, 'expected 13 server-side cash-photo recovery schedules');
-  assert.equal(config.crons.length, 51, 'only finance, ROP fallback, and cash-photo recovery routes should be scheduled');
+  assert.equal(config.crons.length, 54, 'only finance, ROP fallback, and cash-photo recovery routes should be scheduled');
   assert.deepEqual(
     financeCrons.map((cron) => cron.schedule).sort(),
     ['30 21 * * *', ...intradaySchedules, ...financeRecoverySchedules].sort()
@@ -43,7 +43,7 @@ test('nightly finance cron schedule is daily at 02:30 Tyumen', () => {
   assert.deepEqual(cron.schedule.trim().split(/\s+/), ['30', '21', '*', '*', '*']);
 });
 
-test('intraday ROP uses twelve once-daily UTC schedules covering 09:00 through 20:00 Tyumen', () => {
+test('intraday finance refresh covers 09:00 through 23:00 Yekaterinburg', () => {
   const schedules = config.crons
     .filter((item) => item.path.split("?")[0] === financePath && item.schedule.startsWith('0 '))
     .map((item) => item.schedule);

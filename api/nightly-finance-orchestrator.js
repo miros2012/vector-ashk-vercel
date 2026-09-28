@@ -44,7 +44,7 @@ const ROP_UNMATCHED_SHEET = 'РОП_Неопознанные_Оплаты__diag'
 const ROP_PAYMENT_ATTRIBUTION_SHEET = 'РОП_Привязка_Оплат__diag';
 const CURRENT_MONTH_CONTRACTS_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
 const BUSINESS_TZ = 'Asia/Yekaterinburg';
-const INTRADAY_SCHEDULES = new Set(Array.from({ length: 12 }, (_, index) => `0 ${index + 4} * * *`));
+const INTRADAY_SCHEDULES = new Set(Array.from({ length: 15 }, (_, index) => `0 ${index + 4} * * *`));
 const RECOVERY_SCHEDULES = new Set(Array.from({ length: 12 }, (_, index) => `30 ${index + 4} * * *`));
 
 function privateKey() {

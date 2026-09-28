@@ -12,6 +12,7 @@ function input(overrides = {}) {
     generatedAt: '2026-09-06T12:34:56+05:00',
     modelVersion: ' owner-dashboard-v1 ',
     availableCash: 150000,
+    miroslavAccountable: 92771,
     cashGap: 0,
     safeWithdrawal: 50000,
     salesPlanToDate: 1000000,
@@ -183,6 +184,7 @@ test('fails closed for non-finite and negative financial values', () => {
     ['openObligations', Number.POSITIVE_INFINITY],
     ['unconfirmedObligations', -1],
     ['drivingFundReserve', -1],
+    ['miroslavAccountable', -1],
     ['drivingFundDeficit', Number.NaN]
   ]) {
     assert.throws(
@@ -200,6 +202,7 @@ test('fails closed for non-finite and negative financial values', () => {
 test('normalizes negative zero in all zero-safe money fields', () => {
   const money = {
     availableCash: -0,
+    miroslavAccountable: -0,
     cashGap: -0,
     safeWithdrawal: -0,
     salesPlanToDate: -0,
