@@ -34,9 +34,10 @@ test('unconfigured auth and source failure fail closed without leaking errors',a
  const failed=createOwnerDashboardApi({secret,now:()=>now,readPackage:async()=>{throw Error('private sheet and key');}});const r=response();await failed(request('dashboard-data','GET',{headers:{cookie:`__Host-vector_owner=${issueSession(secret,now)}`}}),r);assert.equal(r.code,503);assert.ok(!JSON.stringify(r.body).includes('private'));
 });
 test('projection preserves zero and missing; policy blocks withdrawal; no private fields',()=>{
- const view=ownerDashboardView({snapshot:{availableCash:0,miroslavAccountable:92771,safeWithdrawal:100,dataHealth:{status:'OK',reasons:[]}},policy:{blockers:['OPERATING_RESERVE_UNDEFINED']},privateKey:'hidden'});
+ const view=ownerDashboardView({snapshot:{availableCash:0,miroslavAccountable:92771,safeWithdrawal:100,dataHealth:{status:'OK',reasons:[]}},manualBankOperations:[{date:'2026-09-29',amount:-4540,counterparty:'ФБУЗ',purpose:'Санитарная оценка',transactionId:'tx-1',duplicateKey:'key-1'}],policy:{blockers:['OPERATING_RESERVE_UNDEFINED']},privateKey:'hidden'});
  assert.equal(view.metrics.availableCash,0);assert.equal(view.metrics.receivables,null);assert.equal(view.metrics.safeWithdrawal,null);assert.equal(view.health.status,'OK');assert.ok(!JSON.stringify(view).includes('hidden'));
  assert.equal(view.metrics.miroslavAccountable,92771);
+ assert.deepEqual(view.manualBankOperations,[{date:'2026-09-29',amount:-4540,counterparty:'ФБУЗ',purpose:'Санитарная оценка',transactionId:'tx-1'}]);
 });
 test('forecast contains only source days, never invents horizon; actions use current agenda',()=>{
  const view=ownerDashboardView({snapshot:{businessDate:'2026-09-12'},cashScenario:{forecast:{scenarios:[{name:'base',daily:[{date:'2026-09-13',closingBalance:-20}],minimumBalance:-20,minimumBalanceDate:'2026-09-13',cashGap:20}]}},agenda:{actions:[{id:'live',action:'Collect',amount:0}]},history:[{action:'closed'}]});

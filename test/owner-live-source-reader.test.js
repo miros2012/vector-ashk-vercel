@@ -20,6 +20,7 @@ const RANGES = Object.freeze({
   obligations: "'Обязательства'!A1:Q500",
   adjustments: "'Корректировки обязательств'!A1:J500",
   accountables: "'Кошельки наличных'!A1:F100",
+  manualBank: "'Контроль Точка → ДДС'!A4:P3000",
   drivingFund: "'Фонд вождения'!A21:J30",
   decisions: "'Решения'!A1:V200",
   history: "'История решений'!A1:K1000"
@@ -97,6 +98,15 @@ function accountableValues() {
   ];
 }
 
+function manualBankValues() {
+  return [
+    ['Дата операции','Фонд','Счёт','Тип движения','Сумма со знаком','Контрагент','ИНН','Назначение платежа','Тип операции','transactionId','Ключ дубля','Статус интеграции','Статья ДДС авто','Вид д-ти','Месяц P&L','Готовность'],
+    ['2026-09-28','Общий',112,'Расход',-230000,'ИП ЕГОРОВ','','Оплата услуг','Платежное поручение','tx-1','key-1','К импорту','ТРЕБУЕТ РАЗБОРА','',9,'Ручная классификация'],
+    ['2026-09-29','Общий',112,'Расход',-4540,'ФБУЗ','','Санитарная оценка','Платежное поручение','tx-2','key-2','К импорту','ТРЕБУЕТ РАЗБОРА','',9,'Ручная классификация'],
+    ['2026-09-29','Общий',112,'Расход',-100,'Банк','','Комиссия','Банковский ордер','tx-3','key-3','К импорту','РКО','Операционная',9,'Готово к ДДС']
+  ];
+}
+
 function drivingFundValues() {
   return [
     ['УПРОЩЕННАЯ МОДЕЛЬ ФОНДА — принято 04.09.2026'],
@@ -139,6 +149,7 @@ function makeMatrices(overrides = {}) {
     [RANGES.obligations]: overrides.obligations ?? obligationValues(),
     [RANGES.adjustments]: overrides.adjustments ?? adjustmentValues(),
     [RANGES.accountables]: overrides.accountables ?? accountableValues(),
+    [RANGES.manualBank]: overrides.manualBank ?? manualBankValues(),
     [RANGES.drivingFund]: overrides.drivingFund ?? drivingFundValues(),
     [RANGES.decisions]: overrides.decisions ?? decisionValues(),
     [RANGES.history]: overrides.history ?? historyValues()
@@ -214,6 +225,10 @@ test('reads the exact bounded owner ranges and returns normalized immutable live
   assert.equal(result.obligations.unconfirmedCashNeed, 500);
   assert.equal(result.obligations.unconfirmedAmountMissing, false);
   assert.deepEqual(result.accountables, { miroslav: 92771 });
+  assert.deepEqual(result.manualBankOperations, [
+    { date: '2026-09-28', amount: -230000, counterparty: 'ИП ЕГОРОВ', purpose: 'Оплата услуг', transactionId: 'tx-1', duplicateKey: 'key-1' },
+    { date: '2026-09-29', amount: -4540, counterparty: 'ФБУЗ', purpose: 'Санитарная оценка', transactionId: 'tx-2', duplicateKey: 'key-2' }
+  ]);
   assert.equal(result.drivingFund.requiredReserve, 2605956.5093401885);
   assert.equal(result.drivingFund.liveBalance, 91283.44);
   assert.equal(result.drivingFund.deficit, 2514673.0693401885);
