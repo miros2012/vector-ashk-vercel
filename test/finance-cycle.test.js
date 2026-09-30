@@ -74,6 +74,41 @@ test('downstream report and health blockers do not freeze the next source refres
   assert.equal(calls.filter(value => value === 'source').length, 2);
 });
 
+test('recovery resumes a legacy cycle already blocked by downstream report validation', async () => {
+  let state = {
+    version: 1,
+    id: 'legacy-blocked-cycle',
+    mode: 'intraday',
+    status: 'BLOCKED',
+    cursor: 1,
+    attempt: 3,
+    startedAt: '2026-09-29T10:03:00.000Z',
+    updatedAt: '2026-09-30T06:06:00.000Z',
+    errorClass: 'REPORT_VALIDATION',
+    completed: [{ stage: 'source', ok: true, at: '2026-09-29T10:04:00.000Z' }]
+  };
+  const calls = [];
+  const store = {
+    acquire: async () => ({ ok: true }), release: async () => {},
+    read: async () => structuredClone(state), write: async value => { state = structuredClone(value); }
+  };
+  const stages = {
+    source: async () => ({ ok: true }),
+    reports: async () => { calls.push('reports'); return { ok: false, errorClass: 'REPORT_VALIDATION' }; },
+    dataHealth: async () => ({ ok: true })
+  };
+  const run = createFinanceCycle({ store, stages, sequence: () => ['source', 'reports', 'dataHealth'], now: () => new Date('2026-09-30T08:30:00Z') });
+
+  const result = await run({ recoveryOnly: true });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.degraded, true);
+  assert.equal(result.stage, 'reports');
+  assert.equal(state.status, 'PENDING');
+  assert.equal(state.cursor, 2);
+  assert.deepEqual(calls, ['reports']);
+});
+
 test('checkpoint failure prevents side effects and competing lease cannot execute', async () => {
   const f = fixture(); f.store.write = async () => { throw Error('offline'); };
   assert.equal((await f.run({})).ok, false);
