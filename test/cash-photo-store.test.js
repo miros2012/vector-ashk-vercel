@@ -131,6 +131,40 @@ test('markRecognized routes flagged OCR to review and never DDS', async () => {
   assert.ok(calls.every(([, args]) => !String(args.range || '').includes('ДДС')));
 });
 
+test('financially unresolved cash rows keep the photo and LIVE wallet in explicit review', async () => {
+  const { drive, sheets, calls } = makeClients();
+  sheets.spreadsheets.values.get = async (args) => {
+    calls.push(['sheets.get', args]);
+    if (String(args.range).includes("'Кошельки наличных'!A2:J")) {
+      return { data: { values: [[102, 'Касса Ямская', 'Филиал', true, '', 85000, 46290, 'PHOTO-OLD', 'ok', '']] } };
+    }
+    return { data: { values: [] } };
+  };
+  const journalPipeline = {
+    async syncRecognition() {
+      return { newRows: 2, transferredOperations: 1, reviewCount: 1, duplicateCount: 4 };
+    }
+  };
+  const store = createCashPhotoStore({
+    drive, sheets, spreadsheetId: 'sheet', folderId: 'folder', journalPipeline,
+    now: () => new Date('2026-09-30T05:13:49.780Z')
+  });
+
+  await store.markRecognized({ photoId: 'PHOTO-Y', archiveRow: 302, branch: 'Ямская' }, {
+    model: 'gemini-test',
+    data: {
+      finalBalance: 138650, finalBalanceReadable: true,
+      operations: [{ date: '29.09.2026', income: 5000, expense: 0, balance: 138650, needsReview: false }]
+    }
+  });
+
+  const updates = calls.filter(([name]) => name === 'sheets.update').map(([, args]) => args);
+  assert.ok(updates.some(args => args.range === "'Архив кассовых фото'!H302"
+    && args.requestBody.values[0][0] === 'Распознано — требуется финансовая классификация'));
+  assert.ok(updates.some(args => args.range === "'Кошельки наличных'!F2:J2"
+    && args.requestBody.values[0][3] === 'Распознано — требуется финансовая классификация'));
+});
+
 
 
 test('markRecognized succeeds when archive column K rejects all writes', async () => {
