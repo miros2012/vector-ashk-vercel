@@ -15,6 +15,10 @@ const RETRYABLE_SOURCE_ERRORS = new Set([
   'DDS_TRANSPORT',
   'HOURS_TRANSPORT'
 ]);
+const RETRYABLE_DOWNSTREAM_ERRORS = new Set([
+  'REPORT_STALE',
+  'DATA_HEALTH_BLOCKED'
+]);
 
 function requiredEnvironment(env, name) {
   const value = String(env?.[name] || '').trim();
@@ -26,7 +30,7 @@ function retryableFailure(response, body) {
   if (!RETRYABLE_STATUS_CODES.has(response.status) || body?.blocked) return false;
   const errorClass = body?.errorClass;
   if (!body?.attempt && RETRYABLE_CHECKPOINT_ERRORS.has(errorClass)) return true;
-  return RETRYABLE_SOURCE_ERRORS.has(errorClass)
+  return (RETRYABLE_SOURCE_ERRORS.has(errorClass) || RETRYABLE_DOWNSTREAM_ERRORS.has(errorClass))
     && Number.isInteger(body?.attempt)
     && body.attempt > 0
     && body.attempt < 3;
