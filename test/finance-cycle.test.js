@@ -48,6 +48,32 @@ test('failed stages never advance or claim complete; retry stops after three fai
   assert.equal((await f.run({})).pending, true);
 });
 
+test('downstream report and health blockers do not freeze the next source refresh cycle', async () => {
+  let state = null;
+  const calls = [];
+  const store = {
+    acquire: async () => ({ ok: true }), release: async () => {},
+    read: async () => structuredClone(state), write: async value => { state = structuredClone(value); }
+  };
+  const sequence = () => ['source', 'reports', 'dataHealth', 'decisions'];
+  const stages = {
+    source: async () => { calls.push('source'); return { ok: true }; },
+    reports: async () => { calls.push('reports'); return { ok: false, errorClass: 'REPORT_VALIDATION' }; },
+    dataHealth: async () => { calls.push('dataHealth'); return { ok: false, errorClass: 'DATA_HEALTH_BLOCKED' }; },
+    decisions: async () => { calls.push('decisions'); return { ok: false, errorClass: 'REPORT_STALE' }; }
+  };
+  const run = createFinanceCycle({ store, stages, sequence, now: () => new Date('2026-09-30T06:00:00Z') });
+
+  for (let index = 0; index < 6; index += 1) await run({ recoveryOnly: index > 0 });
+  assert.equal(state.status, 'COMPLETE');
+  assert.equal(state.blockedOutcome.errorClass, 'REPORT_STALE');
+  assert.deepEqual(calls, ['source', 'reports', 'dataHealth', 'decisions', 'decisions', 'decisions']);
+
+  const next = await run({ mode: 'intraday' });
+  assert.equal(next.stage, 'source');
+  assert.equal(calls.filter(value => value === 'source').length, 2);
+});
+
 test('checkpoint failure prevents side effects and competing lease cannot execute', async () => {
   const f = fixture(); f.store.write = async () => { throw Error('offline'); };
   assert.equal((await f.run({})).ok, false);
