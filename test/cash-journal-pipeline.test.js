@@ -314,6 +314,31 @@ test('checkpointed cash transfer preserves the recipient wallet without replayin
   assert.equal(state.log.length,1);
 });
 
+test('ready cash rows are not starved by an older manual-review backlog', async()=>{
+  const {sheets,state}=makeSheets();
+  for(let index=0;index<20;index++) {
+    state.draft.push([
+      `PHOTO-OLD-${index}:op1`,46280,'Зарека',`Непонятная выплата ${index}`,1000,'',5000-index,
+      'Расход','','Касса Зарека','','Сходится','Проверить',
+      '[VERCEL-OCR] | Уверенность 70% | Автопроверка: ИИ просит проверить распознавание'
+    ]);
+  }
+  state.draft.push([
+    'PHOTO-READY:op1',46290,'Зарека','Оплата обучения', '',10000,15000,
+    'Приход','Продажи','','Касса Зарека','Сходится','Готово к переносу',
+    '[VERCEL-OCR] | Фото-ID: PHOTO-READY | Уверенность 100%'
+  ]);
+
+  const pipeline=createCashJournalPipeline({sheets,spreadsheetId:'book',now:()=>new Date('2026-09-30T12:00:00Z')});
+  const result=await pipeline.reconcileDraftBacklog(20);
+
+  assert.equal(result.transferredOperations,1);
+  assert.equal(result.createdDDSRows,1);
+  assert.equal(state.draft[20][12],'Перенесено');
+  assert.equal(state.dds.length,1);
+  assert.match(state.dds[0][12],/PHOTO-READY:op1/);
+});
+
 test('high-confidence OCR review flag does not block an otherwise unambiguous rule match', async()=>{
   const {sheets,state}=makeSheets();
   state.draft.push([
