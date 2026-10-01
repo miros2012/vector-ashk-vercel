@@ -11,7 +11,7 @@ test('nightly route includes current-month payments before receivables', () => {
 
 test('verified receivables hook records the source marker without rebuilding the ROP control', () => {
   assert.match(source, /buildRopDailyControlWorkbook/);
-  assert.match(source, /РОП_План_Сентябрь/);
+  assert.match(source, /ropPlanSheetForMonth/);
   assert.match(source, /РОП_Контроль_Дня/);
   assert.match(source, /АШК_Контракты_ТекущийМесяц__vercel/);
   assert.match(source, /afterSourceVerified/);

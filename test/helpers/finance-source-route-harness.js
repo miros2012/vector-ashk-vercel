@@ -1,4 +1,5 @@
 import { registerHooks } from 'node:module';
+import { ropPlanSheetForMonth } from '../../lib/rop-plan-period.js';
 
 let sequence = 0;
 export const CONTRACT_SHEET = 'АШК_Контракты_ТекущийМесяц__vercel';
@@ -14,9 +15,10 @@ export async function financeSourceRouteHarness(t, { initialContracts = [], cont
   const part = type => parts.find(value => value.type === type).value;
   const month = `${part('year')}-${part('month')}`;
   const date = `${month}-${part('day')}`;
+  const planSheet = ropPlanSheetForMonth(month);
   const tables = new Map([
     [CONTRACT_SHEET, structuredClone(initialContracts)],
-    ['РОП_План_Сентябрь', [['Менеджер','Филиал','Филиал АШК','План филиала','План менеджера','График','Активен','Примечание'], ['Manager', 'Branch', 'Branch', 100000, 100000, '5/2', 'Да', '']]],
+    [planSheet, [['Менеджер','Филиал','Филиал АШК','План филиала','План менеджера','График','Активен','Примечание'], ['Manager', 'Branch', 'Branch', 100000, 100000, '5/2', 'Да', '']]],
     ['АШК_Оплаты__vercel', [['Id', 'PayDate', 'StudentId', 'SaleId', 'ProductId', 'ProductName', 'SaleSum', 'Debit', 'PaymentEmployeeName', 'SaleEmployeeName', 'SaleAttributionStatus']]],
     ['РОП_Дебиторка_Приоритет', []],
     ['__vercel_control', [['receivables_last_success_utc', 'old-marker']]]

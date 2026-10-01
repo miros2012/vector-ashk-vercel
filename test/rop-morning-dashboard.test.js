@@ -36,8 +36,9 @@ test('first day can expose only the current live snapshot', () => {
     controlValues: CONTROL_VALUES.filter(row => row[0] === 'Дата' || row[0] === '2026-09-01'),
     asOfDate: '2026-09-01'
   });
-  assert.equal(dashboard.reportDate, '2026-09-01');
+  assert.equal(dashboard.reportDate, '');
   assert.equal(dashboard.liveDate, '2026-09-01');
+  assert.equal(dashboard.values.slice(1).some(row => row[0] === 'ВЧЕРА — ЗАКРЫТО'), false);
 });
 
 test('morning dashboard exposes personal plan completion and color for every manager', () => {
