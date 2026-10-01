@@ -156,6 +156,17 @@ async function readValues(sheetName, range) {
   return result.data.values || [];
 }
 
+async function readApprovedRopPlan(month) {
+  let values;
+  try {
+    values = await readValues(ropPlanSheetForMonth(month), 'A:H');
+  } catch (error) {
+    if (Number(error?.response?.status || error?.status || error?.code) !== 400) throw error;
+    throw sanitizeFinanceStageFailure({ statusCode: 409, errorClass: 'ROP_PLAN_NOT_APPROVED' });
+  }
+  return assertRopPlanApproved(values, month);
+}
+
 function persistedContractsToStudents(values) {
   return (Array.isArray(values) ? values.slice(1) : [])
     .filter(row => Array.isArray(row) && Number(row?.[0]) > 0)
@@ -328,13 +339,7 @@ async function refreshCurrentMonthContractStaging({ groups, contractsByGroup }) 
   let errorClass = 'SHEETS_READBACK';
   try {
     const currentMonth = tyumenToday().month;
-    let planValues;
-    try {
-      planValues = await readValues(ropPlanSheetForMonth(currentMonth), 'A:H');
-    } catch {
-      throw sanitizeFinanceStageFailure({ statusCode: 409, errorClass: 'ROP_PLAN_NOT_APPROVED' });
-    }
-    assertRopPlanApproved(planValues, currentMonth);
+    const planValues = await readApprovedRopPlan(currentMonth);
     errorClass = 'VALIDATION';
     const values = buildCurrentMonthContractStaging({ groups, contractsByGroup, planValues, month: tyumenToday().month });
     errorClass = 'SHEETS_WRITE';
@@ -354,14 +359,12 @@ async function refreshCurrentMonthContractStaging({ groups, contractsByGroup }) 
 
 async function refreshRopFromStaging() {
   const { date, month } = tyumenToday();
-  const planSheet = ropPlanSheetForMonth(month);
   const [planValues, paymentValues, currentContractsValues, receivablesValues] = await Promise.all([
-    readValues(planSheet, 'A:H'),
+    readApprovedRopPlan(month),
     readValues(PAYMENTS_STAGING_SHEET, 'A:K'),
     readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
     readValues(RECEIVABLES_DETAIL_SHEET, 'A:N')
   ]);
-  assertRopPlanApproved(planValues, month);
   const baseStudents = persistedContractsToStudents(currentContractsValues);
   if (currentContractsValues?.[0]?.[0] !== 'StudentId') throw new Error('Current-month ROP contract staging is unverified');
 
@@ -410,7 +413,11 @@ async function refreshRopFromStaging() {
 }
 
 async function markReceivablesSourceVerified(payload) {
-  await refreshCurrentMonthContractStaging(payload);
+  try {
+    await refreshCurrentMonthContractStaging(payload);
+  } catch (error) {
+    if (error?.errorClass !== 'ROP_PLAN_NOT_APPROVED') throw error;
+  }
   const receivablesLastSuccessUtc = new Date().toISOString();
   await writeControlMarker({
     sheets: await getSheets(),

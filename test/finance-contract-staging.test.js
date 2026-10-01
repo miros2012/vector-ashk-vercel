@@ -2,6 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { financeSourceRouteHarness, CONTRACT_SHEET, CONTRACT_HEADERS } from './helpers/finance-source-route-harness.js';
 import { response } from './helpers/finance-route-harness.js';
+import { ropPlanSheetForMonth } from '../lib/rop-plan-period.js';
+
+test('unapproved October plan does not stop verified receivables from receiving a freshness marker', async t => {
+  const fixture = await financeSourceRouteHarness(t);
+  fixture.tables.delete(ropPlanSheetForMonth(fixture.month));
+  const res = response();
+  await fixture.route.runReceivablesNow({ method: 'GET' }, res);
+  assert.equal(res.statusCode, 200);
+  assert.notEqual(fixture.tables.get('__vercel_control')[0][1], 'old-marker');
+  assert.equal(fixture.tables.get(CONTRACT_SHEET).length, 0);
+  const rop = await fixture.route.runIntradayRopNow();
+  assert.equal(rop.errorClass, 'ROP_PLAN_NOT_APPROVED');
+});
 
 for (const initial of ['empty', 'stale']) {
   test(`source refresh bootstraps ${initial} contract staging from one fetched payload before its marker`, async t => {
