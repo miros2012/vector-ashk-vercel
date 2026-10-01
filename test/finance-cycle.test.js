@@ -123,6 +123,30 @@ test('existing cycle blocked by an unapproved ROP plan resumes at balances', asy
   assert.deepEqual(calls, ['rop', 'balances']);
 });
 
+test('legacy cycle blocked at receivables source by the old ROP plan dependency can resume', async () => {
+  let state = {
+    version: 1, id: 'october-source-blocked', mode: 'intraday', status: 'BLOCKED',
+    cursor: 3, attempt: 3, startedAt: '2026-10-01T05:00:00Z',
+    errorClass: 'ROP_PLAN_NOT_APPROVED',
+    completed: ['tochkaDds', 'reports', 'payments'].map(stage => ({ stage, ok: true }))
+  };
+  const events = [];
+  const store = {
+    acquire: async () => ({ ok: true }), release: async () => {},
+    read: async () => structuredClone(state), write: async value => { state = structuredClone(value); }
+  };
+  const run = createFinanceCycle({
+    store,
+    sequence: () => ['tochkaDds', 'reports', 'payments', 'receivablesSource', 'ropPublish'],
+    stages: { receivablesSource: async () => { events.push('receivables'); return { ok: true }; } },
+    now: () => new Date('2026-10-01T06:00:00Z')
+  });
+  const result = await run({ recoveryOnly: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.stage, 'receivablesSource');
+  assert.deepEqual(events, ['receivables']);
+});
+
 test('recovery resumes a legacy cycle already blocked by downstream report validation', async () => {
   let state = {
     version: 1,
