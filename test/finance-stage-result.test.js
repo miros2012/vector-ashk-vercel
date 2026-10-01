@@ -18,7 +18,7 @@ test('maps an unknown class to non-retryable UNCLASSIFIED', () => {
 for (const [errorClass, retryable] of [
   ['ASHK_FETCH', true], ['SHEETS_WRITE', true], ['SHEETS_READBACK', true],
   ['ROP_PUBLISH', true], ['TIME_BUDGET', true], ['READBACK_MISMATCH', false],
-  ['ROP_BUILD', false], ['LEDGER_WRITE', false], ['AUTH', false],
+  ['ROP_BUILD', false], ['ROP_PLAN_NOT_APPROVED', false], ['LEDGER_WRITE', false], ['AUTH', false],
   ['VALIDATION', false], ['UNCLASSIFIED', false]
 ]) {
   test(`${errorClass} has the allowlisted retry policy and excludes raw metadata`, () => {

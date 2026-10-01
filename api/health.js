@@ -27,6 +27,7 @@ import {
 import { createCashPhotoRetryService } from '../lib/cash-photo-retry-service.js';
 import { buildCashPhotoGeminiPayload } from '../lib/cash-photo-prompt.js';
 import { recognizeWithFallback, probeGeminiModels, DEFAULT_CASH_PHOTO_MODELS } from '../lib/cash-photo-recognizer.js';
+import { ropPlanSheetForMonth } from '../lib/rop-plan-period.js';
 
 const SOURCE_SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const TARGET_ROP_SPREADSHEET_ID = '19_UF9JUcFf_jHtpugNgcjasi3SsVcZczlaK_spH7gDQ';
@@ -40,11 +41,20 @@ const CASH_PHOTO_SPREADSHEET_ID = process.env.CASH_PHOTO_SPREADSHEET_ID || SOURC
 const CASH_PHOTO_DRIVE_FOLDER_ID = process.env.CASH_PHOTO_DRIVE_FOLDER_ID || '1PHTv_r47ZEbnH76I7zbC5YgphpELpkfG';
 const CASH_PHOTO_MODELS = DEFAULT_CASH_PHOTO_MODELS;
 const CASH_PHOTO_ROUTES = new Set(['config', 'upload', 'retry', 'retry-cron', 'probe']);
+function currentBusinessMonth() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Yekaterinburg', year: 'numeric', month: '2-digit'
+  }).formatToParts(new Date());
+  const value = type => parts.find(part => part.type === type)?.value || '';
+  return `${value('year')}-${value('month')}`;
+}
+
+const CURRENT_ROP_PLAN_SHEET = ropPlanSheetForMonth(currentBusinessMonth());
 const RANGES = {
   'РОП_Штаб_Утро': 'A:X',
   'РОП_Задачи_Сегодня': 'A:P',
   'РОП_Контроль_Дня': 'A:S',
-  'РОП_План_Сентябрь': 'A:H',
+  [CURRENT_ROP_PLAN_SHEET]: 'A:H',
   'РОП_Дебиторка_Приоритет': 'A:V'
 };
 
@@ -175,7 +185,14 @@ export const publishRopNow = createRopPublisher({
   targetSpreadsheetId: TARGET_ROP_SPREADSHEET_ID,
   readSheet: readSourceSheet,
   readTargetSheet,
-  writeSheet: writeTargetSheet
+  writeSheet: writeTargetSheet,
+  sheetNames: [
+    'РОП_Штаб_Утро',
+    'РОП_Задачи_Сегодня',
+    'РОП_Контроль_Дня',
+    CURRENT_ROP_PLAN_SHEET,
+    'РОП_Дебиторка_Приоритет'
+  ]
 });
 
 const hourlyProjectAgentService = createHourlyProjectAgentService({

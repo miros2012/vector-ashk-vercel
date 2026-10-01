@@ -30,12 +30,12 @@ import {
   createManualFinanceRunHandler,
   hasManualFinanceRunToken
 } from '../lib/manual-finance-run-handler.js';
+import { assertRopPlanApproved, ropPlanSheetForMonth } from '../lib/rop-plan-period.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const RECEIVABLES_DETAIL_SHEET = 'АШК_Дебиторка__vercel';
 const RECEIVABLES_SUMMARY_SHEET = 'АШК_Дебиторка_Свод__vercel';
 const PAYMENTS_STAGING_SHEET = 'АШК_Оплаты__vercel';
-const ROP_PLAN_SHEET = 'РОП_План_Сентябрь';
 const ROP_CONTROL_SHEET = 'РОП_Контроль_Дня';
 const ROP_MORNING_SHEET = 'РОП_Штаб_Утро';
 const ROP_TASKS_SHEET = 'РОП_Задачи_Сегодня';
@@ -327,7 +327,14 @@ async function persistRopOutputs({
 async function refreshCurrentMonthContractStaging({ groups, contractsByGroup }) {
   let errorClass = 'SHEETS_READBACK';
   try {
-    const planValues = await readValues(ROP_PLAN_SHEET, 'A:H');
+    const currentMonth = tyumenToday().month;
+    let planValues;
+    try {
+      planValues = await readValues(ropPlanSheetForMonth(currentMonth), 'A:H');
+    } catch {
+      throw sanitizeFinanceStageFailure({ statusCode: 409, errorClass: 'ROP_PLAN_NOT_APPROVED' });
+    }
+    assertRopPlanApproved(planValues, currentMonth);
     errorClass = 'VALIDATION';
     const values = buildCurrentMonthContractStaging({ groups, contractsByGroup, planValues, month: tyumenToday().month });
     errorClass = 'SHEETS_WRITE';
@@ -339,19 +346,22 @@ async function refreshCurrentMonthContractStaging({ groups, contractsByGroup }) 
       errorClass = 'READBACK_MISMATCH';
       throw new Error('Contract staging verification failed');
     }
-  } catch {
+  } catch (error) {
+    if (error?.errorClass === 'ROP_PLAN_NOT_APPROVED') throw error;
     throw sanitizeFinanceStageFailure({ statusCode: 502, errorClass });
   }
 }
 
 async function refreshRopFromStaging() {
   const { date, month } = tyumenToday();
+  const planSheet = ropPlanSheetForMonth(month);
   const [planValues, paymentValues, currentContractsValues, receivablesValues] = await Promise.all([
-    readValues(ROP_PLAN_SHEET, 'A:H'),
+    readValues(planSheet, 'A:H'),
     readValues(PAYMENTS_STAGING_SHEET, 'A:K'),
     readValues(CURRENT_MONTH_CONTRACTS_SHEET, 'A:J'),
     readValues(RECEIVABLES_DETAIL_SHEET, 'A:N')
   ]);
+  assertRopPlanApproved(planValues, month);
   const baseStudents = persistedContractsToStudents(currentContractsValues);
   if (currentContractsValues?.[0]?.[0] !== 'StudentId') throw new Error('Current-month ROP contract staging is unverified');
 

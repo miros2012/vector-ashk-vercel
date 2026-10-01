@@ -1,4 +1,5 @@
 import { registerHooks } from 'node:module';
+import { ropPlanSheetForMonth } from '../../lib/rop-plan-period.js';
 
 let sequence = 0;
 
@@ -22,8 +23,13 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
   let consumed = false;
   let cycle = null;
   let owner = busy ? 'foreign-owner' : null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Yekaterinburg', year: 'numeric', month: '2-digit'
+  }).formatToParts(new Date());
+  const value = type => parts.find(part => part.type === type)?.value || '';
+  const planSheet = ropPlanSheetForMonth(`${value('year')}-${value('month')}`);
   const staging = new Map([
-    ['РОП_План_Сентябрь', [[], ['Manager', 'Branch', 'Branch', 100, 100, '5/2', 'Да']]]
+    [planSheet, [[], ['Manager', 'Branch', 'Branch', 100, 100, '5/2', 'Да']]]
   ]);
   const sheetTitle = range => range.match(/^'(.+)'!/)?.[1];
   const child = name => async (req, res) => {
