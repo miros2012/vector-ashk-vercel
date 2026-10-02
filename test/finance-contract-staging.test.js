@@ -16,6 +16,29 @@ test('unapproved October plan does not stop verified receivables from receiving 
   assert.equal(rop.errorClass, 'ROP_PLAN_NOT_APPROVED');
 });
 
+test('approved city target reports every ASHK payment while personal target uses payment employee', async t => {
+  const fixture = await financeSourceRouteHarness(t);
+  const planSheet = ropPlanSheetForMonth(fixture.month);
+  fixture.tables.set(planSheet, [
+    ['Менеджер','Филиал','Филиал АШК','План филиала','План менеджера','График','Активен','Примечание'],
+    ['ИТОГО ГОРОД','','',10000000,'','','Нет','Утверждённый городской план'],
+    ['Manager','Branch','Branch',100000,100000,'5/2','Да','Личный план']
+  ]);
+  fixture.tables.set('АШК_Оплаты__vercel', [
+    ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit','PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'],
+    [991,`${fixture.date} 11:00:00`,999,99,1,'Курс',12345,12345,'Manager','Manager','OK_SALE_EMPLOYEE']
+  ]);
+  await fixture.route.runReceivablesNow({ method: 'GET' }, response());
+  const result = await fixture.route.runIntradayRopNow();
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const morning = fixture.tables.get('РОП_Штаб_Утро');
+  const city = morning.find(row => row[0] === 'СЕГОДНЯ — НА СЕЙЧАС' && row[2] === 'ГОРОД');
+  const manager = morning.find(row => row[0] === 'СЕГОДНЯ — НА СЕЙЧАС' && row[3] === 'Manager');
+  assert.equal(city[5], 10000000);
+  assert.equal(city[7], 12345);
+  assert.equal(manager[14], 12345);
+});
+
 for (const initial of ['empty', 'stale']) {
   test(`source refresh bootstraps ${initial} contract staging from one fetched payload before its marker`, async t => {
     const fixture = await financeSourceRouteHarness(t, { initialContracts: initial === 'empty' ? [] : [CONTRACT_HEADERS, [101, '2020-01-01', 'Branch', 'Branch', 'Old', 100000, 0, 100000]] });

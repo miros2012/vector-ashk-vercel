@@ -81,6 +81,43 @@ test('ROP workbook reconstructs day-by-day branch and manager performance from c
   assert.equal(bSep2[idx('Личный факт с начала месяца')], 40000);
 });
 
+test('unapproved branch targets stay blank while an approved personal target remains usable', () => {
+  const planValues = [
+    PLAN_VALUES[0],
+    ['ИТОГО ГОРОД','','',10000000,'','','Нет',''],
+    ['Менеджер А','Зарека','Зарека','',1000000,'5/2','Да','Филиальный план не утверждён']
+  ];
+  const workbook = buildRopDailyControlWorkbook({
+    planValues,
+    groups: GROUPS,
+    contractsByGroup: CONTRACTS,
+    paymentValues: PAYMENT_VALUES,
+    month: '2026-09',
+    asOfDate: '2026-09-02'
+  });
+  const row = workbook.controlValues.find(value => value[0] === '2026-09-02' && value[1] === 'Менеджер А');
+  assert.equal(row[3], '');
+  assert.equal(row[4], '');
+  assert.equal(row[8], 1000000);
+  assert.equal(row[16], 'ПЛАН ФИЛИАЛА НЕ ЗАДАН');
+});
+
+test('a manager without an approved ASHK branch does not claim unassigned contracts', () => {
+  const planValues = [PLAN_VALUES[0],
+    ['ИТОГО ГОРОД','','',10000000,'','','Нет',''],
+    ['Гыско Лада','АРСИБ','', '',550000,'2/2','Да','Переезд']
+  ];
+  const workbook = buildRopDailyControlWorkbook({
+    planValues,
+    groups: [{ Id: 1, TrainingRoomName: '' }],
+    contractsByGroup: { 1: [{ Id: 1, StudyGroupId: 1, OwnerName: '', ContractDate: '2026-10-01', SalesSum: 1000, DebitSum: 1000, Debt: 0 }] },
+    paymentValues: [PAYMENT_VALUES[0]],
+    month: '2026-10',
+    asOfDate: '2026-10-01'
+  });
+  assert.equal(workbook.currentMonthContractsValues[1][2], '');
+});
+
 test('ROP workbook exposes unmatched payment amount instead of silently assigning it', () => {
   const workbook = buildRopDailyControlWorkbook({
     planValues: PLAN_VALUES,

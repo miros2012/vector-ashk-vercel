@@ -75,3 +75,40 @@ test('city totals include current-month contracts owned by managers outside the 
   assert.equal(closedCity[idx('Новых договоров')], 3);
   assert.equal(closedCity[idx('100% оплат новых договоров')], 2);
 });
+
+test('city target and payment fact stay independent of manager-plan and branch attribution totals', () => {
+  const payments = [
+    ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit','PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'],
+    [1,'2026-09-01 10:00:00',101,1,1,'Курс',5000,5000,'[Покупка в ЛК]','', ''],
+    [2,'2026-09-02 10:00:00',999,2,1,'Курс',15000,15000,'Сотрудник не в плане','', '']
+  ];
+  const result = buildRopMorningDashboard({
+    controlValues: CONTROL_VALUES,
+    asOfDate: '2026-09-02',
+    cityPlan: 10000000,
+    paymentValues: payments
+  });
+  const city = result.values.find(row => row[0] === 'СЕГОДНЯ — НА СЕЙЧАС' && row[2] === 'ГОРОД');
+  assert.equal(city[5], 10000000);
+  assert.equal(city[7], 15000);
+  assert.equal(city[8], 20000);
+});
+
+test('missing branch target does not become zero or a false red status when city and personal targets exist', () => {
+  const controlValues = [CONTROL_VALUES[0],
+    ['2026-09-01','Менеджер А','Зарека','','',5000,5000,'',1000000,40000,5000,5000,0.125,1,0,10000,'ПЛАН ФИЛИАЛА НЕ ЗАДАН','КРАСНЫЙ','']
+  ];
+  const paymentValues = [
+    ['Id','PayDate','StudentId','SaleId','ProductId','ProductName','SaleSum','Debit','PaymentEmployeeName','SaleEmployeeName','SaleAttributionStatus'],
+    [1,'2026-09-01 10:00:00',101,1,1,'Курс',5000,5000,'Менеджер А','','']
+  ];
+  const dashboard = buildRopMorningDashboard({controlValues,asOfDate:'2026-09-01',cityPlan:10000000,paymentValues});
+  const city = dashboard.values.find(row => row[2] === 'ГОРОД');
+  const manager = dashboard.values.find(row => row[2] === 'МЕНЕДЖЕР');
+  assert.equal(city[5], 10000000);
+  assert.ok(city[6] > 0);
+  assert.equal(manager[5], '');
+  assert.equal(manager[9], '');
+  assert.equal(manager[17], 'КРАСНЫЙ');
+  assert.equal(manager[21], 'НЕТ ПЛАНА ФИЛИАЛА');
+});

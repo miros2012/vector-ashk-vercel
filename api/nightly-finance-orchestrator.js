@@ -30,7 +30,7 @@ import {
   createManualFinanceRunHandler,
   hasManualFinanceRunToken
 } from '../lib/manual-finance-run-handler.js';
-import { assertRopPlanApproved, ropPlanSheetForMonth } from '../lib/rop-plan-period.js';
+import { assertRopPlanApproved, cityPlanFromValues, ropPlanSheetForMonth } from '../lib/rop-plan-period.js';
 
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const RECEIVABLES_DETAIL_SHEET = 'АШК_Дебиторка__vercel';
@@ -214,6 +214,7 @@ async function fetchFallbackStudents(studentIds) {
 async function persistRopOutputs({
   workbook,
   planValues,
+  paymentValues,
   receivablesValues,
   date,
   month,
@@ -225,7 +226,9 @@ async function persistRopOutputs({
   const morningDashboard = buildRopMorningDashboard({
     controlValues: workbook.controlValues,
     currentMonthContractsValues: workbook.currentMonthContractsValues,
-    asOfDate: date
+    asOfDate: date,
+    cityPlan: cityPlanFromValues(planValues),
+    paymentValues
   });
   const tasksToday = buildRopTasksToday({
     morningValues: morningDashboard.values,
@@ -402,6 +405,7 @@ async function refreshRopFromStaging() {
   return persistRopOutputs({
     workbook,
     planValues,
+    paymentValues,
     receivablesValues,
     date,
     month,
