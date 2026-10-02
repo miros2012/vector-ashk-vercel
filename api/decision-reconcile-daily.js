@@ -73,7 +73,7 @@ async function runDataHealth(req, res) {
         `'${DATA_HEALTH_SHEET}'!A1:H40`,
         `'Точка_API'!A2:P`,
         `'ДДС: месяц'!M5:M30000`,
-        `'Контроль Точка → ДДС'!A5:P3000`,
+        `'Контроль Точка → ДДС'!A5:P`,
         "'__vercel_control'!A1:B1009"
       ],
       valueRenderOption: 'UNFORMATTED_VALUE'

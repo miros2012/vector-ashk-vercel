@@ -33,7 +33,7 @@ function mockSheets() {
       if (range === "'ДДС: месяц'!A7:S2006") return { data: { values: [shiftedArtifact, shiftedArtifact] } };
       if (range === "'ДДС: месяц'!A9:S10") return { data: { values: [] } };
       if (range.includes("'ДДС: месяц'!M5:M30000")) return { data: { values: ddsComments } };
-      if (range.includes("'Журнал Точка → ДДС'!A2:E3000")) return { data: { values: journal } };
+      if (range === "'Журнал Точка → ДДС'!A2:E") return { data: { values: journal } };
       throw new Error(`Unexpected get range: ${range}`);
     },
     update: async payload => {

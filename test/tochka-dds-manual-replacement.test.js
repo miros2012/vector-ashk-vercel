@@ -81,9 +81,9 @@ test('runtime reads persisted replacements and remains a no-op on repeated runs'
     values: {
       get: async ({range}) => { assert.match(range,/__vercel_control/); return {data:{values:[['tochka_dds_import_lock',lease]]}}; },
       batchGet: async ({ranges}) => ({data:{valueRanges:ranges.map(range => {
-        if(range==="'API → ДДС готово'!A1:O3000")return {values:data.readyValues};
-        if(range==="'Контроль Точка → ДДС'!A4:P3000")return {values:data.controlValues};
-        if(range==="'Журнал Точка → ДДС'!A2:E3000")return {values:data.journalValues};
+        if(range==="'API → ДДС готово'!A1:O")return {values:data.readyValues};
+        if(range==="'Контроль Точка → ДДС'!A4:P")return {values:data.controlValues};
+        if(range==="'Журнал Точка → ДДС'!A2:E")return {values:data.journalValues};
         if(range==="'ДДС: месяц'!M5:M30000")return {values:[]};
         if(range==="'ДДС: месяц'!A5:A30000")return {values:[['Сентябрь']]};
         if(range==="'ДДС: месяц'!A10:M10")return {values:[replacement(-100)]};
