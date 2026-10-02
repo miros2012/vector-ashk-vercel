@@ -221,6 +221,21 @@ test('plan leaves explicitly manual-classification bank rows for owner review', 
   assert.deepEqual(plan.eligibleKeys, []);
 });
 
+test('plan ignores explicitly excluded internal transfers without a DDS category', () => {
+  const excluded = importedControlRow({ date: BUSINESS_DATE_SERIAL });
+  excluded[12] = '';
+  excluded[15] = 'Исключено: внутренний перевод';
+  const plan = buildCurrentDayTochkaDdsPlan({
+    readyValues: [HEADER],
+    controlValues: [CONTROL_HEADER, excluded],
+    ddsCommentValues: [],
+    journalValues: [],
+    businessDate: BUSINESS_DATE,
+    now: NOW
+  });
+  assert.deepEqual(plan.eligibleKeys, []);
+});
+
 test('plan fails closed on a malformed or duplicate current-day ready row', () => {
   assert.throws(() => buildCurrentDayTochkaDdsPlan({
     readyValues: [HEADER, readyRow({ amount: 'not-a-number' })],
