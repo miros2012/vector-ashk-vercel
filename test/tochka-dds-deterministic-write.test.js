@@ -25,8 +25,8 @@ test('DDS write is deterministic and anchored to an exact A:M target range', asy
       return {
         data: { valueRanges: [
           { values: [HEADER, ROW] },
-          { values: ddsComments },
-          { values: journal },
+          { values: ddsComments.map(row => [...row]) },
+          { values: journal.map(row => [...row]) },
           { values: [] }
         ] }
       };
