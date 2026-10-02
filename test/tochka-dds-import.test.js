@@ -306,6 +306,7 @@ test('sync writes DDS first, verifies it, then appends and verifies the journal'
   assert.match(mock.calls[1][1], /'ДДС: месяц'!A5:S6/);
   assert.match(mock.calls[2][1], /'ДДС: месяц'!A5:M6/);
   assert.equal(mock.calls[2][2][0].length, 13);
+  assert.equal(mock.calls[3][1], "'ДДС: месяц'!M5:M6");
   assert.match(mock.calls[5][1], /'Журнал Точка → ДДС'!A:E/);
   assert.equal(mock.calls[5][2][0].length, 5);
   assert.equal(mock.calls.filter(call => call[0] === 'append' && call[1].includes('ДДС: месяц')).length, 0);
@@ -349,6 +350,7 @@ test('sync recovers after DDS was written but journal was not', async () => {
 
   assert.equal(result.ddsAppended, 0);
   assert.equal(result.journalAppended, 1);
+  assert.equal(mock.calls.some(call => call[0] === 'get' && call[1] === "'ДДС: месяц'!M5:M30000"), false);
   assert.equal(mock.calls.filter(call => call[0] === 'update' && call[1].includes('ДДС: месяц')).length, 0);
   assert.deepEqual(mock.state.journalValues.map(row => row[0]), [K1]);
   assert.equal(mock.leaseState, 'IDLE');

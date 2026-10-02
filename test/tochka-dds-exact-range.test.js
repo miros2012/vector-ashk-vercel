@@ -35,7 +35,7 @@ function leaseAwareSheets({ targetValues = [] } = {}) {
           if (range === "'ДДС: месяц'!A7:S7") {
             return { data: { values: targetValues.map(row => [...row]) } };
           }
-          if (range.includes("'ДДС: месяц'!M5:M30000")) {
+          if (range === "'ДДС: месяц'!M7:M7") {
             return { data: { values: ddsComments.map(row => [...row]) } };
           }
           if (range === "'Журнал Точка → ДДС'!A2:E") {
