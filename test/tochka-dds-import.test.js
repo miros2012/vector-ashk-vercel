@@ -191,6 +191,36 @@ test('plan catches up valid older ready rows while ignoring malformed old backlo
   ]);
 });
 
+test('plan rejects a bank operation whose computed classification ends before the source data', () => {
+  const unfinished = importedControlRow({ date: BUSINESS_DATE_SERIAL });
+  unfinished[10] = '';
+  unfinished[12] = '';
+  unfinished[15] = '';
+  assert.throws(() => buildCurrentDayTochkaDdsPlan({
+    readyValues: [HEADER],
+    controlValues: [CONTROL_HEADER, unfinished],
+    ddsCommentValues: [],
+    journalValues: [],
+    businessDate: BUSINESS_DATE,
+    now: NOW
+  }), /computed classification missing/i);
+});
+
+test('plan leaves explicitly manual-classification bank rows for owner review', () => {
+  const manual = importedControlRow({ date: BUSINESS_DATE_SERIAL });
+  manual[12] = '';
+  manual[15] = 'Ручная классификация';
+  const plan = buildCurrentDayTochkaDdsPlan({
+    readyValues: [HEADER],
+    controlValues: [CONTROL_HEADER, manual],
+    ddsCommentValues: [],
+    journalValues: [],
+    businessDate: BUSINESS_DATE,
+    now: NOW
+  });
+  assert.deepEqual(plan.eligibleKeys, []);
+});
+
 test('plan fails closed on a malformed or duplicate current-day ready row', () => {
   assert.throws(() => buildCurrentDayTochkaDdsPlan({
     readyValues: [HEADER, readyRow({ amount: 'not-a-number' })],

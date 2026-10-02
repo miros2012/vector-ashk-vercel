@@ -38,7 +38,7 @@ function leaseAwareSheets({ targetValues = [] } = {}) {
           if (range.includes("'ДДС: месяц'!M5:M30000")) {
             return { data: { values: ddsComments.map(row => [...row]) } };
           }
-          if (range.includes("'Журнал Точка → ДДС'!A2:E3000")) {
+          if (range === "'Журнал Точка → ДДС'!A2:E") {
             return { data: { values: journalValues.map(row => [...row]) } };
           }
           throw new Error(`Unexpected get range: ${range}`);
@@ -109,6 +109,8 @@ test('writes current-day DDS rows to an exact A:M range and never appends to DDS
   assert.equal(mock.calls.some(call => call[0] === 'get' && call[1] === "'ДДС: месяц'!A7:S7"), true);
   assert.equal(mock.calls.some(call => call[0] === 'update' && call[1] === "'ДДС: месяц'!A7:M7"), true);
   assert.equal(mock.calls.some(call => call[0] === 'append' && call[1].includes('ДДС: месяц')), false);
+  assert.equal(mock.calls.some(call => call[0] === 'batchGet' && call[1].includes("'Журнал Точка → ДДС'!A2:E")), true);
+  assert.equal(mock.calls.filter(call => call[0] === 'get' && call[1] === "'Журнал Точка → ДДС'!A2:E").length, 2);
   assert.equal(mock.journalValues[0][0], KEY);
   assert.equal(mock.leaseState, 'IDLE');
 });

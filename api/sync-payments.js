@@ -11,7 +11,7 @@ import {
   summarizePaymentEmployeeTotals
 } from '../lib/ashk-payment-employee-source.js';
 import { reconcilePaymentEmployees } from '../lib/payment-employee-reconciliation.js';
-import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
+import { recordVerifiedPaymentSnapshot } from '../lib/payment-sync-metadata.js';
 import { fetchAshkWithRetry } from '../lib/ashk-transient-fetch.js';
 import { authorizeBearer } from '../lib/request-authorization.js';
 import { replaceSheetSnapshotsAtomically } from '../lib/google-sheets-atomic-snapshots.js';
@@ -264,11 +264,11 @@ export default async function handler(req, res) {
     }
 
     const paymentsLastSuccessUtc = new Date().toISOString();
-    await writeControlMarker({
+    await recordVerifiedPaymentSnapshot({
       sheets,
       spreadsheetId: SPREADSHEET_ID,
-      key: 'payments_last_success_utc',
-      value: paymentsLastSuccessUtc
+      metrics: stagingReadback,
+      successUtc: paymentsLastSuccessUtc
     });
 
     const live = await readMetrics(sheets, LIVE_SHEET);

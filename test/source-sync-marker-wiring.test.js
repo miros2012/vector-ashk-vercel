@@ -10,12 +10,11 @@ const financeRoutePath = path.join(here, '..', 'api', 'nightly-finance-orchestra
 
 test('verified payment sync records a real last-success marker on the existing route', () => {
   const source = fs.readFileSync(paymentRoutePath, 'utf8');
-  assert.match(source, /google-sheets-sync-marker\.js/);
-  assert.match(source, /writeControlMarker/);
-  assert.match(source, /payments_last_success_utc/);
+  assert.match(source, /payment-sync-metadata\.js/);
+  assert.match(source, /recordVerifiedPaymentSnapshot/);
   assert.ok(
-    source.indexOf('payments_last_success_utc') > source.indexOf('Payment or sale staging verification failed'),
-    'payment marker must be written only after verified readback'
+    source.indexOf('await recordVerifiedPaymentSnapshot') > source.indexOf('Payment or sale staging verification failed'),
+    'payment metadata must be written only after verified readback'
   );
 });
 

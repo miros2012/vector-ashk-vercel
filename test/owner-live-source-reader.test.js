@@ -20,7 +20,7 @@ const RANGES = Object.freeze({
   obligations: "'Обязательства'!A1:Q500",
   adjustments: "'Корректировки обязательств'!A1:J500",
   accountables: "'Кошельки наличных'!A1:F100",
-  manualBank: "'Контроль Точка → ДДС'!A4:P3000",
+  manualBank: "'Контроль Точка → ДДС'!A4:P",
   drivingFund: "'Фонд вождения'!A21:J30",
   decisions: "'Решения'!A1:V200",
   history: "'История решений'!A1:K1000"
