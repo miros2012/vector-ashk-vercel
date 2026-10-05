@@ -3,6 +3,7 @@ import { buildMasterReportUrl, extractReportRows } from '../lib/master-hours.js'
 import { masterReportPeriodForMonth } from '../lib/hours-sync.js';
 import { createSyncHoursHandler } from '../lib/sync-hours-handler.js';
 import { fetchAshkWithRetry } from '../lib/ashk-transient-fetch.js';
+import { replaceSheetSnapshotsAtomically } from '../lib/google-sheets-atomic-snapshots.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
@@ -121,15 +122,10 @@ function getSheets() {
 async function writeValues(sheetName, range, values, minimumRows, minimumColumns) {
   const sheets = await getSheets();
   await ensureSheet(sheets, sheetName, Math.max(minimumRows, values.length + 10), minimumColumns);
-  await sheets.spreadsheets.values.clear({
+  await replaceSheetSnapshotsAtomically({
+    sheets,
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!${range}`
-  });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values }
+    snapshots: [{ sheetName, columnCount: minimumColumns, values }]
   });
 }
 

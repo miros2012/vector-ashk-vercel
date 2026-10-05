@@ -47,6 +47,15 @@ export async function financeRouteHarness(t, { busy = false, schemaOk = true, so
         return { client: 'sheets', spreadsheets: {
           get: async () => ({ data: { sheets: [] } }), batchUpdate: async () => ({ data: {} }),
           values: {
+            batchGet: async ({ ranges }) => ({ data: { valueRanges: ranges.map(range => ({ values: structuredClone(staging.get(sheetTitle(range)) || []) })) } }),
+            batchUpdate: async ({ requestBody }) => {
+              for (const { range, values } of requestBody.data) {
+                const rows = structuredClone(values);
+                while (rows.length && rows.at(-1).every(value => value === '')) rows.pop();
+                staging.set(sheetTitle(range), rows);
+              }
+              return { data: {} };
+            },
             get: async ({ range }) => ({ data: { values: structuredClone(staging.get(sheetTitle(range)) || []) } }),
             clear: async ({ range }) => { staging.set(sheetTitle(range), []); },
             update: async ({ range, requestBody }) => { staging.set(sheetTitle(range), structuredClone(requestBody.values)); }

@@ -24,6 +24,7 @@ import { buildRopMorningDashboard } from '../lib/rop-morning-dashboard.js';
 import { buildRopDebtorPriority, buildRopTasksToday } from '../lib/rop-tasks-today.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import { boundedGoogleSheetsRequest } from '../lib/google-sheets-lease.js';
+import { replaceSheetSnapshotsAtomically } from '../lib/google-sheets-atomic-snapshots.js';
 import { consumeOneTimeFinanceRunToken } from '../lib/one-time-finance-run-token.js';
 import { createTochkaDdsImportHandler, syncCurrentDayTochkaDds } from '../lib/tochka-dds-import.js';
 import {
@@ -134,15 +135,10 @@ async function ensureSheet(sheets, title, rowCount, columnCount) {
 async function writeValues(sheetName, range, values, columns) {
   const sheets = await getSheets();
   await ensureSheet(sheets, sheetName, Math.max(values.length + 20, 500), columns);
-  await sheets.spreadsheets.values.clear({
+  await replaceSheetSnapshotsAtomically({
+    sheets,
     spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!${range}`
-  });
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `'${sheetName}'!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values }
+    snapshots: [{ sheetName, columnCount: columns, values }]
   });
 }
 

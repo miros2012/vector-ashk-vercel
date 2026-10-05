@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import { createRopPublisher } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
+import { replaceSheetSnapshotsAtomically } from '../lib/google-sheets-atomic-snapshots.js';
 import {
   createTochkaAckRowsReader,
   evaluateTochkaOperationAck,
@@ -160,12 +161,10 @@ async function writeTargetSheet(spreadsheetId, sheetName, values) {
   const sheets = await getSheets();
   const columns = String(RANGES[sheetName] || 'A:A').split(':')[1].charCodeAt(0) - 64;
   await ensureTargetSheet(sheets, spreadsheetId, sheetName, Math.max(values.length + 20, 100), columns);
-  await sheets.spreadsheets.values.clear({ spreadsheetId, range: `'${sheetName}'!${RANGES[sheetName]}` });
-  await sheets.spreadsheets.values.update({
+  await replaceSheetSnapshotsAtomically({
+    sheets,
     spreadsheetId,
-    range: `'${sheetName}'!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values }
+    snapshots: [{ sheetName, columnCount: columns, values }]
   });
   if (sheetName === 'РОП_Дебиторка_Приоритет') {
     await formatDebtorPrioritySheet({ sheets, spreadsheetId, sheetName });
@@ -176,7 +175,11 @@ async function writeTargetSheet(spreadsheetId, sheetName, values) {
     valueRenderOption: 'UNFORMATTED_VALUE'
   });
   const actual = readback.data.values || [];
-  if (actual.length !== values.length || String(actual?.[0]?.[0] || '') !== String(values?.[0]?.[0] || '')) {
+  if (actual.length !== values.length || values.some((row, rowIndex) =>
+    Array.from({ length: columns }, (_, columnIndex) => columnIndex).some(columnIndex =>
+      (actual[rowIndex]?.[columnIndex] ?? '') !== (row[columnIndex] ?? '')
+    )
+  )) {
     throw new Error(`ROP publish verification failed: ${sheetName}`);
   }
 }

@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { firstRequestQueryValue } from '../lib/request-query.js';
+import { authorizeBearer } from '../lib/request-authorization.js';
 const ASHK_BASE_URL='https://app.dscontrol.ru';
 const SPREADSHEET_ID='1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
 const OWNER_SHEET='АШК_Часы_Август';
@@ -10,7 +11,11 @@ function dp(v){const m=String(v??'').trim().match(/^(\d{4}-\d{2}-\d{2})/);return
 function aug(d){return!!d&&d>='2026-08-01'&&d<='2026-08-29';}
 function tok(op){let s=0;for(const t of(Array.isArray(op?.Tokens)?op.Tokens:[])){const n=Number(t?.Amount??0);if(Number.isFinite(n)&&n<0)s+=-n;}return s;}
 async function fetchOps(owner){const r=await fetch(`${ASHK_BASE_URL}/api/DriveWalletOperationList?OwnerId=${encodeURIComponent(owner)}`,{headers:{api_key:process.env.ASHK_API_KEY,'X-Requested-With':'XMLHttpRequest','Content-Type':'application/json'}});const text=await r.text();if(!r.ok)throw new Error(`HTTP ${r.status}`);const j=JSON.parse(text);if(j?.success===false)throw new Error('ASHK fail');return asArray(j);}
-export default async function handler(req,res){try{
+export default async function handler(req,res){
+ res.setHeader('Cache-Control','no-store');
+ if(req.method!=='GET')return res.status(405).json({ok:false,error:'Method not allowed'});
+ if(!authorizeBearer(req,process.env.CRON_SECRET))return res.status(403).json({ok:false,error:'forbidden'});
+ try{
  const sheets=await sheetsClient();
  const rr=await sheets.spreadsheets.values.get({spreadsheetId:SPREADSHEET_ID,range:`'${OWNER_SHEET}'!A2:A3008`});
  const owners=[...new Set((rr.data.values||[]).map(r=>String(r?.[0]??'').trim()).filter(Boolean))];
