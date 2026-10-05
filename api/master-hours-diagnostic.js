@@ -6,6 +6,7 @@ import {
 import financeHandler from './nightly-finance-orchestrator.js';
 import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
 import { createGitHubFinanceSyncHandler } from '../lib/github-finance-sync.js';
+import { authorizeBearer } from '../lib/request-authorization.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const START_DATE = '2026-08-01T00:00:00';
@@ -71,6 +72,9 @@ export default async function handler(req, res) {
 
   if (req.method !== 'GET') {
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  }
+  if (!authorizeBearer(req, process.env.CRON_SECRET)) {
+    return res.status(403).json({ ok: false, error: 'forbidden' });
   }
   if (!process.env.ASHK_API_KEY) {
     return res.status(500).json({ ok: false, error: 'ASHK integration is not configured' });

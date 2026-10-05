@@ -39,6 +39,19 @@ export async function financeSourceRouteHarness(t, { initialContracts = [], cont
       return { data: {} };
     },
     values: {
+      batchGet: async ({ ranges }) => ({ data: { valueRanges: ranges.map(range => ({ values: structuredClone(tables.get(title(range)) || []) })) } }),
+      batchUpdate: async ({ requestBody }) => {
+        for (const { range, values } of requestBody.data) {
+          const name = title(range);
+          events.push(`write:${name}`);
+          if (name === CONTRACT_SHEET && contractFault === 'write') throw new Error('PRIVATE_WRITE');
+          const rows = structuredClone(values);
+          while (rows.length && rows.at(-1).every(value => value === '')) rows.pop();
+          tables.set(name, rows);
+          if (name === CONTRACT_SHEET) contractWritten = true;
+        }
+        return { data: {} };
+      },
       clear: async ({ range }) => { tables.set(title(range), []); },
       update: async ({ range, requestBody }) => {
         const name = title(range);
