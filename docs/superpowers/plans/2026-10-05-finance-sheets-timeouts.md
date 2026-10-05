@@ -31,6 +31,7 @@
 
 **Files:**
 - Modify: `lib/google-sheets-atomic-snapshots.js`, `lib/google-sheets-sync-marker.js`, `lib/rop-debtor-format.js`
+- Review correction: `lib/google-sheets-lease.js` timeout must carry stable `code: ETIMEDOUT` and existing retryable `errorClass: TIME_BUDGET` so real hours/ROP consumers schedule recovery rather than declaring a permanent build failure.
 - Modify: `api/sync-hours.js`, `api/nightly-finance-orchestrator.js`, ROP/marker paths in `api/health.js`
 - Test: `test/google-sheets-atomic-snapshots.test.js`, `test/finance-snapshot-write-safety.test.js`, `test/finance-support-request-timeouts.test.js`
 
@@ -42,7 +43,11 @@
 - [x] **Step 2: Run tests and verify missing bounded behavior fails.** `node --test test/google-sheets-atomic-snapshots.test.js test/finance-snapshot-write-safety.test.js test/finance-support-request-timeouts.test.js`; expected newly added tests FAIL for missing timeout/options/retry recovery, old tests PASS.
 - [x] **Step 3: Wrap each affected Google request in the existing helper.** No financial algorithm changes. Preserve Google payloads; reset failed cached auth promises in hours and ROP clients.
 - [x] **Step 4: Run targeted tests then `npm test`.** Expected all PASS, no unreported failures. Full suite may require local network permission for loopback fixtures; no production I/O.
-- [ ] **Step 5: Commit the verified change.** `git add` only named implementation/test/plan files; `git commit -m "fix(finance): bound snapshot publication requests"`.
+- [x] **Step 5: Commit the verified change.** `git add` only named implementation/test/plan files; `git commit -m "fix(finance): bound snapshot publication requests"`.
+
+## Independent review correction
+
+Two Important findings from fresh read-only review: plain timer errors were mapped to permanent `HOURS_SYNC_FAILED` / `ROP_BUILD`. Three real-boundary regressions reproduced this (5 pass / 3 fail): timer discriminator, hours handler through three finance-cycle attempts, ROP source timeout through publisher and retry scheduler. Minimal fix is typed timer error; no change to authentic build/validation errors, retry limits or schedules.
 
 ## Execution and release
 
