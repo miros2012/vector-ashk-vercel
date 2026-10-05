@@ -95,24 +95,24 @@ async function getSheets() {
 }
 
 async function ensureSheet(sheets, title, rowCount, columnCount) {
-  const metadata = await sheets.spreadsheets.get({
+  const metadata = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
     fields: 'sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))'
-  });
+  }, options), undefined, 'finance-source-metadata');
   const existing = (metadata.data.sheets || []).find(sheet => sheet.properties?.title === title);
   if (!existing) {
-    await sheets.spreadsheets.batchUpdate({
+    await boundedGoogleSheetsRequest(options => sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
         requests: [{ addSheet: { properties: { title, gridProperties: { rowCount, columnCount } } } }]
       }
-    });
+    }, options), undefined, 'finance-source-create-sheet');
     return;
   }
   const currentRows = Number(existing.properties?.gridProperties?.rowCount || 0);
   const currentColumns = Number(existing.properties?.gridProperties?.columnCount || 0);
   if (currentRows < rowCount || currentColumns < columnCount) {
-    await sheets.spreadsheets.batchUpdate({
+    await boundedGoogleSheetsRequest(options => sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
         requests: [{
@@ -128,7 +128,7 @@ async function ensureSheet(sheets, title, rowCount, columnCount) {
           }
         }]
       }
-    });
+    }, options), undefined, 'finance-source-resize-sheet');
   }
 }
 
@@ -144,11 +144,11 @@ async function writeValues(sheetName, range, values, columns) {
 
 async function readValues(sheetName, range) {
   const sheets = await getSheets();
-  const result = await sheets.spreadsheets.values.get({
+  const result = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `'${sheetName}'!${range}`,
     valueRenderOption: 'UNFORMATTED_VALUE'
-  });
+  }, options), undefined, 'finance-source-readback');
   return result.data.values || [];
 }
 

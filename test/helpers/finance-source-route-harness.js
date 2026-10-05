@@ -8,9 +8,10 @@ export const CONTRACT_HEADERS = ['StudentId', 'Дата договора', 'Фи
 
 // Only external I/O is replaced. Source handler, contract/ROP builders, publisher
 // boundary, marker writer, and route functions remain real.
-export async function financeSourceRouteHarness(t, { initialContracts = [], contractFault = '', publishFails = false, zeroContracts = false } = {}) {
+export async function financeSourceRouteHarness(t, { initialContracts = [], contractFault = '', publishFails = false, zeroContracts = false, requestTimeoutMs } = {}) {
   const key = `sourceRoute${++sequence}`;
   const events = [];
+  const requests = [];
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Yekaterinburg', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
   const part = type => parts.find(value => value.type === type).value;
   const month = `${part('year')}-${part('month')}`;
@@ -67,6 +68,7 @@ export async function financeSourceRouteHarness(t, { initialContracts = [], cont
         const name = title(range);
         events.push(`read:${name}`);
         if (name === CONTRACT_SHEET && contractWritten && contractFault === 'read') throw new Error('PRIVATE_READ');
+        if (name === CONTRACT_SHEET && contractWritten && contractFault === 'stall-read') return new Promise(() => {});
         const rows = structuredClone(tables.get(name) || []);
         if (name === CONTRACT_SHEET && contractWritten && contractFault === 'mismatch' && rows[1]) rows[1][7] = 999;
         if (name === 'РОП_Задачи_Сегодня' && rows.length) {
@@ -79,6 +81,12 @@ export async function financeSourceRouteHarness(t, { initialContracts = [], cont
       append: async ({ range, requestBody }) => { tables.get(title(range)).push(...structuredClone(requestBody.values)); return { data: {} }; }
     }
   } };
+  for (const [group, names] of [[sheets.spreadsheets, ['get', 'batchUpdate']], [sheets.spreadsheets.values, ['get', 'batchGet', 'batchUpdate', 'update', 'append']]]) {
+    for (const name of names) {
+      const original = group[name];
+      group[name] = (args, options) => { requests.push({ name, args, options }); return original(args); };
+    }
+  }
   const fixture = {
     google: { auth: { JWT: class { async authorize() {} } }, sheets: () => sheets },
     source: () => ({ fetchCurrent: async () => { events.push('fetch'); return payload; }, fetchStudent: async () => { throw new Error('Unexpected refetch'); } }),
@@ -91,6 +99,10 @@ export async function financeSourceRouteHarness(t, { initialContracts = [], cont
     '../lib/ashk-receivables-source.js': 'export const createAshkReceivablesSource = f.source;',
     './health.js': 'export const publishRopNow = f.publish;'
   };
+  if (requestTimeoutMs !== undefined) {
+    const leaseUrl = new URL('../../lib/google-sheets-lease.js', import.meta.url).href;
+    modules['../lib/google-sheets-lease.js'] = `export * from ${JSON.stringify(leaseUrl)}; import { boundedGoogleSheetsRequest as actual } from ${JSON.stringify(leaseUrl)}; export const boundedGoogleSheetsRequest = (execute, timeout, phase) => actual(execute, ${Number(requestTimeoutMs)}, phase);`;
+  }
   const hooks = registerHooks({ resolve(specifier, context, next) {
     if (context.parentURL === url && modules[specifier]) return { url: `data:text/javascript,${encodeURIComponent(`const f = globalThis[${JSON.stringify(key)}]; ${modules[specifier]}`)}`, shortCircuit: true };
     return next(specifier, context);
@@ -102,5 +114,5 @@ export async function financeSourceRouteHarness(t, { initialContracts = [], cont
     hooks.deregister(); delete globalThis[key];
     for (const name of names) if (previous[name] === undefined) delete process.env[name]; else process.env[name] = previous[name];
   });
-  return { route: await import(url), tables, events, payload, date, month };
+  return { route: await import(url), tables, events, requests, payload, date, month };
 }

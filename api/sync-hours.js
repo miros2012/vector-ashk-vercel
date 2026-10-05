@@ -4,6 +4,7 @@ import { masterReportPeriodForMonth } from '../lib/hours-sync.js';
 import { createSyncHoursHandler } from '../lib/sync-hours-handler.js';
 import { fetchAshkWithRetry } from '../lib/ashk-transient-fetch.js';
 import { replaceSheetSnapshotsAtomically } from '../lib/google-sheets-atomic-snapshots.js';
+import { boundedGoogleSheetsRequest } from '../lib/google-sheets-lease.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
 const SPREADSHEET_ID = '1HuTTbdJ2kmnjMH14O0OQZHQBGsOsBtCPXqT--nngD10';
@@ -32,18 +33,18 @@ async function sheetsClient() {
     key: privateKey(),
     scopes: ['https://www.googleapis.com/auth/spreadsheets']
   });
-  await auth.authorize();
+  await boundedGoogleSheetsRequest(() => auth.authorize(), undefined, 'hours-auth');
   return google.sheets({ version: 'v4', auth });
 }
 
 async function ensureSheet(sheets, title, rowCount, columnCount) {
-  const metadata = await sheets.spreadsheets.get({
+  const metadata = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.get({
     spreadsheetId: SPREADSHEET_ID,
     fields: 'sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))'
-  });
+  }, options), undefined, 'hours-metadata');
   const existing = (metadata.data.sheets || []).find((sheet) => sheet.properties?.title === title);
   if (!existing) {
-    await sheets.spreadsheets.batchUpdate({
+    await boundedGoogleSheetsRequest(options => sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
         requests: [{
@@ -52,13 +53,13 @@ async function ensureSheet(sheets, title, rowCount, columnCount) {
           }
         }]
       }
-    });
+    }, options), undefined, 'hours-create-sheet');
     return;
   }
   const currentRows = Number(existing.properties?.gridProperties?.rowCount || 0);
   const currentColumns = Number(existing.properties?.gridProperties?.columnCount || 0);
   if (currentRows < rowCount || currentColumns < columnCount) {
-    await sheets.spreadsheets.batchUpdate({
+    await boundedGoogleSheetsRequest(options => sheets.spreadsheets.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: {
         requests: [{
@@ -74,7 +75,7 @@ async function ensureSheet(sheets, title, rowCount, columnCount) {
           }
         }]
       }
-    });
+    }, options), undefined, 'hours-resize-sheet');
   }
 }
 
@@ -114,9 +115,14 @@ async function fetchReport(month) {
 }
 
 let clientPromise;
-function getSheets() {
+async function getSheets() {
   clientPromise ||= sheetsClient();
-  return clientPromise;
+  try {
+    return await clientPromise;
+  } catch (error) {
+    clientPromise = undefined;
+    throw error;
+  }
 }
 
 async function writeValues(sheetName, range, values, minimumRows, minimumColumns) {
@@ -131,11 +137,11 @@ async function writeValues(sheetName, range, values, minimumRows, minimumColumns
 
 async function readValues(sheetName, range) {
   const sheets = await getSheets();
-  const result = await sheets.spreadsheets.values.get({
+  const result = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `'${sheetName}'!${range}`,
     valueRenderOption: 'UNFORMATTED_VALUE'
-  });
+  }, options), undefined, 'hours-readback');
   return result.data.values || [];
 }
 
