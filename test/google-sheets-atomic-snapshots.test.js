@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { replaceSheetSnapshotsAtomically } from '../lib/google-sheets-atomic-snapshots.js';
+import { expectBoundedFailure } from './helpers/bounded-failure.js';
 
 test('replaces multiple snapshots in one fixed-width padded batch', async () => {
   const calls = { reads: [], writes: [] };
@@ -94,4 +95,36 @@ test('a failed batch leaves both previously published snapshots intact', async (
   assert.deepEqual(state.sales, [['old-sales-header'], ['old-sale']]);
   assert.equal(batchAttempts, 1);
   assert.equal(sequentialWrites, 0);
+});
+
+for (const phase of ['snapshot-read', 'snapshot-write']) {
+  test(`${phase}: a stalled snapshot request fails without continuing or replaying`, async () => {
+    let writes = 0;
+    const sheets = { spreadsheets: { values: {
+      batchGet: async () => phase === 'snapshot-read'
+        ? new Promise(() => {}) : { data: { valueRanges: [] } },
+      batchUpdate: async () => { writes++; return new Promise(() => {}); }
+    } } };
+    await expectBoundedFailure(replaceSheetSnapshotsAtomically({
+      sheets, spreadsheetId: 'book', requestTimeoutMs: 20,
+      snapshots: [{ sheetName: 'Payments', columnCount: 2, values: [['h', 'amount']] }]
+    }), phase);
+    assert.equal(writes, phase === 'snapshot-read' ? 0 : 1);
+  });
+}
+
+test('header-only snapshot clears stale rows in a single bounded batch', async () => {
+  let payload;
+  const optionsSeen = [];
+  const sheets = { spreadsheets: { values: {
+    batchGet: async (_, options) => {
+      optionsSeen.push(options);
+      return { data: { valueRanges: [{ values: [['h', 'amount'], ['old', 9], ['tail', 2]] }] } };
+    },
+    batchUpdate: async (args, options) => { payload = args; optionsSeen.push(options); }
+  } } };
+  await replaceSheetSnapshotsAtomically({ sheets, spreadsheetId: 'book', requestTimeoutMs: 20,
+    snapshots: [{ sheetName: 'Payments', columnCount: 2, values: [['h', 'amount']] }] });
+  assert.deepEqual(payload.requestBody.data, [{ range: "'Payments'!A1:B3", values: [['h', 'amount'], ['', ''], ['', '']] }]);
+  assert.deepEqual(optionsSeen, [{ timeout: 20, retry: false }, { timeout: 20, retry: false }]);
 });

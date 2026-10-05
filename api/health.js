@@ -5,6 +5,7 @@ import { createRopPublisher } from '../lib/rop-publisher.js';
 import { formatDebtorPrioritySheet } from '../lib/rop-debtor-format.js';
 import { writeControlMarker } from '../lib/google-sheets-sync-marker.js';
 import { replaceSheetSnapshotsAtomically } from '../lib/google-sheets-atomic-snapshots.js';
+import { boundedGoogleSheetsRequest } from '../lib/google-sheets-lease.js';
 import {
   createTochkaAckRowsReader,
   evaluateTochkaOperationAck,
@@ -75,48 +76,53 @@ async function getSheets() {
         key: privateKey(),
         scopes: ['https://www.googleapis.com/auth/spreadsheets']
       });
-      await auth.authorize();
+      await boundedGoogleSheetsRequest(() => auth.authorize(), undefined, 'rop-auth');
       return google.sheets({ version: 'v4', auth });
     })();
   }
-  return sheetsPromise;
+  try {
+    return await sheetsPromise;
+  } catch (error) {
+    sheetsPromise = undefined;
+    throw error;
+  }
 }
 
 const readTochkaAckRows=createTochkaAckRowsReader({load:async()=>{
   const sheets=await getSheets();
-  const response=await sheets.spreadsheets.values.get({
+  const response=await boundedGoogleSheetsRequest(options => sheets.spreadsheets.values.get({
     spreadsheetId:SOURCE_SPREADSHEET_ID,
     range:"'Точка_API'!M2:N",
     valueRenderOption:'UNFORMATTED_VALUE'
-  });
+  }, options), undefined, 'tochka-ack-read');
   return response.data.values||[];
 }});
 
 async function readSourceSheet(sheetName) {
   const sheets = await getSheets();
-  const result = await sheets.spreadsheets.values.get({
+  const result = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.values.get({
     spreadsheetId: SOURCE_SPREADSHEET_ID,
     range: `'${sheetName}'!${RANGES[sheetName]}`,
     valueRenderOption: 'UNFORMATTED_VALUE'
-  });
+  }, options), undefined, 'rop-source-read');
   return result.data.values || [];
 }
 
 async function readTargetSheet(spreadsheetId, sheetName) {
   const sheets = await getSheets();
-  const result = await sheets.spreadsheets.values.get({
+  const result = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `'${sheetName}'!${RANGES[sheetName]}`,
     valueRenderOption: 'UNFORMATTED_VALUE'
-  });
+  }, options), undefined, 'rop-target-read');
   return result.data.values || [];
 }
 
 async function ensureTargetSheet(sheets, spreadsheetId, sheetName, rowCount, columnCount) {
-  const metadata = await sheets.spreadsheets.get({
+  const metadata = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.get({
     spreadsheetId,
     fields: 'sheets.properties(sheetId,title,gridProperties(rowCount,columnCount))'
-  });
+  }, options), undefined, 'rop-target-metadata');
   const existing = (metadata.data.sheets || []).find(sheet => sheet.properties?.title === sheetName);
   if (!existing) {
     const addSheetRequest = {
@@ -127,16 +133,16 @@ async function ensureTargetSheet(sheets, spreadsheetId, sheetName, rowCount, col
         }
       }
     };
-    await sheets.spreadsheets.batchUpdate({
+    await boundedGoogleSheetsRequest(options => sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: { requests: [addSheetRequest] }
-    });
+    }, options), undefined, 'rop-target-create-sheet');
     return;
   }
   const rows = Number(existing.properties?.gridProperties?.rowCount || 0);
   const columns = Number(existing.properties?.gridProperties?.columnCount || 0);
   if (rows < rowCount || columns < columnCount) {
-    await sheets.spreadsheets.batchUpdate({
+    await boundedGoogleSheetsRequest(options => sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
         requests: [{
@@ -153,7 +159,7 @@ async function ensureTargetSheet(sheets, spreadsheetId, sheetName, rowCount, col
           }
         }]
       }
-    });
+    }, options), undefined, 'rop-target-resize-sheet');
   }
 }
 
@@ -169,11 +175,11 @@ async function writeTargetSheet(spreadsheetId, sheetName, values) {
   if (sheetName === 'РОП_Дебиторка_Приоритет') {
     await formatDebtorPrioritySheet({ sheets, spreadsheetId, sheetName });
   }
-  const readback = await sheets.spreadsheets.values.get({
+  const readback = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.values.get({
     spreadsheetId,
     range: `'${sheetName}'!${RANGES[sheetName]}`,
     valueRenderOption: 'UNFORMATTED_VALUE'
-  });
+  }, options), undefined, 'rop-target-readback');
   const actual = readback.data.values || [];
   if (actual.length !== values.length || values.some((row, rowIndex) =>
     Array.from({ length: columns }, (_, columnIndex) => columnIndex).some(columnIndex =>
@@ -225,11 +231,11 @@ function sameSha256Hex(actual, expected) {
 }
 
 async function readControlMarker(sheets, key) {
-  const response = await sheets.spreadsheets.values.get({
+  const response = await boundedGoogleSheetsRequest(options => sheets.spreadsheets.values.get({
     spreadsheetId: SOURCE_SPREADSHEET_ID,
     range: `'${CONTROL_SHEET}'!A:B`,
     valueRenderOption: 'UNFORMATTED_VALUE'
-  });
+  }, options), undefined, 'bridge-marker-read');
   const rows = response.data.values || [];
   const row = rows.find(item => String(item?.[0] || '').trim() === key);
   return String(row?.[1] || '').trim();
