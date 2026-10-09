@@ -47,7 +47,10 @@ test('historical sale archive keeps immutable facts, deduplicates identical IDs 
 
   assert.deepEqual(requests, [{
     path: '/api/SaleList',
-    params: { Period: 'Custom', StartDate: '2026-09-01', EndDate: '2026-09-30', IncludeWalletSales: false }
+    params: {
+      Period: 'Custom', StartDate: '2026-09-01', EndDate: '2026-09-30',
+      IncludeWalletSales: false, start: 0, count: 500
+    }
   }]);
   assert.deepEqual(archive.summary, {
     sourceRows: 3,
@@ -60,6 +63,28 @@ test('historical sale archive keeps immutable facts, deduplicates identical IDs 
   });
   assert.deepEqual(archive.sales.map(item => item.Id), ['sale-1', 'sale-2']);
   assert.match(archive.sha256, /^[a-f0-9]{64}$/);
+});
+
+test('historical sale archive paginates to a stable trustworthy total_count', async () => {
+  const requests = [];
+  const pages = [
+    { total_count: 3, data: [sale({ Id: 'sale-1' }), sale({ Id: 'sale-2' })] },
+    { total_count: 3, data: [sale({ Id: 'sale-3' })] }
+  ];
+  const archive = await buildAshkSaleArchive({
+    ...period,
+    pageSize: 2,
+    session: {
+      async requestJson(path, params) {
+        requests.push({ path, params });
+        return pages.shift();
+      }
+    }
+  });
+
+  assert.deepEqual(requests.map(call => call.params.start), [0, 2]);
+  assert.equal(archive.summary.sourceRows, 3);
+  assert.equal(archive.summary.rows, 3);
 });
 
 test('historical sale archive fails closed on conflicting IDs, incomplete count and out-of-period rows', async () => {
@@ -78,11 +103,53 @@ test('historical sale archive fails closed on conflicting IDs, incomplete count 
   }
 });
 
+test('historical sale archive rejects missing, malformed, negative and changing total_count', async () => {
+  for (const response of [
+    { data: [sale()] },
+    { total_count: 'unknown', data: [sale()] },
+    { total_count: -1, data: [sale()] }
+  ]) {
+    await assert.rejects(
+      buildAshkSaleArchive({
+        ...period,
+        session: { async requestJson() { return response; } }
+      }),
+      /trustworthy total_count/
+    );
+  }
+
+  let page = 0;
+  await assert.rejects(
+    buildAshkSaleArchive({
+      ...period,
+      pageSize: 1,
+      session: {
+        async requestJson() {
+          page += 1;
+          return page === 1
+            ? { total_count: 2, data: [sale({ Id: 'sale-1' })] }
+            : { total_count: 3, data: [sale({ Id: 'sale-2' })] };
+        }
+      }
+    }),
+    /total_count changed/
+  );
+});
+
+test('historical sale archive rejects malformed timestamps with valid date prefixes', () => {
+  for (const Date of ['2026-09-01garbage', '2026-09-01T25:00:00', '2026-09-31T08:00:00']) {
+    assert.throws(
+      () => createAshkSaleArchiveEvidence({ period, sourceRows: 1, sales: [sale({ Date })] }),
+      /invalid Date/
+    );
+  }
+});
+
 test('historical sale archive rejects missing money and verifier detects tampering', async () => {
   await assert.rejects(
     buildAshkSaleArchive({
       ...period,
-      session: { async requestJson() { return { data: [sale({ Paid: undefined })] }; } }
+      session: { async requestJson() { return { total_count: 1, data: [sale({ Paid: undefined })] }; } }
     }),
     /invalid sale money fact/
   );
