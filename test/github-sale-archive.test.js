@@ -92,6 +92,14 @@ test('sale archive source failures expose only a bounded diagnostic code', async
     'SOURCE_TOTAL_COUNT'
   );
   assert.equal(
+    saleArchiveFailureCode(new Error('invalid sale money fact Sum for ASHK sale 1')),
+    'SOURCE_MONEY_SUM'
+  );
+  assert.equal(
+    saleArchiveFailureCode(new Error('invalid sale money fact Paid for ASHK sale 1')),
+    'SOURCE_MONEY_PAID'
+  );
+  assert.equal(
     saleArchiveFailureCode(new Error('ASHK login failed: secret-response-body')),
     'SOURCE_AUTH'
   );
