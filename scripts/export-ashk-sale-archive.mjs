@@ -6,6 +6,17 @@ import { verifyAshkSaleArchive } from '../lib/ashk-sale-archive.js';
 
 const OIDC_AUDIENCE = 'vector-finance-sync-v1';
 export const SALE_ARCHIVE_CLIENT_TIMEOUT_MS = 250_000;
+const SAFE_FAILURE_CODES = new Set([
+  'SOURCE_AUTH',
+  'SOURCE_TOTAL_COUNT',
+  'SOURCE_TOTAL_COUNT_CHANGED',
+  'SOURCE_INCOMPLETE',
+  'SOURCE_MONEY',
+  'SOURCE_DATE',
+  'SOURCE_SHAPE',
+  'SOURCE_HTTP',
+  'SOURCE_UNKNOWN'
+]);
 
 function requiredEnvironment(env, name) {
   const value = String(env?.[name] || '').trim();
@@ -55,7 +66,8 @@ export async function exportAshkSaleArchive({
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body?.ok !== true || body?.mode !== 'read_only_sale_archive') {
-    throw new Error(`sale archive request failed: ${response.status}`);
+    const code = SAFE_FAILURE_CODES.has(String(body?.code || '')) ? ` (${body.code})` : '';
+    throw new Error(`sale archive request failed: ${response.status}${code}`);
   }
   const verified = verifyAshkSaleArchive(body);
   const archive = { ok: true, mode: 'read_only_sale_archive', ...verified };

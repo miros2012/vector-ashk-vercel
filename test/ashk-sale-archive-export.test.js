@@ -78,3 +78,59 @@ test('sale archive exporter refuses altered evidence before encryption', async (
   }), /sale archive evidence mismatch/);
   assert.equal(writes, 0);
 });
+
+test('sale archive exporter reports the bounded server failure code', async () => {
+  await assert.rejects(exportAshkSaleArchive({
+    env: {
+      ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.invalid/token', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'secret',
+      SALE_ARCHIVE_ENDPOINT: 'https://backend.invalid/archive', ARCHIVE_START_DATE: '2026-09-01',
+      ARCHIVE_END_DATE: '2026-09-30', ARCHIVE_OUTPUT_PATH: '/tmp/sales.enc.json',
+      ARCHIVE_PUBLIC_KEY_PATH: '/repo/public.pem'
+    },
+    fetchFn: async url => String(url).startsWith('https://oidc.invalid')
+      ? { ok: true, status: 200, async json() { return { value: 'oidc' }; } }
+      : {
+          ok: false, status: 502,
+          async json() { return { ok: false, error: 'sale archive source failed', code: 'SOURCE_TOTAL_COUNT' }; }
+        },
+    readFile: async () => 'unused',
+    writeFile: async () => {},
+    logger: { log() {} }
+  }), /sale archive request failed: 502 \(SOURCE_TOTAL_COUNT\)/);
+});
+
+test('sale archive exporter never reflects an untrusted server failure payload', async () => {
+  let failure;
+  try {
+    await exportAshkSaleArchive({
+      env: {
+        ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.invalid/token', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'secret',
+        SALE_ARCHIVE_ENDPOINT: 'https://backend.invalid/archive', ARCHIVE_START_DATE: '2026-09-01',
+        ARCHIVE_END_DATE: '2026-09-30', ARCHIVE_OUTPUT_PATH: '/tmp/sales.enc.json',
+        ARCHIVE_PUBLIC_KEY_PATH: '/repo/public.pem'
+      },
+      fetchFn: async url => String(url).startsWith('https://oidc.invalid')
+        ? { ok: true, status: 200, async json() { return { value: 'oidc' }; } }
+        : {
+            ok: false, status: 502,
+            async json() {
+              return {
+                ok: false,
+                code: 'PRIVATE_PASSWORD_VALUE',
+                error: 'student 1 paid 5000 with private credential'
+              };
+            }
+          },
+      readFile: async () => 'unused',
+      writeFile: async () => {},
+      logger: { log() {} }
+    });
+  } catch (error) {
+    failure = error;
+  }
+  assert.equal(failure?.message, 'sale archive request failed: 502');
+  assert.equal(failure.message.includes('PRIVATE_PASSWORD_VALUE'), false);
+  assert.equal(failure.message.includes('student'), false);
+  assert.equal(failure.message.includes('5000'), false);
+  assert.equal(failure.message.includes('credential'), false);
+});

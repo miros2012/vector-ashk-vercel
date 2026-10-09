@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   authorizeSaleArchiveClaims,
-  createGitHubSaleArchiveHandler
+  createGitHubSaleArchiveHandler,
+  saleArchiveFailureCode
 } from '../lib/github-sale-archive.js';
 
 const CLAIMS = Object.freeze({
@@ -83,4 +84,38 @@ test('invalid sale archive identity cannot reach ASHK credentials', async () => 
   }, res);
   assert.equal(res.statusCode, 403);
   assert.equal(sessions, 0);
+});
+
+test('sale archive source failures expose only a bounded diagnostic code', async () => {
+  assert.equal(
+    saleArchiveFailureCode(new Error('ASHK sale archive response has no trustworthy total_count')),
+    'SOURCE_TOTAL_COUNT'
+  );
+  assert.equal(
+    saleArchiveFailureCode(new Error('ASHK login failed: secret-response-body')),
+    'SOURCE_AUTH'
+  );
+  assert.equal(saleArchiveFailureCode(new Error('unexpected secret value')), 'SOURCE_UNKNOWN');
+
+  const handler = createGitHubSaleArchiveHandler({
+    verifyToken: async () => CLAIMS,
+    login: 'private-login', password: 'private-password',
+    createSession: () => ({ requestJson() {} }),
+    buildArchive: async () => {
+      throw new Error('ASHK sale archive response has no trustworthy total_count: private-value');
+    }
+  });
+  const res = responseRecorder();
+  await handler({
+    method: 'POST', headers: { authorization: 'Bearer oidc' },
+    body: { mode: 'sale_archive', startDate: '2026-09-01', endDate: '2026-09-30' }
+  }, res);
+
+  assert.equal(res.statusCode, 502);
+  assert.deepEqual(res.body, {
+    ok: false,
+    error: 'sale archive source failed',
+    code: 'SOURCE_TOTAL_COUNT'
+  });
+  assert.equal(JSON.stringify(res.body).includes('private-value'), false);
 });
