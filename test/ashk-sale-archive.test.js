@@ -58,6 +58,8 @@ test('historical sale archive keeps immutable facts, deduplicates identical IDs 
     sum: 12000,
     paid: 10000,
     unpaid: 2000,
+    paidKnownRows: 2,
+    paidMissingRows: 0,
     firstSaleDate: '2026-09-01T08:00:00',
     lastSaleDate: '2026-09-30T23:59:59'
   });
@@ -145,14 +147,56 @@ test('historical sale archive rejects malformed timestamps with valid date prefi
   }
 });
 
-test('historical sale archive rejects missing money and verifier detects tampering', async () => {
+test('historical sale archive preserves missing Paid as unavailable without inventing zero', async () => {
+  const archive = await buildAshkSaleArchive({
+    ...period,
+    session: {
+      async requestJson() {
+        return {
+          total_count: 2,
+          data: [sale({ Id: 'paid', Paid: 3000 }), sale({ Id: 'unpaid-unknown', Paid: null })]
+        };
+      }
+    }
+  });
+  assert.equal(archive.sales.find(item => item.Id === 'unpaid-unknown').Paid, null);
+  assert.deepEqual(archive.summary, {
+    sourceRows: 2,
+    rows: 2,
+    sum: 10000,
+    paid: 3000,
+    unpaid: null,
+    paidKnownRows: 1,
+    paidMissingRows: 1,
+    firstSaleDate: '2026-09-01T08:00:00',
+    lastSaleDate: '2026-09-01T08:00:00'
+  });
+});
+
+test('historical sale archive rejects missing Sum or malformed Paid and verifier detects tampering', async () => {
   await assert.rejects(
     buildAshkSaleArchive({
       ...period,
-      session: { async requestJson() { return { total_count: 1, data: [sale({ Paid: undefined })] }; } }
+      session: { async requestJson() { return { total_count: 1, data: [sale({ Sum: undefined })] }; } }
     }),
     /invalid sale money fact/
   );
+  await assert.rejects(
+    buildAshkSaleArchive({
+      ...period,
+      session: { async requestJson() { return { total_count: 1, data: [sale({ Paid: 'not-money' })] }; } }
+    }),
+    /invalid sale money fact Paid/
+  );
+  for (const Paid of [[], {}, false, true]) {
+    await assert.rejects(
+      buildAshkSaleArchive({
+        ...period,
+        session: { async requestJson() { return { total_count: 1, data: [sale({ Paid })] }; } }
+      }),
+      /invalid sale money fact Paid/
+    );
+  }
 
   const evidence = createAshkSaleArchiveEvidence({
     period: validateAshkSaleArchivePeriod(period),
