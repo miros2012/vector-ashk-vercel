@@ -3,9 +3,9 @@ import {
   extractReportRows,
   summarizeMasterHours
 } from '../lib/master-hours.js';
-import financeHandler from './nightly-finance-orchestrator.js';
 import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
 import { createGitHubFinanceSyncHandler } from '../lib/github-finance-sync.js';
+import { createGitHubPaymentArchiveHandler } from '../lib/github-payment-archive.js';
 import { authorizeBearer } from '../lib/request-authorization.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
@@ -50,52 +50,74 @@ async function getReport(buildMode) {
   };
 }
 
+async function runFinanceHandler(req, res) {
+  const { default: financeHandler } = await import('./nightly-finance-orchestrator.js');
+  return financeHandler(req, res);
+}
+
 const githubFinanceSyncHandler = createGitHubFinanceSyncHandler({
   verifyToken: verifyGitHubActionsOidcToken,
   cronSecret: process.env.CRON_SECRET || '',
-  runIntraday: financeHandler,
-  runRecovery: financeHandler,
-  runFull: financeHandler
+  runIntraday: runFinanceHandler,
+  runRecovery: runFinanceHandler,
+  runFull: runFinanceHandler
 });
 
-export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 'no-store');
+const githubPaymentArchiveHandler = createGitHubPaymentArchiveHandler({
+  verifyToken: verifyGitHubActionsOidcToken,
+  apiKey: process.env.ASHK_API_KEY || ''
+});
 
-  if (req.method === 'POST') {
-    const mode = req?.body && typeof req.body === 'object' && !Array.isArray(req.body)
-      ? String(req.body.mode || '')
-      : '';
-    if (mode === 'finance_sync') {
-      return githubFinanceSyncHandler(req, res);
-    }
-  }
-
-  if (req.method !== 'GET') {
-    return res.status(405).json({ ok: false, error: 'Method not allowed' });
-  }
-  if (!authorizeBearer(req, process.env.CRON_SECRET)) {
-    return res.status(403).json({ ok: false, error: 'forbidden' });
-  }
-  if (!process.env.ASHK_API_KEY) {
-    return res.status(500).json({ ok: false, error: 'ASHK integration is not configured' });
-  }
-
-  try {
+export function createMasterHoursDiagnosticHandler({
+  financeSyncHandler = githubFinanceSyncHandler,
+  paymentArchiveHandler = githubPaymentArchiveHandler,
+  runMasterHoursReport
+} = {}) {
+  const reportRunner = runMasterHoursReport || (async () => {
     const byOccupationType = await getReport(0);
     await delay(400);
     const byTrainingHourType = await getReport(1);
-    return res.status(200).json({
-      ok: true,
-      mode: 'read_only_master_hours_report',
-      source: 'GET /api/MasterWorkReportDetails',
-      period: { startDate: START_DATE, endDate: END_DATE, localTime: true },
-      reports: { byOccupationType, byTrainingHourType }
-    });
-  } catch (error) {
-    return res.status(502).json({
-      ok: false,
-      source: 'GET /api/MasterWorkReportDetails',
-      error: String(error?.message || error)
-    });
-  }
+    return { byOccupationType, byTrainingHourType };
+  });
+
+  return async function masterHoursDiagnosticHandler(req, res) {
+    res.setHeader('Cache-Control', 'no-store');
+
+    if (req.method === 'POST') {
+      const mode = req?.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? String(req.body.mode || '')
+        : '';
+      if (mode === 'finance_sync') return financeSyncHandler(req, res);
+      if (mode === 'payment_archive') return paymentArchiveHandler(req, res);
+    }
+
+    if (req.method !== 'GET') {
+      return res.status(405).json({ ok: false, error: 'Method not allowed' });
+    }
+    if (!authorizeBearer(req, process.env.CRON_SECRET)) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
+    if (!process.env.ASHK_API_KEY) {
+      return res.status(500).json({ ok: false, error: 'ASHK integration is not configured' });
+    }
+
+    try {
+      const reports = await reportRunner();
+      return res.status(200).json({
+        ok: true,
+        mode: 'read_only_master_hours_report',
+        source: 'GET /api/MasterWorkReportDetails',
+        period: { startDate: START_DATE, endDate: END_DATE, localTime: true },
+        reports
+      });
+    } catch (error) {
+      return res.status(502).json({
+        ok: false,
+        source: 'GET /api/MasterWorkReportDetails',
+        error: String(error?.message || error)
+      });
+    }
+  };
 }
+
+export default createMasterHoursDiagnosticHandler();
