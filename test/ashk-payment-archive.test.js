@@ -1,9 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ASHK_ARCHIVE_REQUEST_TIMEOUT_MS,
   buildAshkPaymentArchive,
+  createAshkPaymentArchiveEvidence,
+  verifyAshkPaymentArchive,
   validateAshkPaymentArchivePeriod
 } from '../lib/ashk-payment-archive.js';
+
+test('archive request budget leaves time inside the 300-second serverless limit', () => {
+  assert.ok(ASHK_ARCHIVE_REQUEST_TIMEOUT_MS <= 40_000);
+  assert.ok((ASHK_ARCHIVE_REQUEST_TIMEOUT_MS * 5) + (1_100 * 4) < 240_000);
+});
 
 function ashkResponse(rows, { status = 200 } = {}) {
   return {
@@ -37,6 +45,14 @@ test('historical payment archive accepts one bounded calendar month only', () =>
   );
   assert.throws(
     () => validateAshkPaymentArchivePeriod({ startDate: '2026-08-01', endDate: '2026-09-30' }),
+    /invalid archive period/
+  );
+  assert.throws(
+    () => validateAshkPaymentArchivePeriod({ startDate: '2026-10-01', endDate: '2026-10-31' }),
+    /invalid archive period/
+  );
+  assert.throws(
+    () => validateAshkPaymentArchivePeriod({ startDate: '2026-09-01', endDate: '2026-09-29' }),
     /invalid archive period/
   );
 });
@@ -101,13 +117,13 @@ test('historical payment archive fails closed when one ID has conflicting source
   await assert.rejects(
     buildAshkPaymentArchive({
       startDate: '2026-09-01',
-      endDate: '2026-09-08',
+      endDate: '2026-09-30',
       apiKey: 'private-key',
       fetchFn: async () => {
         requestCount += 1;
         return ashkResponse(requestCount === 1
-          ? [{ Id: 'same-id', PayDate: '2026-09-01T08:00:00', Debit: 5000 }]
-          : [{ Id: 'same-id', PayDate: '2026-09-01T08:00:00', Debit: 7000 }]);
+          ? [{ Id: 'same-id', PayDate: '2026-09-01T08:00:00', SaleSum: 9000, Debit: 5000 }]
+          : [{ Id: 'same-id', PayDate: '2026-09-01T08:00:00', SaleSum: 9000, Debit: 7000 }]);
       },
       sleep: async () => {}
     }),
@@ -119,13 +135,79 @@ test('historical payment archive rejects source rows outside the requested perio
   await assert.rejects(
     buildAshkPaymentArchive({
       startDate: '2026-09-01',
-      endDate: '2026-09-01',
+      endDate: '2026-09-30',
       apiKey: 'private-key',
       fetchFn: async () => ashkResponse([
-        { Id: 'late-row', PayDate: '2026-10-01T00:00:00', Debit: 5000 }
+        { Id: 'late-row', PayDate: '2026-10-01T00:00:00', SaleSum: 5000, Debit: 5000 }
       ]),
       sleep: async () => {}
     }),
     /outside archive period/
+  );
+});
+
+test('historical payment archive rejects missing or malformed money without converting it to zero', async () => {
+  for (const badPayment of [
+    { Id: 'missing-debit', PayDate: '2026-09-01T08:00:00', SaleSum: 5000 },
+    { Id: 'bad-debit', PayDate: '2026-09-01T08:00:00', SaleSum: 5000, Debit: 'not-money' },
+    { Id: 'missing-sale-sum', PayDate: '2026-09-01T08:00:00', Debit: 5000 }
+  ]) {
+    await assert.rejects(
+      buildAshkPaymentArchive({
+        startDate: '2026-09-01',
+        endDate: '2026-09-30',
+        apiKey: 'private-key',
+        fetchFn: async () => ashkResponse([badPayment]),
+        sleep: async () => {}
+      }),
+      /invalid money fact/
+    );
+  }
+});
+
+test('historical payment archive preserves the exact source amount instead of rounding the record', async () => {
+  let calls = 0;
+  const archive = await buildAshkPaymentArchive({
+    startDate: '2026-09-01',
+    endDate: '2026-09-30',
+    apiKey: 'private-key',
+    fetchFn: async () => {
+      calls += 1;
+      return ashkResponse(calls === 1 ? [{
+        Id: 'precise',
+        PayDate: '2026-09-01T08:00:00',
+        SaleSum: 5000.001,
+        Debit: -2700.009
+      }] : []);
+    },
+    sleep: async () => {}
+  });
+  assert.equal(archive.payments[0].SaleSum, 5000.001);
+  assert.equal(archive.payments[0].Debit, -2700.009);
+});
+
+test('archive verifier rejects altered summary, hash or ordering', () => {
+  const evidence = createAshkPaymentArchiveEvidence({
+    period: validateAshkPaymentArchivePeriod({
+      startDate: '2026-09-01',
+      endDate: '2026-09-30'
+    }),
+    payments: [
+      { Id: 'pay-2', PayDate: '2026-09-02T08:00:00', StudentId: 2, SaleId: 2, ProductId: 2, ProductName: 'B', SaleSum: 7000, Debit: -2700 },
+      { Id: 'pay-1', PayDate: '2026-09-01T08:00:00', StudentId: 1, SaleId: 1, ProductId: 1, ProductName: 'A', SaleSum: 5000, Debit: 5000 }
+    ]
+  });
+  assert.deepEqual(verifyAshkPaymentArchive(evidence), evidence);
+  assert.throws(
+    () => verifyAshkPaymentArchive({ ...evidence, summary: { ...evidence.summary, net: 999 } }),
+    /archive evidence mismatch/
+  );
+  assert.throws(
+    () => verifyAshkPaymentArchive({ ...evidence, sha256: 'b'.repeat(64) }),
+    /archive evidence mismatch/
+  );
+  assert.throws(
+    () => verifyAshkPaymentArchive({ ...evidence, payments: [...evidence.payments].reverse() }),
+    /archive evidence mismatch/
   );
 });

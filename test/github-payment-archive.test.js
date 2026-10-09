@@ -35,6 +35,7 @@ test('payment archive accepts only the owner-dispatched archive workflow on main
   assert.deepEqual(authorizePaymentArchiveClaims(CLAIMS), { eventName: 'workflow_dispatch' });
   for (const claims of [
     { ...CLAIMS, actor_id: '1' },
+    { ...CLAIMS, run_attempt: '2' },
     { ...CLAIMS, ref: 'refs/heads/feature' },
     { ...CLAIMS, event_name: 'schedule' },
     { ...CLAIMS, workflow_ref: 'miros2012/vector-ashk-vercel/.github/workflows/finance-recovery.yml@refs/heads/main' }

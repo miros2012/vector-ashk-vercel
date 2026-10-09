@@ -2,8 +2,10 @@ import { readFile as readFileFromDisk, writeFile as writeFileToDisk } from 'node
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { encryptPaymentArchive } from '../lib/payment-archive-encryption.js';
+import { verifyAshkPaymentArchive } from '../lib/ashk-payment-archive.js';
 
 const OIDC_AUDIENCE = 'vector-finance-sync-v1';
+export const ARCHIVE_CLIENT_TIMEOUT_MS = 250_000;
 
 function requiredEnvironment(env, name) {
   const value = String(env?.[name] || '').trim();
@@ -53,23 +55,25 @@ export async function exportAshkPaymentArchive({
       accept: 'application/json'
     },
     body: JSON.stringify({ mode: 'payment_archive', startDate, endDate }),
-    signal: AbortSignal.timeout(315_000)
+    signal: AbortSignal.timeout(ARCHIVE_CLIENT_TIMEOUT_MS)
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body?.ok !== true || body?.mode !== 'read_only_payment_archive') {
     throw new Error(`payment archive request failed: ${response.status}`);
   }
-  if (!Array.isArray(body.payments) || !/^[a-f0-9]{64}$/.test(String(body.sha256 || ''))) {
-    throw new Error('payment archive response is invalid');
-  }
+  const verifiedEvidence = verifyAshkPaymentArchive(body);
 
   const publicKey = await readFile(publicKeyPath, 'utf8');
-  const encryptedArchive = encryptPaymentArchive(body, { publicKey });
+  const encryptedArchive = encryptPaymentArchive({
+    ok: true,
+    mode: 'read_only_payment_archive',
+    ...verifiedEvidence
+  }, { publicKey });
   await writeFile(outputPath, `${JSON.stringify(encryptedArchive, null, 2)}\n`, 'utf8');
   logger.log(JSON.stringify({
     ok: true,
     period: body.period,
-    summary: body.summary,
+    rows: body.summary?.rows,
     sha256: body.sha256,
     artifactWritten: true
   }));

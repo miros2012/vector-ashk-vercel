@@ -4,3 +4,4 @@ client_secret*.json
 vercel.env
 branch-links.txt
 .worktrees/
+*-private-key.pem

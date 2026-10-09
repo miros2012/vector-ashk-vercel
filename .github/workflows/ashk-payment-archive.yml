@@ -2,17 +2,6 @@ name: ASHK historical payment archive
 
 on:
   workflow_dispatch:
-    inputs:
-      start_date:
-        description: First business date (YYYY-MM-DD)
-        required: true
-        default: '2026-09-01'
-        type: string
-      end_date:
-        description: Last business date (YYYY-MM-DD, at most 31 days)
-        required: true
-        default: '2026-09-30'
-        type: string
 
 permissions:
   contents: read
@@ -20,7 +9,7 @@ permissions:
 jobs:
   export:
     name: Export immutable source facts
-    if: github.actor_id == '46207692'
+    if: github.actor_id == '46207692' && github.triggering_actor == github.actor
     permissions:
       contents: read
       id-token: write
@@ -29,28 +18,28 @@ jobs:
 
     steps:
       - name: Checkout export worker without persisted credentials
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Use Node.js 24
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
 
       - name: Export bounded historical payment facts
         env:
           PAYMENT_ARCHIVE_ENDPOINT: https://vector-ashk-backend.vercel.app/api/master-hours-diagnostic
-          ARCHIVE_START_DATE: ${{ inputs.start_date }}
-          ARCHIVE_END_DATE: ${{ inputs.end_date }}
+          ARCHIVE_START_DATE: '2026-09-01'
+          ARCHIVE_END_DATE: '2026-09-30'
           ARCHIVE_OUTPUT_PATH: ashk-payments.enc.json
           ARCHIVE_PUBLIC_KEY_PATH: config/ashk-payment-archive-public-key.pem
         run: node scripts/export-ashk-payment-archive.mjs
 
       - name: Upload protected archive artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: ashk-payments-${{ inputs.start_date }}-${{ inputs.end_date }}
+          name: ashk-payments-2026-09-01-2026-09-30
           path: ashk-payments.enc.json
           if-no-files-found: error
           retention-days: 7

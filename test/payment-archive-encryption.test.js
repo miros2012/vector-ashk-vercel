@@ -24,6 +24,7 @@ test('payment archive encryption round-trips financial facts without plaintext l
   const envelope = encryptPaymentArchive(archive, { publicKey });
 
   assert.equal(envelope.format, 'vector-ashk-payment-archive-encrypted-v1');
+  assert.equal('plaintextSha256' in envelope, false);
   assert.equal(JSON.stringify(envelope).includes('private-payment-id'), false);
   assert.deepEqual(decryptPaymentArchive(envelope, { privateKey }), archive);
 });
