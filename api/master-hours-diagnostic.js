@@ -6,6 +6,7 @@ import {
 import { verifyGitHubActionsOidcToken } from '../lib/github-actions-oidc.js';
 import { createGitHubFinanceSyncHandler } from '../lib/github-finance-sync.js';
 import { createGitHubPaymentArchiveHandler } from '../lib/github-payment-archive.js';
+import { createGitHubSaleArchiveHandler } from '../lib/github-sale-archive.js';
 import { authorizeBearer } from '../lib/request-authorization.js';
 
 const ASHK_BASE_URL = 'https://app.dscontrol.ru';
@@ -68,9 +69,16 @@ const githubPaymentArchiveHandler = createGitHubPaymentArchiveHandler({
   apiKey: process.env.ASHK_API_KEY || ''
 });
 
+const githubSaleArchiveHandler = createGitHubSaleArchiveHandler({
+  verifyToken: verifyGitHubActionsOidcToken,
+  login: process.env.ASHK_WEB_LOGIN || '',
+  password: process.env.ASHK_WEB_PASSWORD || ''
+});
+
 export function createMasterHoursDiagnosticHandler({
   financeSyncHandler = githubFinanceSyncHandler,
   paymentArchiveHandler = githubPaymentArchiveHandler,
+  saleArchiveHandler = githubSaleArchiveHandler,
   runMasterHoursReport
 } = {}) {
   const reportRunner = runMasterHoursReport || (async () => {
@@ -89,6 +97,7 @@ export function createMasterHoursDiagnosticHandler({
         : '';
       if (mode === 'finance_sync') return financeSyncHandler(req, res);
       if (mode === 'payment_archive') return paymentArchiveHandler(req, res);
+      if (mode === 'sale_archive') return saleArchiveHandler(req, res);
     }
 
     if (req.method !== 'GET') {
